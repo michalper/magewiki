@@ -1,0 +1,7 @@
+<?xml version="1.0"?>
+<config xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:noNamespaceSchemaLocation="urn:magento:framework:ObjectManager/etc/config.xsd">
+    <preference for="Vendor\Module\Api\SampleInterface" type="Vendor\Module\Model\Sample"/>
+    <type name="Magento\Quote\Model\Quote\Address\Total\Collector">
+        <plugin name="vendor_module_sample_checkout_plugin" type="Vendor\Module\Plugin\SampleCheckoutPlugin" sortOrder="10"/>
+    </type>
+</config>

@@ -10,7 +10,7 @@ async_session_factory = async_sessionmaker(engine, expire_on_commit=False)
 
 
 class Base(DeclarativeBase):
-    """Declarative base — no domain models yet (Phase 0). Alembic's target_metadata."""
+    """Declarative base — see app/models.py for domain models. Alembic's target_metadata."""
 
 
 async def get_session() -> AsyncIterator[AsyncSession]:
