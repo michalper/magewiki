@@ -15,6 +15,16 @@ services:
       timeout: 5s
       retries: 5
 
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "${REDIS_PORT:-6379}:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
   api:
     build:
       context: ./backend
@@ -28,7 +38,22 @@ services:
     depends_on:
       db:
         condition: service_healthy
+      redis:
+        condition: service_healthy
     command: ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000", "--reload"]
+
+  worker:
+    build:
+      context: ./backend
+    env_file: .env
+    volumes:
+      - ./backend:/app
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    command: ["arq", "app.tasks.worker.WorkerSettings"]
 
   web:
     build:
@@ -46,11 +71,3 @@ services:
 
 volumes:
   db_data:
-
-# Future services (added in Phase 2, once backend/app/tasks/ defines an ARQ worker):
-#   redis:
-#     image: redis:7-alpine
-#   worker:
-#     build: { context: ./backend }
-#     command: ["arq", "app.tasks.worker.WorkerSettings"]
-#     depends_on: [db, redis]

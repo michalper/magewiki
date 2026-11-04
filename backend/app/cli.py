@@ -3,23 +3,32 @@ import asyncio
 import sys
 
 from app.db import async_session_factory
-from app.scanner.orchestrator import scan_repository
+from app.scanner.orchestrator import ScanAlreadyInProgressError, scan_repository
 
 
 async def _run_scan(path: str) -> int:
     async with async_session_factory() as session:
-        result = await scan_repository(path, session)
+        try:
+            result = await scan_repository(path, session)
+        except ScanAlreadyInProgressError as exc:
+            print(f"error: {exc}")
+            return 1
 
     print(f"Scanned {result.repo_root}")
     print(
         f"modules_found={result.modules_found} created={result.modules_created} "
         f"updated={result.modules_updated} classes={result.classes_total} "
-        f"plugins={result.plugins_total} observers={result.observers_total}"
+        f"plugins={result.plugins_total} observers={result.observers_total} "
+        f"tasks_enqueued={result.tasks_enqueued}"
     )
     for w in result.warnings:
         print(f"warning: {w}")
     for m in result.modules:
-        print(f"  {m.status:8s} {m.name:40s} classes={m.classes} plugins={m.plugins} observers={m.observers}")
+        print(
+            f"  {m.status:8s} {m.name:40s} state={m.state:12s} classes={m.classes} "
+            f"plugins={m.plugins} observers={m.observers} "
+            f"files(+{m.files_added}/~{m.files_changed}/-{m.files_removed})"
+        )
         for w in m.warnings:
             print(f"    warning: {w}")
 

@@ -9,7 +9,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db import get_session
 from app.models import DiPlugin, DiPreference, EventObserver, Module, ModuleDependency, PhpClass, PhpClassMethod
-from app.scanner.orchestrator import scan_repository
+from app.scanner.orchestrator import ScanAlreadyInProgressError, scan_repository
 
 router = APIRouter()
 
@@ -21,9 +21,13 @@ class ScanRequest(BaseModel):
 class ModuleScanOutcomeResponse(BaseModel):
     name: str
     status: str
+    state: str
     classes: int
     plugins: int
     observers: int
+    files_added: int
+    files_changed: int
+    files_removed: int
     warnings: list[str]
 
 
@@ -36,6 +40,7 @@ class ScanResponse(BaseModel):
     classes_total: int
     plugins_total: int
     observers_total: int
+    tasks_enqueued: int
     warnings: list[str]
     modules: list[ModuleScanOutcomeResponse]
 
@@ -47,6 +52,7 @@ class ModuleSummary(BaseModel):
     source_type: str
     path: str
     enabled: bool | None
+    state: str
     class_count: int
     plugin_count: int
     observer_count: int
@@ -103,7 +109,10 @@ async def scan(request: ScanRequest, session: AsyncSession = Depends(get_session
         raise HTTPException(status_code=400, detail=f"not a directory: {request.path}")
 
     started = time.monotonic()
-    result = await scan_repository(request.path, session)
+    try:
+        result = await scan_repository(request.path, session)
+    except ScanAlreadyInProgressError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
     duration = time.monotonic() - started
 
     return ScanResponse(
@@ -115,11 +124,13 @@ async def scan(request: ScanRequest, session: AsyncSession = Depends(get_session
         classes_total=result.classes_total,
         plugins_total=result.plugins_total,
         observers_total=result.observers_total,
+        tasks_enqueued=result.tasks_enqueued,
         warnings=result.warnings,
         modules=[
             ModuleScanOutcomeResponse(
-                name=m.name, status=m.status, classes=m.classes, plugins=m.plugins,
-                observers=m.observers, warnings=m.warnings,
+                name=m.name, status=m.status, state=m.state, classes=m.classes, plugins=m.plugins,
+                observers=m.observers, files_added=m.files_added, files_changed=m.files_changed,
+                files_removed=m.files_removed, warnings=m.warnings,
             )
             for m in result.modules
         ],
@@ -159,6 +170,7 @@ async def list_modules(session: AsyncSession = Depends(get_session)) -> list[Mod
             source_type=module.source_type,
             path=module.path,
             enabled=module.enabled,
+            state=module.state,
             class_count=classes,
             plugin_count=plugins,
             observer_count=observers,
@@ -210,6 +222,7 @@ async def get_module(module_id: int, session: AsyncSession = Depends(get_session
         source_type=module.source_type,
         path=module.path,
         enabled=module.enabled,
+        state=module.state,
         class_count=len(classes),
         plugin_count=sum(1 for c in classes if c.is_plugin),
         observer_count=sum(1 for c in classes if c.is_observer),

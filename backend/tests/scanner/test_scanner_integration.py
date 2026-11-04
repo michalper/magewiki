@@ -1,3 +1,4 @@
+import shutil
 from pathlib import Path
 
 import pytest
@@ -23,6 +24,9 @@ async def test_scan_repository_is_idempotent(demo_store_path: Path, db_session):
     assert first.modules_found == 1
     assert first.modules_created == 1
     assert first.modules_updated == 0
+    # composer.json, etc/module.xml, etc/di.xml, etc/events.xml, registration.php,
+    # Plugin/SampleCheckoutPlugin.php, Observer/SampleOrderObserver.php
+    assert first.tasks_enqueued == 7
 
     module = await db_session.scalar(
         select(Module).where(Module.repo_root == repo_root, Module.name == "Vendor_Module")
@@ -30,6 +34,10 @@ async def test_scan_repository_is_idempotent(demo_store_path: Path, db_session):
     assert module is not None
     assert module.enabled is True
     assert module.composer_name == "vendor/module-sample"
+    assert module.state == "pending"
+    assert module.pending_file_count == 7
+    assert module.analyzed_hash is None
+    assert module.current_hash != ""
 
     dep_count_1 = len((await db_session.scalars(
         select(ModuleDependency).where(ModuleDependency.module_id == module.id)
@@ -53,11 +61,19 @@ async def test_scan_repository_is_idempotent(demo_store_path: Path, db_session):
     assert plugin_count_1 == 1
     assert observer_count_1 == 1
 
-    # Re-scan the same repo: row counts must stay the same, not double.
+    # Re-scan the same repo: row counts must stay the same, not double, and —
+    # the actual Phase 2 done-criterion — an unchanged re-scan creates 0 tasks.
     second = await scan_repository(repo_root, db_session)
     assert second.modules_found == 1
     assert second.modules_created == 0
     assert second.modules_updated == 1
+    assert second.tasks_enqueued == 0
+
+    # Nothing changed, so state/pending_file_count must be left untouched by the
+    # no-op re-scan — a module must not bounce through pending on an empty diff.
+    await db_session.refresh(module)
+    assert module.state == "pending"
+    assert module.pending_file_count == 7
 
     module_id = module.id  # same id across re-scan (UPDATE in place)
     assert (await db_session.scalar(
@@ -73,6 +89,26 @@ async def test_scan_repository_is_idempotent(demo_store_path: Path, db_session):
 
     assert dep_count_2 == dep_count_1
     assert class_count_2 == class_count_1
+
+
+@pytest.mark.asyncio
+async def test_scan_repository_detects_a_single_changed_file(demo_store_path: Path, db_session, tmp_path: Path):
+    repo_copy = tmp_path / "demo-store"
+    shutil.copytree(demo_store_path, repo_copy)
+    repo_root = str(repo_copy.resolve())
+    await _delete_module_if_present(db_session, repo_root, "Vendor_Module")
+
+    first = await scan_repository(repo_root, db_session)
+    assert first.tasks_enqueued == 7
+
+    observer_file = repo_copy / "app/code/Vendor/Module/Observer/SampleOrderObserver.php"
+    observer_file.write_text(observer_file.read_text() + "\n// changed\n")
+
+    second = await scan_repository(repo_root, db_session)
+    assert second.tasks_enqueued == 1
+    assert second.modules[0].files_added == 0
+    assert second.modules[0].files_changed == 1
+    assert second.modules[0].files_removed == 0
 
 
 @pytest.mark.asyncio

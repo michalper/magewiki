@@ -135,6 +135,8 @@ export interface components {
             path: string;
             /** Enabled */
             enabled: boolean | null;
+            /** State */
+            state: string;
             /** Class Count */
             class_count: number;
             /** Plugin Count */
@@ -163,12 +165,20 @@ export interface components {
             name: string;
             /** Status */
             status: string;
+            /** State */
+            state: string;
             /** Classes */
             classes: number;
             /** Plugins */
             plugins: number;
             /** Observers */
             observers: number;
+            /** Files Added */
+            files_added: number;
+            /** Files Changed */
+            files_changed: number;
+            /** Files Removed */
+            files_removed: number;
             /** Warnings */
             warnings: string[];
         };
@@ -186,6 +196,8 @@ export interface components {
             path: string;
             /** Enabled */
             enabled: boolean | null;
+            /** State */
+            state: string;
             /** Class Count */
             class_count: number;
             /** Plugin Count */
@@ -238,6 +250,8 @@ export interface components {
             plugins_total: number;
             /** Observers Total */
             observers_total: number;
+            /** Tasks Enqueued */
+            tasks_enqueued: number;
             /** Warnings */
             warnings: string[];
             /** Modules */

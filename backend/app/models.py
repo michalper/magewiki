@@ -1,6 +1,16 @@
 from datetime import datetime
 
-from sqlalchemy import ARRAY, Boolean, DateTime, ForeignKey, Integer, Text, UniqueConstraint, func
+from sqlalchemy import (
+    ARRAY,
+    Boolean,
+    CheckConstraint,
+    DateTime,
+    ForeignKey,
+    Integer,
+    Text,
+    UniqueConstraint,
+    func,
+)
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.db import Base
@@ -8,7 +18,13 @@ from app.db import Base
 
 class Module(Base):
     __tablename__ = "modules"
-    __table_args__ = (UniqueConstraint("repo_root", "name", name="uq_modules_repo_root_name"),)
+    __table_args__ = (
+        UniqueConstraint("repo_root", "name", name="uq_modules_repo_root_name"),
+        CheckConstraint(
+            "state IN ('pending','scanning','analyzing','embedding','up_to_date','failed','paused_budget')",
+            name="ck_modules_state",
+        ),
+    )
 
     id: Mapped[int] = mapped_column(primary_key=True)
     repo_root: Mapped[str] = mapped_column(Text)
@@ -24,6 +40,14 @@ class Module(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
     scan_warnings: Mapped[list[str]] = mapped_column(ARRAY(Text), server_default="{}")
 
+    # Phase 2: hash/diff + state machine
+    state: Mapped[str] = mapped_column(Text, server_default="pending")
+    analyzed_hash: Mapped[str | None] = mapped_column(Text)
+    current_hash: Mapped[str] = mapped_column(Text, server_default="")
+    retry_count: Mapped[int] = mapped_column(Integer, server_default="0")
+    last_error: Mapped[str | None] = mapped_column(Text)
+    pending_file_count: Mapped[int] = mapped_column(Integer, server_default="0")
+
     dependencies: Mapped[list["ModuleDependency"]] = relationship(
         back_populates="module", cascade="all, delete-orphan"
     )
@@ -37,6 +61,9 @@ class Module(Base):
         back_populates="module", cascade="all, delete-orphan"
     )
     event_observers: Mapped[list["EventObserver"]] = relationship(
+        back_populates="module", cascade="all, delete-orphan"
+    )
+    file_hashes: Mapped[list["FileHash"]] = relationship(
         back_populates="module", cascade="all, delete-orphan"
     )
 
@@ -124,3 +151,16 @@ class EventObserver(Base):
     disabled: Mapped[bool] = mapped_column(Boolean, default=False)
 
     module: Mapped[Module] = relationship(back_populates="event_observers")
+
+
+class FileHash(Base):
+    __tablename__ = "file_hashes"
+    __table_args__ = (UniqueConstraint("module_id", "relative_path", name="uq_file_hashes_module_relpath"),)
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    module_id: Mapped[int] = mapped_column(ForeignKey("modules.id", ondelete="CASCADE"))
+    relative_path: Mapped[str] = mapped_column(Text)
+    content_hash: Mapped[str] = mapped_column(Text)
+    analyzed: Mapped[bool] = mapped_column(Boolean, default=False)
+
+    module: Mapped[Module] = relationship(back_populates="file_hashes")

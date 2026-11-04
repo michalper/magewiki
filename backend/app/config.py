@@ -6,6 +6,7 @@ class Settings(BaseSettings):
 
     database_url: str = "postgresql+asyncpg://magewiki:changeme@db:5432/magewiki"
     cors_origins: str = "http://localhost:3000"
+    redis_url: str = "redis://redis:6379/0"
 
     @property
     def cors_origin_list(self) -> list[str]:
