@@ -2,27 +2,46 @@ from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from pathlib import Path
 
-from sqlalchemy import delete, select
+from sqlalchemy import delete, select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.models import DiPlugin, DiPreference, EventObserver, Module, ModuleDependency, PhpClass, PhpClassMethod
+from app.models import (
+    DiPlugin,
+    DiPreference,
+    EventObserver,
+    FileHash,
+    Module,
+    ModuleDependency,
+    PhpClass,
+    PhpClassMethod,
+)
 from app.scanner.composer_json import parse_composer_json
 from app.scanner.config_php import parse_config_php
 from app.scanner.di_xml import parse_di_xml
 from app.scanner.discovery import find_modules
-from app.scanner.dto import DiscoveredModule
+from app.scanner.dto import DiscoveredModule, PendingAnalysisJob
 from app.scanner.events_xml import parse_events_xml
+from app.scanner.hashing import aggregate_hash, compute_module_file_hashes, diff_file_hashes
 from app.scanner.module_xml import InvalidModuleXmlError, parse_module_xml
 from app.scanner.php_classes import catalog_module_classes
+from app.tasks.queue import get_arq_pool
+
+
+class ScanAlreadyInProgressError(RuntimeError):
+    """Raised when another scan of the same repo_root is already running."""
 
 
 @dataclass
 class ModuleScanOutcome:
     name: str
     status: str  # "created" | "updated" | "error"
+    state: str = "pending"
     classes: int = 0
     plugins: int = 0
     observers: int = 0
+    files_added: int = 0
+    files_changed: int = 0
+    files_removed: int = 0
     warnings: list[str] = field(default_factory=list)
 
 
@@ -35,6 +54,7 @@ class ScanResult:
     classes_total: int = 0
     plugins_total: int = 0
     observers_total: int = 0
+    tasks_enqueued: int = 0
     warnings: list[str] = field(default_factory=list)
     modules: list[ModuleScanOutcome] = field(default_factory=list)
 
@@ -50,6 +70,14 @@ class _ParsedModule:
 
 async def scan_repository(repo_root: str, session: AsyncSession) -> ScanResult:
     root = Path(repo_root).resolve()
+
+    lock_acquired = await session.scalar(
+        text("SELECT pg_try_advisory_xact_lock(hashtextextended(:repo_root, 0))"),
+        {"repo_root": str(root)},
+    )
+    if not lock_acquired:
+        raise ScanAlreadyInProgressError(f"a scan of {root} is already in progress")
+
     result = ScanResult(repo_root=str(root))
 
     discovered = find_modules(root)
@@ -79,14 +107,20 @@ async def scan_repository(repo_root: str, session: AsyncSession) -> ScanResult:
         all_plugin_classes.update(p.plugin_class for p in di.plugins)
         all_observer_classes.update(e.observer_class for e in events)
 
-    # Phase B: catalog PHP classes and persist each module in its own savepoint.
+    # Phase B: catalog PHP classes, diff file hashes, and persist each module in
+    # its own savepoint. Job specs are only merged into pending_jobs once a
+    # module's savepoint succeeds, so a rolled-back module never contributes jobs.
+    pending_jobs: list[PendingAnalysisJob] = []
+
     for pm in parsed:
         outcome = ModuleScanOutcome(name=pm.module_xml.name, status="updated")
+        module_job_specs: list[PendingAnalysisJob] = []
         try:
             async with session.begin_nested():
                 await _persist_module(
-                    session, root, pm, config_map, all_plugin_classes, all_observer_classes, outcome
+                    session, root, pm, config_map, all_plugin_classes, all_observer_classes, outcome, module_job_specs
                 )
+            pending_jobs.extend(module_job_specs)
         except Exception as exc:  # noqa: BLE001 - one module's failure must not abort the scan
             outcome.status = "error"
             outcome.warnings.append(str(exc))
@@ -101,6 +135,23 @@ async def scan_repository(repo_root: str, session: AsyncSession) -> ScanResult:
         result.modules.append(outcome)
 
     await session.commit()
+
+    # Only enqueue jobs after the scan's commit has succeeded — a job must never
+    # reference module/file state that didn't actually get persisted.
+    if pending_jobs:
+        pool = await get_arq_pool()
+        for job in pending_jobs:
+            job_id = f"analyze:{job.module_id}:{job.relative_path}:{job.content_hash}"
+            await pool.enqueue_job(
+                "analyze_file",
+                job.module_id,
+                job.relative_path,
+                job.content_hash,
+                job.module_current_hash,
+                _job_id=job_id,
+            )
+    result.tasks_enqueued = len(pending_jobs)
+
     return result
 
 
@@ -112,11 +163,26 @@ async def _persist_module(
     all_plugin_classes: set[str],
     all_observer_classes: set[str],
     outcome: ModuleScanOutcome,
+    job_specs: list[PendingAnalysisJob],
 ) -> None:
     name = pm.module_xml.name
     existing = await session.scalar(
         select(Module).where(Module.repo_root == str(repo_root), Module.name == name)
     )
+
+    if existing is not None:
+        old_hash_rows = (await session.scalars(select(FileHash).where(FileHash.module_id == existing.id))).all()
+        old_hashes = {fh.relative_path: fh.content_hash for fh in old_hash_rows}
+    else:
+        old_hashes = {}
+
+    new_hashes = compute_module_file_hashes(pm.discovered.root)
+    diff = diff_file_hashes(old_hashes, new_hashes)
+    new_current_hash = aggregate_hash(new_hashes)
+
+    outcome.files_added = len(diff.added)
+    outcome.files_changed = len(diff.changed)
+    outcome.files_removed = len(diff.removed)
 
     enabled = config_map.get(name) if config_map is not None else None
     now = datetime.now(UTC)
@@ -140,6 +206,7 @@ async def _persist_module(
         await session.execute(delete(DiPreference).where(DiPreference.module_id == module.id))
         await session.execute(delete(DiPlugin).where(DiPlugin.module_id == module.id))
         await session.execute(delete(EventObserver).where(EventObserver.module_id == module.id))
+        await session.execute(delete(FileHash).where(FileHash.module_id == module.id))
 
     module.setup_version = pm.module_xml.setup_version
     module.composer_name = pm.composer.name if pm.composer else None
@@ -148,8 +215,35 @@ async def _persist_module(
     module.enabled = enabled
     module.last_scanned_at = now
     module.scan_warnings = list(outcome.warnings)
+    module.current_hash = new_current_hash
+
+    if not diff.is_empty():
+        module.state = "pending"
+        module.pending_file_count = len(diff.added) + len(diff.changed)
+    outcome.state = module.state
 
     await session.flush()  # assign module.id for new rows
+
+    added_or_changed = set(diff.added) | set(diff.changed)
+    for relative_path, content_hash in new_hashes.items():
+        session.add(
+            FileHash(
+                module_id=module.id,
+                relative_path=relative_path,
+                content_hash=content_hash,
+                analyzed=relative_path not in added_or_changed,
+            )
+        )
+
+    for relative_path in diff.added + diff.changed:
+        job_specs.append(
+            PendingAnalysisJob(
+                module_id=module.id,
+                relative_path=relative_path,
+                content_hash=new_hashes[relative_path],
+                module_current_hash=new_current_hash,
+            )
+        )
 
     for dep_name in pm.module_xml.sequence:
         session.add(ModuleDependency(module_id=module.id, depends_on_name=dep_name))

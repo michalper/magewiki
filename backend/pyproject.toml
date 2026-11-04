@@ -18,9 +18,10 @@ alembic = "^1.13"
 tree-sitter = "^0.25"
 tree-sitter-php = "^0.24"
 lxml = "^5.3"
+arq = "^0.28"
+redis = "^5.2"
 
 # --- Future phases (not installed yet, documented here per architecture scaffold) ---
-# Phase 2 (tasks/):          arq, redis
 # Phase 3 (analyzer/):       litellm
 # Phase 4 (vectorstore/rag): pgvector (python client), rank-bm25 is NOT used — hybrid search is done in Postgres (tsvector/pg_trgm)
 # Testing (RAG eval):        ragas

@@ -73,3 +73,11 @@ class PhpClassEntry:
     start_line: int | None
     end_line: int | None
     methods: list[PhpMethodEntry] = field(default_factory=list)
+
+
+@dataclass
+class PendingAnalysisJob:
+    module_id: int
+    relative_path: str
+    content_hash: str
+    module_current_hash: str

@@ -50,6 +50,20 @@ function EnabledBadge({ enabled }: { enabled: boolean | null }) {
   );
 }
 
+const STATE_VARIANTS: Record<string, "default" | "secondary" | "outline" | "destructive"> = {
+  up_to_date: "default",
+  pending: "outline",
+  scanning: "outline",
+  analyzing: "secondary",
+  embedding: "secondary",
+  failed: "destructive",
+  paused_budget: "destructive",
+};
+
+function StateBadge({ state }: { state: string }) {
+  return <Badge variant={STATE_VARIANTS[state] ?? "outline"}>{state}</Badge>;
+}
+
 export default function ModulesPage() {
   const [path, setPath] = useState("");
   const queryClient = useQueryClient();
@@ -95,7 +109,8 @@ export default function ModulesPage() {
             Found {scanMutation.data.modules_found} modules (
             {scanMutation.data.modules_created} created,{" "}
             {scanMutation.data.modules_updated} updated) in{" "}
-            {scanMutation.data.duration_seconds.toFixed(2)}s.
+            {scanMutation.data.duration_seconds.toFixed(2)}s.{" "}
+            {scanMutation.data.tasks_enqueued} analysis tasks queued.
           </p>
           {scanMutation.data.warnings.map((w, i) => (
             <p key={i} className="text-yellow-600">
@@ -119,6 +134,7 @@ export default function ModulesPage() {
               <TableHead>Name</TableHead>
               <TableHead>Composer name</TableHead>
               <TableHead>Enabled</TableHead>
+              <TableHead>State</TableHead>
               <TableHead>Source</TableHead>
               <TableHead className="text-right">Classes</TableHead>
               <TableHead className="text-right">Plugins</TableHead>
@@ -135,6 +151,9 @@ export default function ModulesPage() {
                 </TableCell>
                 <TableCell>
                   <EnabledBadge enabled={m.enabled} />
+                </TableCell>
+                <TableCell>
+                  <StateBadge state={m.state} />
                 </TableCell>
                 <TableCell>{m.source_type}</TableCell>
                 <TableCell className="text-right">{m.class_count}</TableCell>
