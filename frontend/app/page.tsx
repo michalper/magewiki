@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useQuery } from "@tanstack/react-query";
 import { Button } from "@/components/ui/button";
 
@@ -39,9 +40,12 @@ export default function Home() {
     <div className="flex flex-col flex-1 items-center justify-center gap-6 bg-zinc-50 font-sans dark:bg-black">
       <h1 className="text-3xl font-semibold tracking-tight">MageWiki-AI</h1>
       <p className="max-w-md text-center text-zinc-600 dark:text-zinc-400">
-        Phase 0 — project skeleton. Scanner, analysis, and chat agent land in
-        later phases.
+        Phase 1 — module scanner. Analysis and chat agent land in later
+        phases.
       </p>
+      <Link href="/modules" className="text-sm underline underline-offset-4">
+        View scanned modules →
+      </Link>
       <div className="flex flex-col items-center gap-2">
         <p>
           API status:{" "}

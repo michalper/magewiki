@@ -1,0 +1,38 @@
+import os
+from pathlib import Path
+
+import pytest
+import pytest_asyncio
+
+from app.db import async_session_factory
+
+FIXTURES_DIR = Path(__file__).parent / "fixtures"
+
+ORDO_FIXTURE_ENV = "MAGEWIKI_ORDO_FIXTURE_PATH"
+MAGENTO_FIXTURE_ENV = "MAGEWIKI_MAGENTO_FIXTURE_PATH"
+
+requires_ordo_fixture = pytest.mark.skipif(
+    not os.environ.get(ORDO_FIXTURE_ENV) or not os.path.isdir(os.environ.get(ORDO_FIXTURE_ENV, "")),
+    reason=f"set {ORDO_FIXTURE_ENV} to a real Ordo_Automation checkout to run this test",
+)
+
+requires_magento_fixture = pytest.mark.skipif(
+    not os.environ.get(MAGENTO_FIXTURE_ENV) or not os.path.isdir(os.environ.get(MAGENTO_FIXTURE_ENV, "")),
+    reason=f"set {MAGENTO_FIXTURE_ENV} to a real magento/magento2 checkout to run this test",
+)
+
+
+@pytest.fixture
+def demo_store_path() -> Path:
+    return FIXTURES_DIR / "demo-store"
+
+
+@pytest.fixture
+def demo_module_path(demo_store_path: Path) -> Path:
+    return demo_store_path / "app" / "code" / "Vendor" / "Module"
+
+
+@pytest_asyncio.fixture
+async def db_session():
+    async with async_session_factory() as session:
+        yield session

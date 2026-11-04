@@ -21,10 +21,238 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/scan": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Scan */
+        post: operations["scan_scan_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/modules": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List Modules */
+        get: operations["list_modules_modules_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/modules/{module_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Module */
+        get: operations["get_module_modules__module_id__get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
 }
 export type webhooks = Record<string, never>;
 export interface components {
-    schemas: never;
+    schemas: {
+        /** DiPluginSummary */
+        DiPluginSummary: {
+            /** Intercepted Type */
+            intercepted_type: string;
+            /** Plugin Name */
+            plugin_name: string;
+            /** Plugin Class */
+            plugin_class: string;
+            /** Sort Order */
+            sort_order: number | null;
+            /** Disabled */
+            disabled: boolean;
+        };
+        /** DiPreferenceSummary */
+        DiPreferenceSummary: {
+            /** For Type */
+            for_type: string;
+            /** Preference Type */
+            preference_type: string;
+        };
+        /** EventObserverSummary */
+        EventObserverSummary: {
+            /** Event Name */
+            event_name: string;
+            /** Observer Name */
+            observer_name: string;
+            /** Observer Class */
+            observer_class: string;
+            /** Disabled */
+            disabled: boolean;
+        };
+        /** HTTPValidationError */
+        HTTPValidationError: {
+            /** Detail */
+            detail?: components["schemas"]["ValidationError"][];
+        };
+        /** MethodSummary */
+        MethodSummary: {
+            /** Name */
+            name: string;
+            /** Start Line */
+            start_line: number | null;
+            /** End Line */
+            end_line: number | null;
+        };
+        /** ModuleDetail */
+        ModuleDetail: {
+            /** Id */
+            id: number;
+            /** Name */
+            name: string;
+            /** Composer Name */
+            composer_name: string | null;
+            /** Source Type */
+            source_type: string;
+            /** Path */
+            path: string;
+            /** Enabled */
+            enabled: boolean | null;
+            /** Class Count */
+            class_count: number;
+            /** Plugin Count */
+            plugin_count: number;
+            /** Observer Count */
+            observer_count: number;
+            /**
+             * Last Scanned At
+             * Format: date-time
+             */
+            last_scanned_at: string;
+            /** Dependencies */
+            dependencies: string[];
+            /** Classes */
+            classes: components["schemas"]["PhpClassSummary"][];
+            /** Preferences */
+            preferences: components["schemas"]["DiPreferenceSummary"][];
+            /** Plugins */
+            plugins: components["schemas"]["DiPluginSummary"][];
+            /** Observers */
+            observers: components["schemas"]["EventObserverSummary"][];
+        };
+        /** ModuleScanOutcomeResponse */
+        ModuleScanOutcomeResponse: {
+            /** Name */
+            name: string;
+            /** Status */
+            status: string;
+            /** Classes */
+            classes: number;
+            /** Plugins */
+            plugins: number;
+            /** Observers */
+            observers: number;
+            /** Warnings */
+            warnings: string[];
+        };
+        /** ModuleSummary */
+        ModuleSummary: {
+            /** Id */
+            id: number;
+            /** Name */
+            name: string;
+            /** Composer Name */
+            composer_name: string | null;
+            /** Source Type */
+            source_type: string;
+            /** Path */
+            path: string;
+            /** Enabled */
+            enabled: boolean | null;
+            /** Class Count */
+            class_count: number;
+            /** Plugin Count */
+            plugin_count: number;
+            /** Observer Count */
+            observer_count: number;
+            /**
+             * Last Scanned At
+             * Format: date-time
+             */
+            last_scanned_at: string;
+        };
+        /** PhpClassSummary */
+        PhpClassSummary: {
+            /** Fqcn */
+            fqcn: string;
+            /** Kind */
+            kind: string;
+            /** File Path */
+            file_path: string;
+            /** Is Plugin */
+            is_plugin: boolean;
+            /** Is Observer */
+            is_observer: boolean;
+            /** Role Signals */
+            role_signals: string[];
+            /** Methods */
+            methods: components["schemas"]["MethodSummary"][];
+        };
+        /** ScanRequest */
+        ScanRequest: {
+            /** Path */
+            path: string;
+        };
+        /** ScanResponse */
+        ScanResponse: {
+            /** Repository */
+            repository: string;
+            /** Duration Seconds */
+            duration_seconds: number;
+            /** Modules Found */
+            modules_found: number;
+            /** Modules Created */
+            modules_created: number;
+            /** Modules Updated */
+            modules_updated: number;
+            /** Classes Total */
+            classes_total: number;
+            /** Plugins Total */
+            plugins_total: number;
+            /** Observers Total */
+            observers_total: number;
+            /** Warnings */
+            warnings: string[];
+            /** Modules */
+            modules: components["schemas"]["ModuleScanOutcomeResponse"][];
+        };
+        /** ValidationError */
+        ValidationError: {
+            /** Location */
+            loc: (string | number)[];
+            /** Message */
+            msg: string;
+            /** Error Type */
+            type: string;
+        };
+    };
     responses: never;
     parameters: never;
     requestBodies: never;
@@ -51,6 +279,90 @@ export interface operations {
                     "application/json": {
                         [key: string]: unknown;
                     };
+                };
+            };
+        };
+    };
+    scan_scan_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ScanRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ScanResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_modules_modules_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ModuleSummary"][];
+                };
+            };
+        };
+    };
+    get_module_modules__module_id__get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                module_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ModuleDetail"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
                 };
             };
         };

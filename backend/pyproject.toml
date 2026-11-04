@@ -15,9 +15,11 @@ pydantic-settings = "^2.6"
 sqlalchemy = { extras = ["asyncio"], version = "^2.0" }
 asyncpg = "^0.30"
 alembic = "^1.13"
+tree-sitter = "^0.25"
+tree-sitter-php = "^0.24"
+lxml = "^5.3"
 
 # --- Future phases (not installed yet, documented here per architecture scaffold) ---
-# Phase 1 (scanner/):        tree-sitter, tree-sitter-php, lxml
 # Phase 2 (tasks/):          arq, redis
 # Phase 3 (analyzer/):       litellm
 # Phase 4 (vectorstore/rag): pgvector (python client), rank-bm25 is NOT used — hybrid search is done in Postgres (tsvector/pg_trgm)
@@ -25,7 +27,7 @@ alembic = "^1.13"
 
 [tool.poetry.group.dev.dependencies]
 pytest = "^8.3"
-pytest-asyncio = "^0.24"
+pytest-asyncio = "^1.0"
 httpx = "^0.27"
 ruff = "^0.7"
 mypy = "^1.13"
@@ -37,6 +39,10 @@ line-length = 100
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 asyncio_mode = "auto"
+asyncio_default_fixture_loop_scope = "session"
+asyncio_default_test_loop_scope = "session"
+addopts = "-m 'not slow'"
+markers = ["slow: real-fixture tests against large external checkouts"]
 
 [build-system]
 requires = ["poetry-core"]
