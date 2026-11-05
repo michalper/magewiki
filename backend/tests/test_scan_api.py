@@ -1,13 +1,18 @@
+import uuid
 from pathlib import Path
 
 import pytest
 from httpx import ASGITransport, AsyncClient
+from sqlalchemy.ext.asyncio import AsyncSession
+
+from sqlalchemy import delete
 
 from app.main import app
+from app.models import AnalysisCache, ModuleDocument
 
 
 @pytest.mark.asyncio
-async def test_scan_and_list_modules(demo_store_path: Path):
+async def test_scan_and_list_modules(demo_store_path: Path, db_session: AsyncSession):
     transport = ASGITransport(app=app)
     async with AsyncClient(transport=transport, base_url="http://test") as client:
         scan_response = await client.post("/scan", json={"path": str(demo_store_path.resolve())})
@@ -27,12 +32,61 @@ async def test_scan_and_list_modules(demo_store_path: Path):
         assert vendor_module["class_count"] == 2
         assert vendor_module["plugin_count"] == 1
         assert vendor_module["observer_count"] == 1
+        assert vendor_module["tags"] == []
 
         detail_response = await client.get(f"/modules/{vendor_module['id']}")
         assert detail_response.status_code == 200
         detail = detail_response.json()
         assert detail["dependencies"] == ["Magento_Sales"]
         assert len(detail["classes"]) == 2
+        assert detail["tags"] == []
+
+        await db_session.execute(
+            delete(ModuleDocument).where(ModuleDocument.module_id == vendor_module["id"])
+        )
+        await db_session.commit()
+
+        content_hash = uuid.uuid4().hex
+        cache = AnalysisCache(
+            content_hash=content_hash,
+            model="test-model",
+            prompt_version="v1",
+            kind="module_synthesis",
+            response={},
+            tokens_in=0,
+            tokens_out=0,
+            cost_usd=0,
+        )
+        db_session.add(cache)
+        await db_session.flush()
+        db_session.add(
+            ModuleDocument(
+                module_id=vendor_module["id"],
+                content_hash=content_hash,
+                model="test-model",
+                prompt_version="v1",
+                cache_id=cache.id,
+                doc={
+                    "summary": "s",
+                    "description": "d",
+                    "confidence": 0.9,
+                    "pm_text": "pm",
+                    "dev_text": "dev",
+                    "tags": [
+                        {"name": "payments", "source": "parser", "confidence": 1.0},
+                        {"name": "checkout", "source": "ai", "confidence": 0.8},
+                    ],
+                },
+            )
+        )
+        await db_session.commit()
+
+        list_response = await client.get("/modules")
+        vendor_module = next(m for m in list_response.json() if m["name"] == "Vendor_Module")
+        assert vendor_module["tags"] == ["payments", "checkout"]
+
+        detail_response = await client.get(f"/modules/{vendor_module['id']}")
+        assert detail_response.json()["tags"] == ["payments", "checkout"]
 
 
 @pytest.mark.asyncio
