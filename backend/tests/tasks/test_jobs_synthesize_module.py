@@ -53,6 +53,12 @@ def _fake_doc() -> ModuleDoc:
 
 
 async def _analyze_all_files(module: Module, session, monkeypatch) -> None:
+    # Must not depend on real, cumulative monthly spend — only the dedicated budget
+    # test below re-patches this to True for its own synthesize_module call.
+    async def _never_exceeded(session):
+        return False
+
+    monkeypatch.setattr("app.tasks.jobs.is_budget_exceeded", _never_exceeded)
     monkeypatch.setattr("app.tasks.jobs.summarize_file", _fake_summarize_file([]))
 
     file_hashes = (await session.scalars(select(FileHash).where(FileHash.module_id == module.id))).all()

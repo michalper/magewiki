@@ -2,7 +2,7 @@
 
 An AI-powered catalog and chat agent for Magento 2 codebases. MageWiki-AI scans Magento modules (`module.xml`, `composer.json`, `di.xml`, `events.xml`, `Plugin/` classes), builds a knowledge base in PostgreSQL, and lets developers and PMs ask natural-language questions about the architecture — with every answer citing the module and file it came from.
 
-Project status: **Phases 0–5 done — MVP (v1.0) complete.** Scanner, hash/diff + queue, AI analysis, embeddings + hybrid retriever, and an agent with tools, SSE chat, citations, and pm/dev modes. See [Roadmap](#roadmap) below and `CLAUDE.md` for the full design.
+Project status: **Phases 0–6 done.** MVP (v1.0, Phases 0–5) plus cron/webhook automation, BYOK in the UI, a working Ollama option, and a per-module dependency graph. See [Roadmap](#roadmap) below and `CLAUDE.md` for the full design.
 
 ## Stack
 
@@ -22,7 +22,7 @@ Full architecture and phase plan: see `CLAUDE.md`.
 - [x] **Phase 3** — AI analysis: JSON schema, tag dictionary, cache, cost tracking, budget, README from the DB
 - [x] **Phase 4** — Embeddings and hybrid retriever (vector + FTS + trigram, RRF)
 - [x] **Phase 5** — Agent with tools, SSE chat, citations, pm/dev modes
-- [ ] **Phase 6** — Cron, HMAC webhook, BYOK in the UI, Ollama, dependency graph
+- [x] **Phase 6** — Cron, HMAC webhook, BYOK in the UI, Ollama, dependency graph
 - [ ] **Phase 7** — Evaluation suite, README, GIF
 - [ ] **Phase 7b** — CI/CD (GitHub Actions)
 - [ ] **Phase 8** — Kubernetes

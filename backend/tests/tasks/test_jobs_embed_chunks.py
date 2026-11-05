@@ -67,6 +67,13 @@ def _fake_embed_text(call_log: list[str]):
 async def _reach_embedding_state(demo_store_path: Path, session, monkeypatch) -> Module:
     module = await _scan_demo_store(demo_store_path, session)
 
+    # These tests fake out the LLM entirely and must not depend on the real,
+    # cumulative monthly spend tracked in analysis_cache — only the dedicated
+    # budget test re-patches this to True for its own embed_chunks call.
+    async def _never_exceeded(session):
+        return False
+
+    monkeypatch.setattr("app.tasks.jobs.is_budget_exceeded", _never_exceeded)
     monkeypatch.setattr("app.tasks.jobs.summarize_file", _fake_summarize_file())
     file_hashes = (await session.scalars(select(FileHash).where(FileHash.module_id == module.id))).all()
     for fh in file_hashes:

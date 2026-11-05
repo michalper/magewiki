@@ -49,6 +49,9 @@ export default function ModuleDetailPage({ params }: { params: Promise<{ id: str
               {moduleQuery.data.state}
             </Badge>
           </div>
+          <Link href={`/modules/${id}/graph`} className="text-sm underline underline-offset-4 self-start">
+            View dependency graph →
+          </Link>
           <p className="text-sm text-zinc-500">
             Last scanned {new Date(moduleQuery.data.last_scanned_at).toLocaleString()} — composer:{" "}
             {moduleQuery.data.composer_name ?? "—"}

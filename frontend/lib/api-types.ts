@@ -89,6 +89,30 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/modules/{module_id}/graph": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Module Dependency Graph
+         * @description One-hop dependency graph centered on a module: depends_on/overrides/plugins
+         *     in both directions. for_type/intercepted_type are bare FQCN strings, not
+         *     foreign keys — resolving which module owns one requires a PhpClass lookup;
+         *     an unresolved FQCN (core class not yet scanned) becomes an "external" node
+         *     rather than a guess. See CLAUDE.md anti-hallucination rules.
+         */
+        get: operations["get_module_dependency_graph_modules__module_id__graph_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/search": {
         parameters: {
             query?: never;
@@ -179,6 +203,17 @@ export interface components {
              */
             audience: string;
         };
+        /** DependencyGraphResponse */
+        DependencyGraphResponse: {
+            /** Center Module Id */
+            center_module_id: number;
+            /** Center Label */
+            center_label: string;
+            /** Nodes */
+            nodes: components["schemas"]["GraphNode"][];
+            /** Edges */
+            edges: components["schemas"]["GraphEdge"][];
+        };
         /** DiPluginSummary */
         DiPluginSummary: {
             /** Intercepted Type */
@@ -209,6 +244,26 @@ export interface components {
             observer_class: string;
             /** Disabled */
             disabled: boolean;
+        };
+        /** GraphEdge */
+        GraphEdge: {
+            /** Source */
+            source: string;
+            /** Target */
+            target: string;
+            /** Relation */
+            relation: string;
+        };
+        /** GraphNode */
+        GraphNode: {
+            /** Id */
+            id: string;
+            /** Label */
+            label: string;
+            /** Kind */
+            kind: string;
+            /** Module Id */
+            module_id: number | null;
         };
         /** HTTPValidationError */
         HTTPValidationError: {
@@ -554,6 +609,37 @@ export interface operations {
                 };
                 content: {
                     "text/plain": string;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_module_dependency_graph_modules__module_id__graph_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                module_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DependencyGraphResponse"];
                 };
             };
             /** @description Validation Error */
