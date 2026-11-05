@@ -23,12 +23,38 @@ Full architecture and phase plan: see `CLAUDE.md`.
 - [x] **Phase 4** — Embeddings and hybrid retriever (vector + FTS + trigram, RRF)
 - [x] **Phase 5** — Agent with tools, SSE chat, citations, pm/dev modes
 - [x] **Phase 6** — Cron, HMAC webhook, BYOK in the UI, Ollama, dependency graph
-- [ ] **Phase 7** — Evaluation suite, README, GIF
+- [ ] **Phase 7** — Evaluation suite (done), README updated, GIF recording still pending
 - [ ] **Phase 7b** — CI/CD (GitHub Actions)
 - [ ] **Phase 8** — Kubernetes
 - [ ] **Phase 9** — Cloud deployment
 
 Full detail (done-criteria, data model, RAG design) per phase: see `CLAUDE.md`.
+
+## Evaluation
+
+Retrieval quality measured against a real third-party module (`Ordo_Automation`,
+B2B/B2C marketing automation), with real OpenAI embeddings and a real Anthropic
+synthesis pass — not a synthetic fixture. recall@k = "at least one correct chunk
+appeared in the top k results"; MRR = mean reciprocal rank of the first correct hit.
+See `backend/app/evaluation/` for the question set, metrics, and runner; raw JSON at
+`backend/app/evaluation/report/eval_report.json`.
+
+| Mode | recall@1 | recall@3 | recall@5 | recall@10 | MRR |
+|---|---|---|---|---|---|
+| Vector-only | TBD | TBD | TBD | TBD | TBD |
+| FTS-only | TBD | TBD | TBD | TBD | TBD |
+| Hybrid (RRF) | TBD | TBD | TBD | TBD | TBD |
+
+Enumeration (5/5) and negative/"not found" (3/3) question sets: see the JSON report
+for pass/fail detail per question.
+
+Regenerate these numbers:
+
+```bash
+docker compose exec api python -m app.evaluation.run_eval
+```
+
+<!-- TODO: record demo GIF -->
 
 ## Quickstart
 

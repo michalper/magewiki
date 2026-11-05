@@ -122,6 +122,16 @@ MVP = Phases 0–5. Each phase is done separately: first a plan for approval, th
 
 Version 1.0 ships before Phases 7b–9: a finished project with six technologies beats an unfinished one with ten.
 
+### Backlog ideas for Phase 8+ (inspired by Modularz)
+
+Modularz is the author's own prior, unrelated internal project (not public, not MageWiki code) — a multi-repo/multi-client Magento module quality portal. It's the conceptual predecessor to MageWiki-AI. Reviewed for feature/UX ideas worth considering for a future phase; nothing here is scheduled or committed, and none of it is copied code — concepts only:
+
+- **UI**: a badge-list cell summarizing N scanner findings (color-coded by severity, clickable → filters) as an alternative to plain counts in the module table; a stats page with small donut/KPI tiles per boolean signal (README present, tests present, deprecated, etc.), each segment clickable to filter the module list.
+- **Parser-only checks** (fit "facts from parsers, not AI", in scope for a single repo): composer.json completeness heuristic, README-presence check, `@deprecated` annotation scan.
+- **Needs discussion before adding** (new external dependency/network call, not yet justified): abandoned/outdated Packagist dependency check, CVE/security-advisory check — would need their own cache/TTL table.
+- **Candidate for its own new phase, not a drive-by addition**: PHP-compatibility scanning via a Rector dry-run + an "upgrade readiness" score — Modularz's headline feature, but a genuinely new, heavyweight capability (shelling out to Rector).
+- **Explicitly out of scope for MageWiki** (inherently multi-repo/multi-client SaaS concepts MageWiki doesn't have): dead-branch detection, a cross-repo/client usage index, a test-runner queue. MageWiki is single-repo, read-only, no "client" concept.
+
 ## Working method
 
 - Start each phase in plan mode; propose a plan and wait for approval before writing code.
