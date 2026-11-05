@@ -3,12 +3,25 @@ import time
 from datetime import datetime
 
 from fastapi import APIRouter, Depends, HTTPException
+from fastapi.responses import PlainTextResponse
 from pydantic import BaseModel
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.analyzer.facts import gather_module_facts
+from app.analyzer.readme import render_readme_markdown
+from app.analyzer.schemas import ModuleDoc
 from app.db import get_session
-from app.models import DiPlugin, DiPreference, EventObserver, Module, ModuleDependency, PhpClass, PhpClassMethod
+from app.models import (
+    DiPlugin,
+    DiPreference,
+    EventObserver,
+    Module,
+    ModuleDependency,
+    ModuleDocument,
+    PhpClass,
+    PhpClassMethod,
+)
 from app.scanner.orchestrator import ScanAlreadyInProgressError, scan_repository
 
 router = APIRouter()
@@ -245,3 +258,28 @@ async def get_module(module_id: int, session: AsyncSession = Depends(get_session
             for o in observers
         ],
     )
+
+
+@router.get("/modules/{module_id}/readme", response_class=PlainTextResponse)
+async def get_module_readme(module_id: int, session: AsyncSession = Depends(get_session)) -> PlainTextResponse:
+    module = await session.get(Module, module_id)
+    if module is None:
+        raise HTTPException(status_code=404, detail="module not found")
+
+    doc_row = await session.scalar(select(ModuleDocument).where(ModuleDocument.module_id == module_id))
+    if doc_row is None:
+        raise HTTPException(status_code=404, detail="module has not been analyzed yet")
+
+    doc = ModuleDoc.model_validate(doc_row.doc)
+    facts = await gather_module_facts(session, module_id)
+
+    markdown = render_readme_markdown(
+        module_name=module.name,
+        doc=doc,
+        facts=facts,
+        model=doc_row.model,
+        prompt_version=doc_row.prompt_version,
+        content_hash=doc_row.content_hash,
+        updated_at=doc_row.updated_at,
+    )
+    return PlainTextResponse(content=markdown, media_type="text/markdown")

@@ -21,6 +21,11 @@ requires_magento_fixture = pytest.mark.skipif(
     reason=f"set {MAGENTO_FIXTURE_ENV} to a real magento/magento2 checkout to run this test",
 )
 
+requires_anthropic_key = pytest.mark.skipif(
+    not os.environ.get("ANTHROPIC_API_KEY"),
+    reason="set ANTHROPIC_API_KEY to run tests that make real LLM calls",
+)
+
 
 @pytest.fixture
 def demo_store_path() -> Path:

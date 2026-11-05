@@ -7,7 +7,7 @@ authors = ["Michał Per"]
 packages = [{ include = "app" }]
 
 [tool.poetry.dependencies]
-python = "^3.11"
+python = ">=3.11,<3.15"
 fastapi = "^0.115"
 uvicorn = { extras = ["standard"], version = "^0.32" }
 pydantic = "^2.9"
@@ -20,16 +20,17 @@ tree-sitter-php = "^0.24"
 lxml = "^5.3"
 arq = "^0.28"
 redis = "^5.2"
+litellm = "^1.108"
+mcp = "^1.1"  # litellm's tool-calling path imports this internally; not declared as its own dependency
 
 # --- Future phases (not installed yet, documented here per architecture scaffold) ---
-# Phase 3 (analyzer/):       litellm
 # Phase 4 (vectorstore/rag): pgvector (python client), rank-bm25 is NOT used — hybrid search is done in Postgres (tsvector/pg_trgm)
 # Testing (RAG eval):        ragas
 
 [tool.poetry.group.dev.dependencies]
 pytest = "^8.3"
 pytest-asyncio = "^1.0"
-httpx = "^0.27"
+httpx = "^0.28"
 ruff = "^0.7"
 mypy = "^1.13"
 
@@ -42,8 +43,11 @@ testpaths = ["tests"]
 asyncio_mode = "auto"
 asyncio_default_fixture_loop_scope = "session"
 asyncio_default_test_loop_scope = "session"
-addopts = "-m 'not slow'"
-markers = ["slow: real-fixture tests against large external checkouts"]
+addopts = "-m 'not slow and not llm'"
+markers = [
+    "slow: real-fixture tests against large external checkouts",
+    "llm: tests that make real Anthropic API calls and spend real budget — run explicitly with `pytest -m llm`",
+]
 
 [build-system]
 requires = ["poetry-core"]
