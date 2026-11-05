@@ -5,16 +5,19 @@ from sqlalchemy import (
     ARRAY,
     Boolean,
     CheckConstraint,
+    Computed,
     DateTime,
     ForeignKey,
+    Index,
     Integer,
     Numeric,
     Text,
     UniqueConstraint,
     func,
 )
-from sqlalchemy.dialects.postgresql import JSONB
+from sqlalchemy.dialects.postgresql import JSONB, TSVECTOR
 from sqlalchemy.orm import Mapped, mapped_column, relationship
+from pgvector.sqlalchemy import Vector
 
 from app.db import Base
 
@@ -67,6 +70,9 @@ class Module(Base):
         back_populates="module", cascade="all, delete-orphan"
     )
     file_hashes: Mapped[list["FileHash"]] = relationship(
+        back_populates="module", cascade="all, delete-orphan"
+    )
+    chunks: Mapped[list["Chunk"]] = relationship(
         back_populates="module", cascade="all, delete-orphan"
     )
 
@@ -173,7 +179,7 @@ class AnalysisCache(Base):
     __tablename__ = "analysis_cache"
     __table_args__ = (
         UniqueConstraint("content_hash", "model", "prompt_version", "kind", name="uq_analysis_cache_key"),
-        CheckConstraint("kind IN ('file_summary','module_synthesis')", name="ck_analysis_cache_kind"),
+        CheckConstraint("kind IN ('file_summary','module_synthesis','embedding')", name="ck_analysis_cache_kind"),
     )
 
     id: Mapped[int] = mapped_column(primary_key=True)
@@ -216,3 +222,39 @@ class ModuleDocument(Base):
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
     )
+
+
+class Chunk(Base):
+    """A unit of the hybrid-search index: one module summary, one file summary, or
+    one plugin/observer method's extracted source. See CLAUDE.md "Multi-level index".
+    """
+
+    __tablename__ = "chunks"
+    __table_args__ = (
+        CheckConstraint("chunk_type IN ('module','file','method')", name="ck_chunks_chunk_type"),
+        Index("ix_chunks_module_id", "module_id"),
+        Index("ix_chunks_module_chunk_type", "module_id", "chunk_type"),
+        Index("ix_chunks_relative_path", "relative_path"),
+        Index(
+            "ix_chunks_embedding_hnsw",
+            "embedding",
+            postgresql_using="hnsw",
+            postgresql_ops={"embedding": "vector_cosine_ops"},
+        ),
+        Index("ix_chunks_tsv_gin", "tsv", postgresql_using="gin"),
+    )
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    module_id: Mapped[int] = mapped_column(ForeignKey("modules.id", ondelete="CASCADE"))
+    chunk_type: Mapped[str] = mapped_column(Text)
+    relative_path: Mapped[str | None] = mapped_column(Text)
+    method_id: Mapped[int | None] = mapped_column(ForeignKey("php_class_methods.id", ondelete="CASCADE"))
+    content_hash: Mapped[str] = mapped_column(Text)
+    text: Mapped[str] = mapped_column(Text)
+    embedding: Mapped[list[float]] = mapped_column(Vector(1536))
+    tsv: Mapped[str] = mapped_column(
+        TSVECTOR, Computed("to_tsvector('english', text)", persisted=True)
+    )
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+    module: Mapped[Module] = relationship(back_populates="chunks")

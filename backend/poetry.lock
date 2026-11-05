@@ -2808,6 +2808,17 @@ optional = ["typing-extensions (>=4)"]
 re2 = ["google-re2 (>=1.1)"]
 
 [[package]]
+name = "pgvector"
+version = "0.5.1"
+description = "pgvector support for Python"
+optional = false
+python-versions = ">=3.10"
+files = [
+    {file = "pgvector-0.5.1-py3-none-any.whl", hash = "sha256:ec5bcd5ffaefe6ecb2dcc9564ca921d284564b969183bc837a144604773af8ea"},
+    {file = "pgvector-0.5.1.tar.gz", hash = "sha256:94998a54b801b1075d623b8fa677fcb8210a7977b88f8e2203ab115c155af2e4"},
+]
+
+[[package]]
 name = "pluggy"
 version = "1.7.0"
 description = "plugin and hook calling mechanisms for python"
@@ -4689,4 +4700,4 @@ type = ["pytest-mypy (>=1.0.1)"]
 [metadata]
 lock-version = "2.0"
 python-versions = ">=3.11,<3.15"
-content-hash = "4e43a436edaceb790ce86e06291183250c9f051c54e257099e13f9ca5e6693bf"
+content-hash = "a0407114d91120e94cc0a7d152ae5b46f527b739c186125036c3bf4a4d39d9b8"

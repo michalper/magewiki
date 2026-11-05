@@ -6,7 +6,7 @@ from pathlib import Path
 from sqlalchemy import select, update
 
 from app.db import async_session_factory
-from app.models import FileHash, Module
+from app.models import FileHash, Module, ModuleDocument
 from app.scanner.orchestrator import ScanAlreadyInProgressError, scan_repository
 from app.tasks.queue import get_arq_pool
 
@@ -71,9 +71,19 @@ async def _run_resume_budget(repo_root: str | None) -> int:
                     )
                 print(f"  resumed {module.name}: re-enqueued {len(file_hashes)} file(s)")
             else:
-                job_id = f"synthesize:{module.id}:{module.current_hash}"
-                await pool.enqueue_job("synthesize_module", module.id, module.current_hash, _job_id=job_id)
-                print(f"  resumed {module.name}: re-enqueued synthesis")
+                doc_exists = await session.scalar(
+                    select(ModuleDocument.id).where(
+                        ModuleDocument.module_id == module.id, ModuleDocument.content_hash == module.current_hash
+                    )
+                )
+                if doc_exists is not None:
+                    job_id = f"embed:{module.id}:{module.current_hash}"
+                    await pool.enqueue_job("embed_chunks", module.id, module.current_hash, _job_id=job_id)
+                    print(f"  resumed {module.name}: re-enqueued embedding")
+                else:
+                    job_id = f"synthesize:{module.id}:{module.current_hash}"
+                    await pool.enqueue_job("synthesize_module", module.id, module.current_hash, _job_id=job_id)
+                    print(f"  resumed {module.name}: re-enqueued synthesis")
 
             await session.execute(
                 update(Module)

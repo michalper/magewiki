@@ -97,8 +97,8 @@ async def test_synthesize_module_writes_doc_and_marks_up_to_date(demo_store_path
     assert doc_row.content_hash == module.current_hash
 
     await db_session.refresh(module)
-    assert module.state == "up_to_date"
-    assert module.analyzed_hash == module.current_hash
+    assert module.state == "embedding"
+    assert module.analyzed_hash is None  # not set until embed_chunks finishes the pipeline
     assert module.last_error is None
 
     # A re-run (e.g. a duplicate job) must hit the cache, not call the LLM again.

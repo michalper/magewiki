@@ -26,6 +26,11 @@ requires_anthropic_key = pytest.mark.skipif(
     reason="set ANTHROPIC_API_KEY to run tests that make real LLM calls",
 )
 
+requires_openai_key = pytest.mark.skipif(
+    not os.environ.get("OPENAI_API_KEY"),
+    reason="set OPENAI_API_KEY to run tests that make real embedding calls",
+)
+
 
 @pytest.fixture
 def demo_store_path() -> Path:
