@@ -3,6 +3,7 @@ from app.analyzer.tags import ALLOWED_TAGS
 
 FILE_SUMMARY_PROMPT_VERSION = "file_summary_v1"
 MODULE_SYNTHESIS_PROMPT_VERSION = "module_synthesis_v1"
+EMBEDDING_PROMPT_VERSION = "embedding_v1"
 
 MAX_FILE_CONTENT_CHARS = 50_000
 

@@ -10,6 +10,8 @@ class Settings(BaseSettings):
     llm_model: str = "anthropic/claude-haiku-5-5"
     llm_monthly_budget_usd: float = 20.0
     anthropic_api_key: str = ""
+    embedding_model: str = "openai/text-embedding-3-small"
+    openai_api_key: str = ""
 
     @property
     def cors_origin_list(self) -> list[str]:

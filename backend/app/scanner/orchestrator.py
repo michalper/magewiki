@@ -9,6 +9,7 @@ from app.models import (
     DiPlugin,
     DiPreference,
     EventObserver,
+    FileAnalysis,
     FileHash,
     Module,
     ModuleDependency,
@@ -207,6 +208,12 @@ async def _persist_module(
         await session.execute(delete(DiPlugin).where(DiPlugin.module_id == module.id))
         await session.execute(delete(EventObserver).where(EventObserver.module_id == module.id))
         await session.execute(delete(FileHash).where(FileHash.module_id == module.id))
+        if diff.removed:
+            await session.execute(
+                delete(FileAnalysis).where(
+                    FileAnalysis.module_id == module.id, FileAnalysis.relative_path.in_(diff.removed)
+                )
+            )
 
     module.setup_version = pm.module_xml.setup_version
     module.composer_name = pm.composer.name if pm.composer else None

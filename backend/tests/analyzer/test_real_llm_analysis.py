@@ -53,8 +53,8 @@ async def test_real_llm_analyzes_demo_store_and_renders_readme(demo_store_path: 
     await synthesize_module(None, module.id, module.current_hash)
 
     await db_session.refresh(module)
-    assert module.state == "up_to_date"
-    assert module.analyzed_hash == module.current_hash
+    assert module.state == "embedding"  # pipeline hands off to embed_chunks (Phase 4) before up_to_date
+    assert module.analyzed_hash is None
 
     doc_row = await db_session.scalar(select(ModuleDocument).where(ModuleDocument.module_id == module.id))
     assert doc_row is not None
