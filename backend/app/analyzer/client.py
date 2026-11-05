@@ -62,6 +62,7 @@ async def _call_tool_use(
             tools=[{"type": "function", "function": {"name": tool_name, "parameters": schema}}],
             tool_choice={"type": "function", "function": {"name": tool_name}},
             max_tokens=max_tokens,
+            _skip_mcp_handler=True,
         )
     except Exception:  # noqa: BLE001 - provider may reject tools/tool_choice entirely
         return None

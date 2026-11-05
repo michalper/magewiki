@@ -21,7 +21,12 @@ lxml = "^5.3"
 arq = "^0.28"
 redis = "^5.2"
 litellm = "^1.108"
-mcp = "^1.1"  # litellm's tool-calling path imports this internally; not declared as its own dependency
+mcp = "^1.1"  # litellm's tool-calling path imports this internally; not declared as its own dependency.
+# litellm.acompletion/completion eagerly imports litellm.responses.mcp.* whenever `tools` is passed,
+# even for plain function-calling with no MCP tools involved — pass `_skip_mcp_handler=True` on every
+# acompletion()/completion() call that uses `tools=` to avoid that path (and its brittle mcp-package-
+# version coupling) entirely. Verified empirically: with _skip_mcp_handler=True, tool-calling works
+# regardless of the installed mcp version.
 pgvector = "^0.5"
 
 # --- Future phases (not installed yet, documented here per architecture scaffold) ---

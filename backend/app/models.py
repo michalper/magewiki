@@ -179,7 +179,9 @@ class AnalysisCache(Base):
     __tablename__ = "analysis_cache"
     __table_args__ = (
         UniqueConstraint("content_hash", "model", "prompt_version", "kind", name="uq_analysis_cache_key"),
-        CheckConstraint("kind IN ('file_summary','module_synthesis','embedding')", name="ck_analysis_cache_kind"),
+        CheckConstraint(
+            "kind IN ('file_summary','module_synthesis','embedding','chat')", name="ck_analysis_cache_kind"
+        ),
     )
 
     id: Mapped[int] = mapped_column(primary_key=True)

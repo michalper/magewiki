@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import Link from "next/link";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -145,7 +146,11 @@ export default function ModulesPage() {
           <TableBody>
             {modulesQuery.data.map((m) => (
               <TableRow key={m.id}>
-                <TableCell className="font-mono">{m.name}</TableCell>
+                <TableCell className="font-mono">
+                  <Link href={`/modules/${m.id}`} className="underline underline-offset-4">
+                    {m.name}
+                  </Link>
+                </TableCell>
                 <TableCell className="font-mono text-zinc-500">
                   {m.composer_name ?? "—"}
                 </TableCell>
