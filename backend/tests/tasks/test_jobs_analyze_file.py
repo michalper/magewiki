@@ -46,7 +46,11 @@ async def test_analyze_file_calls_llm_once_then_uses_cache(demo_store_path: Path
     await db_session.execute(delete(AnalysisCache).where(AnalysisCache.content_hash == file_hash.content_hash))
     await db_session.commit()
 
+    async def _never_exceeded(session):
+        return False
+
     call_log: list[str] = []
+    monkeypatch.setattr("app.tasks.jobs.is_budget_exceeded", _never_exceeded)
     monkeypatch.setattr("app.tasks.jobs.summarize_file", _fake_summarize_file(call_log))
 
     await analyze_file(None, module.id, "etc/module.xml", file_hash.content_hash, module.current_hash)

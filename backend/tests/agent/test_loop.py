@@ -109,6 +109,11 @@ async def test_run_agent_executes_tool_then_streams_final_answer(db_session, mon
     suffix = uuid.uuid4().hex[:8]
     module = await _make_module(db_session, suffix)
 
+    async def _never_exceeded(session):
+        return False
+
+    monkeypatch.setattr(loop_module, "is_budget_exceeded", _never_exceeded)
+
     async def fake_list_modules(session, **kwargs):
         return {"total": 1, "modules": [{"module_id": module.id, "name": module.name}]}
 
@@ -148,6 +153,11 @@ async def test_run_agent_executes_tool_then_streams_final_answer(db_session, mon
 
 @pytest.mark.asyncio
 async def test_run_agent_persists_chat_cost(db_session, monkeypatch):
+    async def _never_exceeded(session):
+        return False
+
+    monkeypatch.setattr(loop_module, "is_budget_exceeded", _never_exceeded)
+
     async def fake_acompletion(**kwargs):
         if kwargs.get("stream"):
             return _fake_stream(["ok"])
@@ -168,6 +178,11 @@ async def test_run_agent_persists_chat_cost(db_session, monkeypatch):
 
 @pytest.mark.asyncio
 async def test_run_agent_stops_after_max_tool_rounds(db_session, monkeypatch):
+    async def _never_exceeded(session):
+        return False
+
+    monkeypatch.setattr(loop_module, "is_budget_exceeded", _never_exceeded)
+
     async def fake_list_modules(session, **kwargs):
         return {"total": 0, "modules": []}
 

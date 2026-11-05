@@ -283,3 +283,139 @@ async def get_module_readme(module_id: int, session: AsyncSession = Depends(get_
         updated_at=doc_row.updated_at,
     )
     return PlainTextResponse(content=markdown, media_type="text/markdown")
+
+
+class GraphNode(BaseModel):
+    id: str
+    label: str
+    kind: str
+    module_id: int | None
+
+
+class GraphEdge(BaseModel):
+    source: str
+    target: str
+    relation: str
+
+
+class DependencyGraphResponse(BaseModel):
+    center_module_id: int
+    center_label: str
+    nodes: list[GraphNode]
+    edges: list[GraphEdge]
+
+
+def _module_node_id(module_id: int) -> str:
+    return f"module:{module_id}"
+
+
+def _external_node_id(name: str) -> str:
+    return f"ext:{name}"
+
+
+@router.get("/modules/{module_id}/graph", response_model=DependencyGraphResponse)
+async def get_module_dependency_graph(
+    module_id: int, session: AsyncSession = Depends(get_session)
+) -> DependencyGraphResponse:
+    """One-hop dependency graph centered on a module: depends_on/overrides/plugins
+    in both directions. for_type/intercepted_type are bare FQCN strings, not
+    foreign keys — resolving which module owns one requires a PhpClass lookup;
+    an unresolved FQCN (core class not yet scanned) becomes an "external" node
+    rather than a guess. See CLAUDE.md anti-hallucination rules.
+    """
+    center = await session.get(Module, module_id)
+    if center is None:
+        raise HTTPException(status_code=404, detail="module not found")
+
+    center_id = _module_node_id(module_id)
+    nodes: dict[str, GraphNode] = {
+        center_id: GraphNode(id=center_id, label=center.name, kind="module", module_id=module_id)
+    }
+    edges: list[GraphEdge] = []
+
+    def add_module_node(m: Module) -> str:
+        node_id = _module_node_id(m.id)
+        if node_id not in nodes:
+            nodes[node_id] = GraphNode(id=node_id, label=m.name, kind="module", module_id=m.id)
+        return node_id
+
+    def add_external_node(name: str) -> str:
+        node_id = _external_node_id(name)
+        if node_id not in nodes:
+            nodes[node_id] = GraphNode(id=node_id, label=name, kind="external", module_id=None)
+        return node_id
+
+    def add_edge(source: str, target: str, relation: str) -> None:
+        if source != target:
+            edges.append(GraphEdge(source=source, target=target, relation=relation))
+
+    own_fqcns = (await session.scalars(select(PhpClass.fqcn).where(PhpClass.module_id == module_id))).all()
+
+    dependencies = (
+        await session.scalars(select(ModuleDependency).where(ModuleDependency.module_id == module_id))
+    ).all()
+    for dep in dependencies:
+        target_module = await session.scalar(select(Module).where(Module.name == dep.depends_on_name))
+        target_id = add_module_node(target_module) if target_module else add_external_node(dep.depends_on_name)
+        add_edge(center_id, target_id, "depends_on")
+
+    reverse_dependencies = (
+        await session.execute(
+            select(Module)
+            .join(ModuleDependency, ModuleDependency.module_id == Module.id)
+            .where(ModuleDependency.depends_on_name == center.name)
+        )
+    ).scalars().all()
+    for source_module in reverse_dependencies:
+        add_edge(add_module_node(source_module), center_id, "depends_on")
+
+    preferences = (await session.scalars(select(DiPreference).where(DiPreference.module_id == module_id))).all()
+    for pref in preferences:
+        owner = (
+            await session.execute(
+                select(Module).join(PhpClass, PhpClass.module_id == Module.id).where(PhpClass.fqcn == pref.for_type)
+            )
+        ).scalars().first()
+        target_id = add_module_node(owner) if owner else add_external_node(pref.for_type)
+        add_edge(center_id, target_id, "overrides")
+
+    if own_fqcns:
+        reverse_preferences = (
+            await session.execute(
+                select(Module)
+                .join(DiPreference, DiPreference.module_id == Module.id)
+                .where(DiPreference.for_type.in_(own_fqcns))
+            )
+        ).scalars().all()
+        for source_module in reverse_preferences:
+            add_edge(add_module_node(source_module), center_id, "overrides")
+
+    plugins = (await session.scalars(select(DiPlugin).where(DiPlugin.module_id == module_id))).all()
+    for plugin in plugins:
+        owner = (
+            await session.execute(
+                select(Module)
+                .join(PhpClass, PhpClass.module_id == Module.id)
+                .where(PhpClass.fqcn == plugin.intercepted_type)
+            )
+        ).scalars().first()
+        target_id = add_module_node(owner) if owner else add_external_node(plugin.intercepted_type)
+        add_edge(center_id, target_id, "plugins")
+
+    if own_fqcns:
+        reverse_plugins = (
+            await session.execute(
+                select(Module)
+                .join(DiPlugin, DiPlugin.module_id == Module.id)
+                .where(DiPlugin.intercepted_type.in_(own_fqcns))
+            )
+        ).scalars().all()
+        for source_module in reverse_plugins:
+            add_edge(add_module_node(source_module), center_id, "plugins")
+
+    return DependencyGraphResponse(
+        center_module_id=module_id,
+        center_label=center.name,
+        nodes=list(nodes.values()),
+        edges=edges,
+    )
