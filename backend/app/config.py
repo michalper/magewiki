@@ -12,6 +12,7 @@ class Settings(BaseSettings):
     anthropic_api_key: str = ""
     embedding_model: str = "openai/text-embedding-3-small"
     openai_api_key: str = ""
+    webhook_hmac_secret: str = ""
 
     @property
     def cors_origin_list(self) -> list[str]:

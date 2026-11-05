@@ -2,6 +2,7 @@ import uuid
 from datetime import UTC, datetime
 
 import pytest
+from sqlalchemy import delete
 
 from app.models import Chunk, Module
 from app.search.hybrid import hybrid_search
@@ -60,6 +61,9 @@ async def test_semantic_signal_orders_chunks_by_cosine_similarity(db_session, mo
 
     assert [r.chunk_id for r in ordered] == [close.id, orthogonal.id, opposite.id]
 
+    await db_session.execute(delete(Module).where(Module.id == module.id))
+    await db_session.commit()
+
 
 @pytest.mark.asyncio
 async def test_keyword_signal_surfaces_matching_chunk(db_session, monkeypatch):
@@ -97,6 +101,9 @@ async def test_keyword_signal_surfaces_matching_chunk(db_session, monkeypatch):
 
     assert ordered[0] == matching.id
 
+    await db_session.execute(delete(Module).where(Module.id == module.id))
+    await db_session.commit()
+
 
 @pytest.mark.asyncio
 async def test_identifier_signal_matches_module_name(db_session, monkeypatch):
@@ -121,3 +128,6 @@ async def test_identifier_signal_matches_module_name(db_session, monkeypatch):
     result_ids = {r.chunk_id for r in results}
 
     assert module_chunk.id in result_ids
+
+    await db_session.execute(delete(Module).where(Module.id == module.id))
+    await db_session.commit()
