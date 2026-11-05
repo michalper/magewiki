@@ -48,6 +48,8 @@ services:
     env_file: .env
     volumes:
       - ./backend:/app
+      - ${MAGEWIKI_ORDO_FIXTURE_PATH:-/dev/null}:${MAGEWIKI_ORDO_FIXTURE_PATH:-/dev/null}:ro
+      - ${MAGEWIKI_MAGENTO_FIXTURE_PATH:-/tmp}:${MAGEWIKI_MAGENTO_FIXTURE_PATH:-/tmp}:ro
     depends_on:
       db:
         condition: service_healthy

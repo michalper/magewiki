@@ -1,4 +1,5 @@
 from datetime import datetime
+from decimal import Decimal
 
 from sqlalchemy import (
     ARRAY,
@@ -7,10 +8,12 @@ from sqlalchemy import (
     DateTime,
     ForeignKey,
     Integer,
+    Numeric,
     Text,
     UniqueConstraint,
     func,
 )
+from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.db import Base
@@ -164,3 +167,52 @@ class FileHash(Base):
     analyzed: Mapped[bool] = mapped_column(Boolean, default=False)
 
     module: Mapped[Module] = relationship(back_populates="file_hashes")
+
+
+class AnalysisCache(Base):
+    __tablename__ = "analysis_cache"
+    __table_args__ = (
+        UniqueConstraint("content_hash", "model", "prompt_version", "kind", name="uq_analysis_cache_key"),
+        CheckConstraint("kind IN ('file_summary','module_synthesis')", name="ck_analysis_cache_kind"),
+    )
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    content_hash: Mapped[str] = mapped_column(Text)
+    model: Mapped[str] = mapped_column(Text)
+    prompt_version: Mapped[str] = mapped_column(Text)
+    kind: Mapped[str] = mapped_column(Text)
+    response: Mapped[dict] = mapped_column(JSONB)
+    tokens_in: Mapped[int] = mapped_column(Integer)
+    tokens_out: Mapped[int] = mapped_column(Integer)
+    cost_usd: Mapped[Decimal] = mapped_column(Numeric(10, 6))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+
+class FileAnalysis(Base):
+    __tablename__ = "file_analyses"
+    __table_args__ = (UniqueConstraint("module_id", "relative_path", name="uq_file_analyses_module_relpath"),)
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    module_id: Mapped[int] = mapped_column(ForeignKey("modules.id", ondelete="CASCADE"))
+    relative_path: Mapped[str] = mapped_column(Text)
+    content_hash: Mapped[str] = mapped_column(Text)
+    cache_id: Mapped[int] = mapped_column(ForeignKey("analysis_cache.id"))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+
+class ModuleDocument(Base):
+    """AI-synthesized module documentation (jsonb). See app.analyzer.schemas.ModuleDoc for the shape."""
+
+    __tablename__ = "module_docs"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    module_id: Mapped[int] = mapped_column(ForeignKey("modules.id", ondelete="CASCADE"), unique=True)
+    content_hash: Mapped[str] = mapped_column(Text)
+    model: Mapped[str] = mapped_column(Text)
+    prompt_version: Mapped[str] = mapped_column(Text)
+    cache_id: Mapped[int] = mapped_column(ForeignKey("analysis_cache.id"))
+    doc: Mapped[dict] = mapped_column(JSONB)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
+    )
