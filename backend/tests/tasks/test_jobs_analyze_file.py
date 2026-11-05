@@ -19,7 +19,7 @@ async def _delete_module_if_present(session, repo_root: str, name: str) -> None:
 
 
 def _fake_summarize_file(call_log: list[str]):
-    async def _fake(relative_path: str, content: str):
+    async def _fake(relative_path: str, content: str, **kwargs):
         call_log.append(relative_path)
         summary = FileSummary(file_summary=f"Summary of {relative_path}", notable_behavior=None)
         result = LlmCallResult(

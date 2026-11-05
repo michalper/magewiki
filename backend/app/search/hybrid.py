@@ -4,6 +4,7 @@ from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.analyzer.embeddings import embed_query_text
+from app.runtime_config import resolve_embedding_config
 
 # Reciprocal Rank Fusion (k=60) over three signals — semantic (pgvector cosine
 # distance), keyword (tsvector full-text), and identifier (pg_trgm fuzzy match on
@@ -82,7 +83,8 @@ async def hybrid_search(
     topk: int = 50,
     trgm_threshold: float = 0.3,
 ) -> list[SearchResult]:
-    query_embedding = await embed_query_text(query_text)
+    embed_config = await resolve_embedding_config(session)
+    query_embedding = await embed_query_text(query_text, model=embed_config.model, api_key=embed_config.api_key)
     vector_literal = "[" + ",".join(str(v) for v in query_embedding) + "]"
 
     rows = await session.execute(

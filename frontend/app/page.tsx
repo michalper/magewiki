@@ -50,6 +50,9 @@ export default function Home() {
         <Link href="/chat" className="text-sm underline underline-offset-4">
           Chat with the agent →
         </Link>
+        <Link href="/settings" className="text-sm underline underline-offset-4">
+          Settings →
+        </Link>
       </div>
       <div className="flex flex-col items-center gap-2">
         <p>

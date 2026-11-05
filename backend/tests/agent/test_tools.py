@@ -72,7 +72,7 @@ async def test_search_modules_wraps_hybrid_search(db_session, monkeypatch):
     db_session.add(chunk)
     await db_session.commit()
 
-    async def _fake_embed(q):
+    async def _fake_embed(q, **kwargs):
         return _vector({0: 1.0})
 
     monkeypatch.setattr("app.search.hybrid.embed_query_text", _fake_embed)

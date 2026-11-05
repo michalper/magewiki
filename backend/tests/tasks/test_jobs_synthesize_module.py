@@ -26,7 +26,7 @@ async def _scan_demo_store(demo_store_path: Path, session) -> Module:
 
 
 def _fake_summarize_file(call_log: list[str]):
-    async def _fake(relative_path: str, content: str):
+    async def _fake(relative_path: str, content: str, **kwargs):
         call_log.append(relative_path)
         summary = FileSummary(file_summary=f"Summary of {relative_path}", notable_behavior=None)
         result = LlmCallResult(
@@ -78,7 +78,7 @@ async def test_synthesize_module_writes_doc_and_marks_up_to_date(demo_store_path
     call_log: list[str] = []
     fake_doc = _fake_doc()
 
-    async def _fake_synthesize(facts, known_sources):
+    async def _fake_synthesize(facts, known_sources, **kwargs):
         call_log.append("called")
         result = LlmCallResult(
             response_json=fake_doc.model_dump(mode="json"), tokens_in=500, tokens_out=100, cost_usd=Decimal("0.01")
@@ -119,7 +119,7 @@ async def test_synthesize_module_pauses_on_budget_exceeded(demo_store_path: Path
 
     call_log: list[str] = []
 
-    async def _fake_synthesize(facts, known_sources):
+    async def _fake_synthesize(facts, known_sources, **kwargs):
         call_log.append("called")
         raise AssertionError("should not be called when budget is exceeded")
 
