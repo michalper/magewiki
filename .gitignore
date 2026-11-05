@@ -27,3 +27,7 @@ npm-debug.log*
 
 # Internal planning docs (not for the public repo)
 MageWiki_AI_Dokumentacja_Koncepcyjna.pdf
+
+# Generated eval reports (regenerated per run/PR, not source)
+backend/app/evaluation/report/*
+!backend/app/evaluation/report/.gitkeep
