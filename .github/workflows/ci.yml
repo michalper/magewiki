@@ -1,0 +1,107 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+  pull-requests: write
+
+env:
+  DATABASE_URL: postgresql+asyncpg://magewiki:changeme@localhost:5432/magewiki
+  REDIS_URL: redis://localhost:6379/0
+
+jobs:
+  backend:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: pgvector/pgvector:pg16
+        env:
+          POSTGRES_USER: magewiki
+          POSTGRES_PASSWORD: changeme
+          POSTGRES_DB: magewiki
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U magewiki"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 5
+      redis:
+        image: redis:7-alpine
+        ports: ["6379:6379"]
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 5
+    defaults:
+      run:
+        working-directory: backend
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - run: pip install "poetry==1.8.3"
+      - run: poetry install --no-root
+      - run: poetry run alembic upgrade head
+      - run: poetry run ruff check .
+      - run: poetry run mypy app
+        continue-on-error: true
+      - run: poetry run pytest tests/ -v
+
+  frontend:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: frontend
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "26"
+      - run: npm install
+      - run: npm run lint
+      - run: npm run build
+
+  docker-build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: docker build -t magewiki-backend-ci ./backend
+      - run: docker build -t magewiki-frontend-ci ./frontend
+
+  rag-eval-comment:
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: pgvector/pgvector:pg16
+        env:
+          POSTGRES_USER: magewiki
+          POSTGRES_PASSWORD: changeme
+          POSTGRES_DB: magewiki
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U magewiki"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 5
+    defaults:
+      run:
+        working-directory: backend
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - run: pip install "poetry==1.8.3"
+      - run: poetry install --no-root
+      - run: poetry run alembic upgrade head
+      - run: poetry run python -m app.evaluation.run_ci_eval
+      - uses: marocchino/sticky-pull-request-comment@v2
+        with:
+          path: backend/app/evaluation/report/ci_eval_comment.md
