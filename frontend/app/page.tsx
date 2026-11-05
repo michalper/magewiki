@@ -40,12 +40,17 @@ export default function Home() {
     <div className="flex flex-col flex-1 items-center justify-center gap-6 bg-zinc-50 font-sans dark:bg-black">
       <h1 className="text-3xl font-semibold tracking-tight">MageWiki-AI</h1>
       <p className="max-w-md text-center text-zinc-600 dark:text-zinc-400">
-        Phase 1 — module scanner. Analysis and chat agent land in later
-        phases.
+        An AI catalog and chat agent for Magento 2 modules — scan, analyze,
+        and ask natural-language questions with cited sources.
       </p>
-      <Link href="/modules" className="text-sm underline underline-offset-4">
-        View scanned modules →
-      </Link>
+      <div className="flex gap-4">
+        <Link href="/modules" className="text-sm underline underline-offset-4">
+          View scanned modules →
+        </Link>
+        <Link href="/chat" className="text-sm underline underline-offset-4">
+          Chat with the agent →
+        </Link>
+      </div>
       <div className="flex flex-col items-center gap-2">
         <p>
           API status:{" "}
