@@ -91,7 +91,7 @@ async def test_hybrid_search_ranks_real_embeddings_by_meaning(demo_store_path: P
 
     fake_doc = _fake_doc()
 
-    async def _fake_synthesize(facts, known_sources):
+    async def _fake_synthesize(facts, known_sources, **kwargs):
         result = LlmCallResult(
             response_json=fake_doc.model_dump(mode="json"), tokens_in=0, tokens_out=0, cost_usd=Decimal("0")
         )

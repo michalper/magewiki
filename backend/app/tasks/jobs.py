@@ -21,7 +21,6 @@ from app.analyzer.prompts import (
 )
 from app.analyzer.schemas import ModuleDoc
 from app.analyzer.tags import derive_parser_tags, filter_tags, merge_tags
-from app.config import settings
 from app.db import async_session_factory
 from app.models import (
     AnalysisCache,
@@ -33,6 +32,7 @@ from app.models import (
     PhpClass,
     PhpClassMethod,
 )
+from app.runtime_config import resolve_embedding_config, resolve_llm_config
 from app.scanner.orchestrator import ScanAlreadyInProgressError, scan_repository
 from app.tasks.queue import get_arq_pool
 
@@ -104,8 +104,9 @@ async def analyze_file(
             if module is None or module.current_hash != module_current_hash:
                 return  # stale job from a superseded scan generation
 
+            llm_config = await resolve_llm_config(session)
             cached = await _lookup_cache(
-                session, content_hash, settings.llm_model, FILE_SUMMARY_PROMPT_VERSION, "file_summary"
+                session, content_hash, llm_config.model, FILE_SUMMARY_PROMPT_VERSION, "file_summary"
             )
 
             if cached is None:
@@ -120,10 +121,12 @@ async def analyze_file(
 
                 file_path = Path(module.repo_root) / module.path / relative_path
                 content = file_path.read_text(encoding="utf-8", errors="replace")
-                _summary, result = await summarize_file(relative_path, content)
+                _summary, result = await summarize_file(
+                    relative_path, content, model=llm_config.model, api_key=llm_config.api_key
+                )
 
                 cache_id = await _get_or_create_cache_entry(
-                    session, content_hash, settings.llm_model, FILE_SUMMARY_PROMPT_VERSION, "file_summary", result
+                    session, content_hash, llm_config.model, FILE_SUMMARY_PROMPT_VERSION, "file_summary", result
                 )
             else:
                 cache_id = cached.id
@@ -193,8 +196,9 @@ async def synthesize_module(ctx: dict, module_id: int, module_current_hash: str)
             if module is None or module.current_hash != module_current_hash:
                 return  # stale job from a superseded scan generation
 
+            llm_config = await resolve_llm_config(session)
             cached = await _lookup_cache(
-                session, module_current_hash, settings.llm_model, MODULE_SYNTHESIS_PROMPT_VERSION, "module_synthesis"
+                session, module_current_hash, llm_config.model, MODULE_SYNTHESIS_PROMPT_VERSION, "module_synthesis"
             )
 
             if cached is None:
@@ -209,7 +213,9 @@ async def synthesize_module(ctx: dict, module_id: int, module_current_hash: str)
 
                 facts = await gather_module_facts(session, module_id)
                 sources = known_sources(facts)
-                doc, result = await synthesize_module_doc(facts, sources)
+                doc, result = await synthesize_module_doc(
+                    facts, sources, model=llm_config.model, api_key=llm_config.api_key
+                )
 
                 parser_tags = derive_parser_tags(facts.dependencies)
                 ai_tags, rejected = filter_tags(doc.tags)
@@ -221,7 +227,7 @@ async def synthesize_module(ctx: dict, module_id: int, module_current_hash: str)
                 cache_id = await _get_or_create_cache_entry(
                     session,
                     module_current_hash,
-                    settings.llm_model,
+                    llm_config.model,
                     MODULE_SYNTHESIS_PROMPT_VERSION,
                     "module_synthesis",
                     result,
@@ -235,7 +241,7 @@ async def synthesize_module(ctx: dict, module_id: int, module_current_hash: str)
                 .values(
                     module_id=module_id,
                     content_hash=module_current_hash,
-                    model=settings.llm_model,
+                    model=llm_config.model,
                     prompt_version=MODULE_SYNTHESIS_PROMPT_VERSION,
                     cache_id=cache_id,
                     doc=response_json,
@@ -244,7 +250,7 @@ async def synthesize_module(ctx: dict, module_id: int, module_current_hash: str)
                     index_elements=["module_id"],
                     set_={
                         "content_hash": module_current_hash,
-                        "model": settings.llm_model,
+                        "model": llm_config.model,
                         "prompt_version": MODULE_SYNTHESIS_PROMPT_VERSION,
                         "cache_id": cache_id,
                         "doc": response_json,
@@ -329,11 +335,12 @@ async def embed_chunks(ctx: dict, module_id: int, module_current_hash: str) -> N
             hashed_specs = [(ct, rp, mid, txt, hash_text(txt)) for ct, rp, mid, txt in specs]
             hashes = [h for *_, h in hashed_specs]
 
+            embed_config = await resolve_embedding_config(session)
             cached_rows = (
                 await session.scalars(
                     select(AnalysisCache).where(
                         AnalysisCache.content_hash.in_(hashes),
-                        AnalysisCache.model == settings.embedding_model,
+                        AnalysisCache.model == embed_config.model,
                         AnalysisCache.prompt_version == EMBEDDING_PROMPT_VERSION,
                         AnalysisCache.kind == "embedding",
                     )
@@ -353,9 +360,9 @@ async def embed_chunks(ctx: dict, module_id: int, module_current_hash: str) -> N
                     return
 
                 for _ct, _rp, _mid, txt, h in misses:
-                    vector, result = await embed_text(txt)
+                    vector, result = await embed_text(txt, model=embed_config.model, api_key=embed_config.api_key)
                     await _get_or_create_cache_entry(
-                        session, h, settings.embedding_model, EMBEDDING_PROMPT_VERSION, "embedding", result
+                        session, h, embed_config.model, EMBEDDING_PROMPT_VERSION, "embedding", result
                     )
                     embedding_by_hash[h] = vector
 

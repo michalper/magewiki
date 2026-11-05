@@ -6,15 +6,14 @@ import litellm
 from app.analyzer.client import LlmCallResult
 from app.analyzer.pricing import compute_cost_usd
 from app.analyzer.schemas import ModuleDoc
-from app.config import settings
 
 
 def hash_text(text: str) -> str:
     return hashlib.sha256(text.encode("utf-8")).hexdigest()
 
 
-async def embed_text(text: str) -> tuple[list[float], LlmCallResult]:
-    response = await litellm.aembedding(model=settings.embedding_model, input=[text])
+async def embed_text(text: str, *, model: str, api_key: str | None) -> tuple[list[float], LlmCallResult]:
+    response = await litellm.aembedding(model=model, api_key=api_key, input=[text])
     vector = response.data[0]["embedding"]
     tokens_in = response.usage.prompt_tokens
 
@@ -23,7 +22,7 @@ async def embed_text(text: str) -> tuple[list[float], LlmCallResult]:
     except Exception:  # noqa: BLE001 - cost computation must never block embedding
         cost = None
     if not cost or cost <= 0:
-        cost = compute_cost_usd(settings.embedding_model, tokens_in, 0)
+        cost = compute_cost_usd(model, tokens_in, 0)
 
     result = LlmCallResult(
         response_json={"embedding": vector},
@@ -34,8 +33,8 @@ async def embed_text(text: str) -> tuple[list[float], LlmCallResult]:
     return vector, result
 
 
-async def embed_query_text(query: str) -> list[float]:
-    vector, _result = await embed_text(query)
+async def embed_query_text(query: str, *, model: str, api_key: str | None) -> list[float]:
+    vector, _result = await embed_text(query, model=model, api_key=api_key)
     return vector
 
 

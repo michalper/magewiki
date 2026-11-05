@@ -26,7 +26,7 @@ async def _scan_demo_store(demo_store_path: Path, session) -> Module:
 
 
 def _fake_summarize_file():
-    async def _fake(relative_path: str, content: str):
+    async def _fake(relative_path: str, content: str, **kwargs):
         summary = FileSummary(file_summary=f"Summary of {relative_path}", notable_behavior=None)
         result = LlmCallResult(
             response_json=summary.model_dump(), tokens_in=100, tokens_out=20, cost_usd=Decimal("0.001")
@@ -52,7 +52,7 @@ def _fake_doc() -> ModuleDoc:
 
 
 def _fake_embed_text(call_log: list[str]):
-    async def _fake(text: str):
+    async def _fake(text: str, **kwargs):
         call_log.append(text)
         vector = [0.0] * 1536
         vector[len(text) % 1536] = 1.0
@@ -81,7 +81,7 @@ async def _reach_embedding_state(demo_store_path: Path, session, monkeypatch) ->
 
     fake_doc = _fake_doc()
 
-    async def _fake_synthesize(facts, known_sources):
+    async def _fake_synthesize(facts, known_sources, **kwargs):
         result = LlmCallResult(
             response_json=fake_doc.model_dump(mode="json"), tokens_in=500, tokens_out=100, cost_usd=Decimal("0.01")
         )

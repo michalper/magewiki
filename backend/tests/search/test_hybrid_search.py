@@ -50,7 +50,7 @@ async def test_semantic_signal_orders_chunks_by_cosine_similarity(db_session, mo
     db_session.add_all([close, orthogonal, opposite])
     await db_session.commit()
 
-    async def _fake_embed(q):
+    async def _fake_embed(q, **kwargs):
         return _vector({0: 1.0})
 
     monkeypatch.setattr("app.search.hybrid.embed_query_text", _fake_embed)
@@ -85,7 +85,7 @@ async def test_keyword_signal_surfaces_matching_chunk(db_session, monkeypatch):
     db_session.add_all([matching, unrelated])
     await db_session.commit()
 
-    async def _fake_embed(q):
+    async def _fake_embed(q, **kwargs):
         return _vector({0: 1.0})
 
     monkeypatch.setattr("app.search.hybrid.embed_query_text", _fake_embed)
@@ -119,7 +119,7 @@ async def test_identifier_signal_matches_module_name(db_session, monkeypatch):
     db_session.add(module_chunk)
     await db_session.commit()
 
-    async def _fake_embed(q):
+    async def _fake_embed(q, **kwargs):
         return _vector({})
 
     monkeypatch.setattr("app.search.hybrid.embed_query_text", _fake_embed)

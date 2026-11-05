@@ -260,3 +260,22 @@ class Chunk(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
     module: Mapped[Module] = relationship(back_populates="chunks")
+
+
+class RuntimeLlmConfig(Base):
+    """BYOK override for the LLM/embedding model+key, settable via the /settings
+    UI without editing .env or restarting containers. Single-row table (id=1) —
+    absence of a row, or a null field, means "use the .env default" (see
+    app/runtime_config.py). See CLAUDE.md "LLM" row: BYOK.
+    """
+
+    __tablename__ = "runtime_llm_config"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    llm_model: Mapped[str | None] = mapped_column(Text)
+    llm_api_key: Mapped[str | None] = mapped_column(Text)
+    embedding_model: Mapped[str | None] = mapped_column(Text)
+    embedding_api_key: Mapped[str | None] = mapped_column(Text)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
+    )

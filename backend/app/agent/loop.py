@@ -12,8 +12,8 @@ from app.agent.tools import TOOL_FUNCTIONS, TOOL_SCHEMAS
 from app.analyzer.budget import is_budget_exceeded
 from app.analyzer.pricing import compute_cost_usd
 from app.analyzer.prompts import CHAT_PROMPT_VERSION
-from app.config import settings
 from app.models import AnalysisCache
+from app.runtime_config import resolve_llm_config
 
 MAX_TOOL_ROUNDS = 6
 
@@ -25,7 +25,7 @@ class Source:
     relative_path: str | None = None
 
 
-def _turn_cost(response) -> tuple[int, int, Decimal]:
+def _turn_cost(response, model: str) -> tuple[int, int, Decimal]:
     tokens_in = response.usage.prompt_tokens
     tokens_out = response.usage.completion_tokens
     try:
@@ -33,7 +33,7 @@ def _turn_cost(response) -> tuple[int, int, Decimal]:
     except Exception:  # noqa: BLE001 - cost computation must never block the chat response
         cost = None
     if not cost or cost <= 0:
-        cost = compute_cost_usd(settings.llm_model, tokens_in, tokens_out)
+        cost = compute_cost_usd(model, tokens_in, tokens_out)
     return tokens_in, tokens_out, Decimal(str(cost))
 
 
@@ -80,6 +80,8 @@ async def run_agent(session: AsyncSession, messages: list[dict], audience: str) 
         yield {"event": "error", "detail": "Monthly LLM budget exceeded — cannot answer right now."}
         return
 
+    llm_config = await resolve_llm_config(session)
+
     history = [{"role": "system", "content": build_system_prompt(audience)}, *messages]
     sources: dict[tuple, Source] = {}
     tokens_in_total = 0
@@ -88,13 +90,14 @@ async def run_agent(session: AsyncSession, messages: list[dict], audience: str) 
 
     for _round in range(MAX_TOOL_ROUNDS):
         response = await litellm.acompletion(
-            model=settings.llm_model,
+            model=llm_config.model,
+            api_key=llm_config.api_key,
             messages=history,
             tools=TOOL_SCHEMAS,
             tool_choice="auto",
             _skip_mcp_handler=True,
         )
-        tokens_in, tokens_out, cost = _turn_cost(response)
+        tokens_in, tokens_out, cost = _turn_cost(response, llm_config.model)
         tokens_in_total += tokens_in
         tokens_out_total += tokens_out
         cost_total += cost
@@ -132,7 +135,8 @@ async def run_agent(session: AsyncSession, messages: list[dict], audience: str) 
 
     history.append({"role": "user", "content": FINAL_ANSWER_INSTRUCTION})
     stream = await litellm.acompletion(
-        model=settings.llm_model,
+        model=llm_config.model,
+        api_key=llm_config.api_key,
         messages=history,
         # Keep the same tools list as the tool-calling rounds above: Anthropic binds a
         # "thinking" block's signature to the exact tools list it was generated with, and
@@ -155,13 +159,13 @@ async def run_agent(session: AsyncSession, messages: list[dict], audience: str) 
             tokens_out_total += usage.completion_tokens
             cost = getattr(usage, "cost", None)
             if not cost:
-                cost = compute_cost_usd(settings.llm_model, usage.prompt_tokens, usage.completion_tokens)
+                cost = compute_cost_usd(llm_config.model, usage.prompt_tokens, usage.completion_tokens)
             cost_total += Decimal(str(cost))
 
     session.add(
         AnalysisCache(
             content_hash=f"chat:{uuid.uuid4()}",
-            model=settings.llm_model,
+            model=llm_config.model,
             prompt_version=CHAT_PROMPT_VERSION,
             kind="chat",
             response={},

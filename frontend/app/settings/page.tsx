@@ -1,0 +1,158 @@
+"use client";
+
+import { useState } from "react";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Badge } from "@/components/ui/badge";
+import type { components } from "@/lib/api-types";
+
+type LlmSettingsResponse = components["schemas"]["LlmSettingsResponse"];
+type LlmSettingsUpdate = components["schemas"]["LlmSettingsUpdate"];
+
+const apiUrl = () => process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000";
+
+async function fetchSettings(): Promise<LlmSettingsResponse> {
+  const res = await fetch(`${apiUrl()}/settings/llm`);
+  if (!res.ok) throw new Error(`API responded with ${res.status}`);
+  return res.json();
+}
+
+async function patchSettings(update: LlmSettingsUpdate): Promise<LlmSettingsResponse> {
+  const res = await fetch(`${apiUrl()}/settings/llm`, {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(update),
+  });
+  if (!res.ok) throw new Error(`API responded with ${res.status}`);
+  return res.json();
+}
+
+function KeyBadge({ configured }: { configured: boolean }) {
+  return configured ? (
+    <Badge variant="default">custom key set</Badge>
+  ) : (
+    <Badge variant="outline">using .env default</Badge>
+  );
+}
+
+export default function SettingsPage() {
+  const queryClient = useQueryClient();
+  const settingsQuery = useQuery({ queryKey: ["llm-settings"], queryFn: fetchSettings });
+
+  const [llmModel, setLlmModel] = useState("");
+  const [llmApiKey, setLlmApiKey] = useState("");
+  const [embeddingModel, setEmbeddingModel] = useState("");
+  const [embeddingApiKey, setEmbeddingApiKey] = useState("");
+
+  const patchMutation = useMutation({
+    mutationFn: patchSettings,
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["llm-settings"] });
+      setLlmApiKey("");
+      setEmbeddingApiKey("");
+    },
+  });
+
+  function saveLlm() {
+    const update: LlmSettingsUpdate = {};
+    if (llmModel.trim()) update.llm_model = llmModel.trim();
+    if (llmApiKey.trim()) update.llm_api_key = llmApiKey.trim();
+    if (Object.keys(update).length > 0) patchMutation.mutate(update);
+  }
+
+  function saveEmbedding() {
+    const update: LlmSettingsUpdate = {};
+    if (embeddingModel.trim()) update.embedding_model = embeddingModel.trim();
+    if (embeddingApiKey.trim()) update.embedding_api_key = embeddingApiKey.trim();
+    if (Object.keys(update).length > 0) patchMutation.mutate(update);
+  }
+
+  return (
+    <div className="flex flex-col flex-1 gap-8 p-8 max-w-2xl mx-auto w-full">
+      <h1 className="text-2xl font-semibold tracking-tight">Settings — BYOK</h1>
+      <p className="text-sm text-zinc-500">
+        Override the model and API key used for chat/analysis and embeddings, without editing{" "}
+        <code>.env</code> or restarting containers. Leaving a field blank keeps the current value;
+        use &ldquo;Reset to .env default&rdquo; to clear an override.
+      </p>
+
+      {settingsQuery.isLoading && <p>Loading...</p>}
+      {settingsQuery.isError && <p className="text-red-600">Failed to load settings.</p>}
+
+      {settingsQuery.data && (
+        <>
+          <section className="flex flex-col gap-3 border rounded-lg p-4">
+            <div className="flex items-center justify-between">
+              <h2 className="font-medium">LLM (chat / analysis)</h2>
+              <KeyBadge configured={settingsQuery.data.llm_key_configured} />
+            </div>
+            <p className="text-sm text-zinc-500">
+              Current: <span className="font-mono">{settingsQuery.data.llm_model}</span>
+            </p>
+            <Input
+              value={llmModel}
+              onChange={(e) => setLlmModel(e.target.value)}
+              placeholder="e.g. anthropic/claude-haiku-5-5"
+              className="font-mono"
+            />
+            <Input
+              type="password"
+              value={llmApiKey}
+              onChange={(e) => setLlmApiKey(e.target.value)}
+              placeholder="API key — leave blank to keep current key"
+            />
+            <div className="flex gap-2">
+              <Button onClick={saveLlm} disabled={patchMutation.isPending}>
+                Save
+              </Button>
+              <Button
+                variant="outline"
+                onClick={() => patchMutation.mutate({ llm_model: null, llm_api_key: null })}
+                disabled={patchMutation.isPending}
+              >
+                Reset to .env default
+              </Button>
+            </div>
+          </section>
+
+          <section className="flex flex-col gap-3 border rounded-lg p-4">
+            <div className="flex items-center justify-between">
+              <h2 className="font-medium">Embeddings</h2>
+              <KeyBadge configured={settingsQuery.data.embedding_key_configured} />
+            </div>
+            <p className="text-sm text-zinc-500">
+              Current: <span className="font-mono">{settingsQuery.data.embedding_model}</span>
+            </p>
+            <Input
+              value={embeddingModel}
+              onChange={(e) => setEmbeddingModel(e.target.value)}
+              placeholder="e.g. openai/text-embedding-3-small"
+              className="font-mono"
+            />
+            <Input
+              type="password"
+              value={embeddingApiKey}
+              onChange={(e) => setEmbeddingApiKey(e.target.value)}
+              placeholder="API key — leave blank to keep current key"
+            />
+            <div className="flex gap-2">
+              <Button onClick={saveEmbedding} disabled={patchMutation.isPending}>
+                Save
+              </Button>
+              <Button
+                variant="outline"
+                onClick={() => patchMutation.mutate({ embedding_model: null, embedding_api_key: null })}
+                disabled={patchMutation.isPending}
+              >
+                Reset to .env default
+              </Button>
+            </div>
+          </section>
+
+          {patchMutation.isError && <p className="text-red-600 text-sm">Failed to save settings.</p>}
+        </>
+      )}
+    </div>
+  );
+}
