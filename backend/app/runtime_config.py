@@ -5,24 +5,29 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.config import settings
 from app.models import RuntimeLlmConfig
 
+_OLLAMA_PREFIXES = ("ollama/", "ollama_chat/")
+
 
 @dataclass
 class ResolvedModel:
     model: str
     api_key: str | None
+    api_base: str | None
 
 
 async def resolve_llm_config(session: AsyncSession) -> ResolvedModel:
     row = await session.get(RuntimeLlmConfig, 1)
-    return ResolvedModel(
-        model=(row.llm_model if row else None) or settings.llm_model,
-        api_key=row.llm_api_key if row else None,
+    model = (row.llm_model if row else None) or settings.llm_model
+    api_base = (row.llm_api_base if row else None) or (
+        settings.ollama_base_url if model.startswith(_OLLAMA_PREFIXES) else None
     )
+    return ResolvedModel(model=model, api_key=(row.llm_api_key if row else None), api_base=api_base or None)
 
 
 async def resolve_embedding_config(session: AsyncSession) -> ResolvedModel:
     row = await session.get(RuntimeLlmConfig, 1)
-    return ResolvedModel(
-        model=(row.embedding_model if row else None) or settings.embedding_model,
-        api_key=row.embedding_api_key if row else None,
+    model = (row.embedding_model if row else None) or settings.embedding_model
+    api_base = (row.embedding_api_base if row else None) or (
+        settings.ollama_base_url if model.startswith(_OLLAMA_PREFIXES) else None
     )
+    return ResolvedModel(model=model, api_key=(row.embedding_api_key if row else None), api_base=api_base or None)

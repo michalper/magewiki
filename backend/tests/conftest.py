@@ -1,10 +1,22 @@
 import os
+import urllib.request
 from pathlib import Path
 
 import pytest
 import pytest_asyncio
 
+from app.config import settings
 from app.db import async_session_factory
+
+
+def _ollama_reachable() -> bool:
+    if not settings.ollama_base_url:
+        return False
+    try:
+        urllib.request.urlopen(f"{settings.ollama_base_url}/api/tags", timeout=2)
+        return True
+    except OSError:
+        return False
 
 FIXTURES_DIR = Path(__file__).parent / "fixtures"
 
@@ -29,6 +41,11 @@ requires_anthropic_key = pytest.mark.skipif(
 requires_openai_key = pytest.mark.skipif(
     not os.environ.get("OPENAI_API_KEY"),
     reason="set OPENAI_API_KEY to run tests that make real embedding calls",
+)
+
+requires_ollama = pytest.mark.skipif(
+    not _ollama_reachable(),
+    reason="set OLLAMA_BASE_URL to a reachable local Ollama server to run this test",
 )
 
 

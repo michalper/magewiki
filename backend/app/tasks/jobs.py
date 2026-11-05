@@ -122,7 +122,11 @@ async def analyze_file(
                 file_path = Path(module.repo_root) / module.path / relative_path
                 content = file_path.read_text(encoding="utf-8", errors="replace")
                 _summary, result = await summarize_file(
-                    relative_path, content, model=llm_config.model, api_key=llm_config.api_key
+                    relative_path,
+                    content,
+                    model=llm_config.model,
+                    api_key=llm_config.api_key,
+                    api_base=llm_config.api_base,
                 )
 
                 cache_id = await _get_or_create_cache_entry(
@@ -214,7 +218,11 @@ async def synthesize_module(ctx: dict, module_id: int, module_current_hash: str)
                 facts = await gather_module_facts(session, module_id)
                 sources = known_sources(facts)
                 doc, result = await synthesize_module_doc(
-                    facts, sources, model=llm_config.model, api_key=llm_config.api_key
+                    facts,
+                    sources,
+                    model=llm_config.model,
+                    api_key=llm_config.api_key,
+                    api_base=llm_config.api_base,
                 )
 
                 parser_tags = derive_parser_tags(facts.dependencies)
@@ -360,7 +368,9 @@ async def embed_chunks(ctx: dict, module_id: int, module_current_hash: str) -> N
                     return
 
                 for _ct, _rp, _mid, txt, h in misses:
-                    vector, result = await embed_text(txt, model=embed_config.model, api_key=embed_config.api_key)
+                    vector, result = await embed_text(
+                        txt, model=embed_config.model, api_key=embed_config.api_key, api_base=embed_config.api_base
+                    )
                     await _get_or_create_cache_entry(
                         session, h, embed_config.model, EMBEDDING_PROMPT_VERSION, "embedding", result
                     )

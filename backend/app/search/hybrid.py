@@ -84,7 +84,9 @@ async def hybrid_search(
     trgm_threshold: float = 0.3,
 ) -> list[SearchResult]:
     embed_config = await resolve_embedding_config(session)
-    query_embedding = await embed_query_text(query_text, model=embed_config.model, api_key=embed_config.api_key)
+    query_embedding = await embed_query_text(
+        query_text, model=embed_config.model, api_key=embed_config.api_key, api_base=embed_config.api_base
+    )
     vector_literal = "[" + ",".join(str(v) for v in query_embedding) + "]"
 
     rows = await session.execute(

@@ -48,11 +48,12 @@ testpaths = ["tests"]
 asyncio_mode = "auto"
 asyncio_default_fixture_loop_scope = "session"
 asyncio_default_test_loop_scope = "session"
-addopts = "-m 'not slow and not llm and not embeddings'"
+addopts = "-m 'not slow and not llm and not embeddings and not ollama'"
 markers = [
     "slow: real-fixture tests against large external checkouts",
     "llm: tests that make real Anthropic API calls and spend real budget — run explicitly with `pytest -m llm`",
     "embeddings: tests that make real OpenAI embedding calls and spend real budget — run explicitly with `pytest -m embeddings`",
+    "ollama: tests that call a real local Ollama server — free, but require OLLAMA_BASE_URL reachable; run explicitly with `pytest -m ollama`",
 ]
 
 [build-system]

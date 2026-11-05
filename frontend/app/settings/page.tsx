@@ -42,8 +42,10 @@ export default function SettingsPage() {
 
   const [llmModel, setLlmModel] = useState("");
   const [llmApiKey, setLlmApiKey] = useState("");
+  const [llmApiBase, setLlmApiBase] = useState("");
   const [embeddingModel, setEmbeddingModel] = useState("");
   const [embeddingApiKey, setEmbeddingApiKey] = useState("");
+  const [embeddingApiBase, setEmbeddingApiBase] = useState("");
 
   const patchMutation = useMutation({
     mutationFn: patchSettings,
@@ -58,6 +60,7 @@ export default function SettingsPage() {
     const update: LlmSettingsUpdate = {};
     if (llmModel.trim()) update.llm_model = llmModel.trim();
     if (llmApiKey.trim()) update.llm_api_key = llmApiKey.trim();
+    if (llmApiBase.trim()) update.llm_api_base = llmApiBase.trim();
     if (Object.keys(update).length > 0) patchMutation.mutate(update);
   }
 
@@ -65,6 +68,7 @@ export default function SettingsPage() {
     const update: LlmSettingsUpdate = {};
     if (embeddingModel.trim()) update.embedding_model = embeddingModel.trim();
     if (embeddingApiKey.trim()) update.embedding_api_key = embeddingApiKey.trim();
+    if (embeddingApiBase.trim()) update.embedding_api_base = embeddingApiBase.trim();
     if (Object.keys(update).length > 0) patchMutation.mutate(update);
   }
 
@@ -89,11 +93,17 @@ export default function SettingsPage() {
             </div>
             <p className="text-sm text-zinc-500">
               Current: <span className="font-mono">{settingsQuery.data.llm_model}</span>
+              {settingsQuery.data.llm_api_base && (
+                <>
+                  {" "}
+                  @ <span className="font-mono">{settingsQuery.data.llm_api_base}</span>
+                </>
+              )}
             </p>
             <Input
               value={llmModel}
               onChange={(e) => setLlmModel(e.target.value)}
-              placeholder="e.g. anthropic/claude-haiku-5-5"
+              placeholder="e.g. anthropic/claude-haiku-5-5, or ollama_chat/llama3.1"
               className="font-mono"
             />
             <Input
@@ -102,13 +112,21 @@ export default function SettingsPage() {
               onChange={(e) => setLlmApiKey(e.target.value)}
               placeholder="API key — leave blank to keep current key"
             />
+            <Input
+              value={llmApiBase}
+              onChange={(e) => setLlmApiBase(e.target.value)}
+              placeholder="API base URL (optional — for Ollama, e.g. http://host.docker.internal:11434)"
+              className="font-mono"
+            />
             <div className="flex gap-2">
               <Button onClick={saveLlm} disabled={patchMutation.isPending}>
                 Save
               </Button>
               <Button
                 variant="outline"
-                onClick={() => patchMutation.mutate({ llm_model: null, llm_api_key: null })}
+                onClick={() =>
+                  patchMutation.mutate({ llm_model: null, llm_api_key: null, llm_api_base: null })
+                }
                 disabled={patchMutation.isPending}
               >
                 Reset to .env default
@@ -123,6 +141,12 @@ export default function SettingsPage() {
             </div>
             <p className="text-sm text-zinc-500">
               Current: <span className="font-mono">{settingsQuery.data.embedding_model}</span>
+              {settingsQuery.data.embedding_api_base && (
+                <>
+                  {" "}
+                  @ <span className="font-mono">{settingsQuery.data.embedding_api_base}</span>
+                </>
+              )}
             </p>
             <Input
               value={embeddingModel}
@@ -136,13 +160,25 @@ export default function SettingsPage() {
               onChange={(e) => setEmbeddingApiKey(e.target.value)}
               placeholder="API key — leave blank to keep current key"
             />
+            <Input
+              value={embeddingApiBase}
+              onChange={(e) => setEmbeddingApiBase(e.target.value)}
+              placeholder="API base URL (optional — for Ollama)"
+              className="font-mono"
+            />
             <div className="flex gap-2">
               <Button onClick={saveEmbedding} disabled={patchMutation.isPending}>
                 Save
               </Button>
               <Button
                 variant="outline"
-                onClick={() => patchMutation.mutate({ embedding_model: null, embedding_api_key: null })}
+                onClick={() =>
+                  patchMutation.mutate({
+                    embedding_model: null,
+                    embedding_api_key: null,
+                    embedding_api_base: null,
+                  })
+                }
                 disabled={patchMutation.isPending}
               >
                 Reset to .env default
