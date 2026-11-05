@@ -46,7 +46,13 @@ def _result_from_response(response, response_json: dict, model: str) -> LlmCallR
 
 
 async def _call_tool_use(
-    prompt: str, schema: dict, max_tokens: int, model: str, api_key: str | None, tool_name: str = "emit_result"
+    prompt: str,
+    schema: dict,
+    max_tokens: int,
+    model: str,
+    api_key: str | None,
+    api_base: str | None,
+    tool_name: str = "emit_result",
 ) -> LlmCallResult | None:
     """Try structured output via forced tool-use. Returns None (not an exception) if
     the provider doesn't honor tool_choice/tool_calls the way Anthropic/OpenAI-style
@@ -58,6 +64,7 @@ async def _call_tool_use(
         response = await litellm.acompletion(
             model=model,
             api_key=api_key,
+            api_base=api_base,
             messages=[{"role": "user", "content": prompt}],
             tools=[{"type": "function", "function": {"name": tool_name, "parameters": schema}}],
             tool_choice={"type": "function", "function": {"name": tool_name}},
@@ -79,7 +86,9 @@ async def _call_tool_use(
     return _result_from_response(response, response_json, model)
 
 
-async def _call_plain_json(prompt: str, schema: dict, max_tokens: int, model: str, api_key: str | None) -> LlmCallResult:
+async def _call_plain_json(
+    prompt: str, schema: dict, max_tokens: int, model: str, api_key: str | None, api_base: str | None
+) -> LlmCallResult:
     """Fallback for providers without reliable forced tool-choice: ask for raw JSON,
     with one corrective re-prompt if the first response doesn't parse.
     """
@@ -99,6 +108,7 @@ async def _call_plain_json(prompt: str, schema: dict, max_tokens: int, model: st
         response = await litellm.acompletion(
             model=model,
             api_key=api_key,
+            api_base=api_base,
             messages=[{"role": "user", "content": attempt_prompt}],
             max_tokens=max_tokens,
         )
@@ -114,27 +124,32 @@ async def _call_plain_json(prompt: str, schema: dict, max_tokens: int, model: st
 
 
 async def _call_llm(
-    prompt: str, schema: dict, model: str, api_key: str | None, max_tokens: int = 2000
+    prompt: str,
+    schema: dict,
+    model: str,
+    api_key: str | None,
+    api_base: str | None,
+    max_tokens: int = 2000,
 ) -> LlmCallResult:
-    result = await _call_tool_use(prompt, schema, max_tokens, model, api_key)
+    result = await _call_tool_use(prompt, schema, max_tokens, model, api_key, api_base)
     if result is not None:
         return result
-    return await _call_plain_json(prompt, schema, max_tokens, model, api_key)
+    return await _call_plain_json(prompt, schema, max_tokens, model, api_key, api_base)
 
 
 async def summarize_file(
-    relative_path: str, content: str, *, model: str, api_key: str | None
+    relative_path: str, content: str, *, model: str, api_key: str | None, api_base: str | None = None
 ) -> tuple[FileSummary, LlmCallResult]:
     prompt = build_file_summary_prompt(relative_path, content)
-    result = await _call_llm(prompt, FileSummary.model_json_schema(), model, api_key, max_tokens=800)
+    result = await _call_llm(prompt, FileSummary.model_json_schema(), model, api_key, api_base, max_tokens=800)
     summary = FileSummary.model_validate(result.response_json)
     return summary, result
 
 
 async def synthesize_module_doc(
-    facts: ModuleFacts, known_sources: set[str], *, model: str, api_key: str | None
+    facts: ModuleFacts, known_sources: set[str], *, model: str, api_key: str | None, api_base: str | None = None
 ) -> tuple[ModuleDoc, LlmCallResult]:
     prompt = build_module_synthesis_prompt(facts)
-    result = await _call_llm(prompt, ModuleDoc.model_json_schema(), model, api_key, max_tokens=4000)
+    result = await _call_llm(prompt, ModuleDoc.model_json_schema(), model, api_key, api_base, max_tokens=4000)
     doc = ModuleDoc.model_validate(result.response_json, context={"known_sources": known_sources})
     return doc, result

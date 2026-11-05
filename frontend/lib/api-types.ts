@@ -221,10 +221,14 @@ export interface components {
             llm_model: string;
             /** Llm Key Configured */
             llm_key_configured: boolean;
+            /** Llm Api Base */
+            llm_api_base: string | null;
             /** Embedding Model */
             embedding_model: string;
             /** Embedding Key Configured */
             embedding_key_configured: boolean;
+            /** Embedding Api Base */
+            embedding_api_base: string | null;
         };
         /** LlmSettingsUpdate */
         LlmSettingsUpdate: {
@@ -232,10 +236,14 @@ export interface components {
             llm_model?: string | null;
             /** Llm Api Key */
             llm_api_key?: string | null;
+            /** Llm Api Base */
+            llm_api_base?: string | null;
             /** Embedding Model */
             embedding_model?: string | null;
             /** Embedding Api Key */
             embedding_api_key?: string | null;
+            /** Embedding Api Base */
+            embedding_api_base?: string | null;
         };
         /** MethodSummary */
         MethodSummary: {

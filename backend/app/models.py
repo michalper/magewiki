@@ -274,8 +274,10 @@ class RuntimeLlmConfig(Base):
     id: Mapped[int] = mapped_column(primary_key=True)
     llm_model: Mapped[str | None] = mapped_column(Text)
     llm_api_key: Mapped[str | None] = mapped_column(Text)
+    llm_api_base: Mapped[str | None] = mapped_column(Text)
     embedding_model: Mapped[str | None] = mapped_column(Text)
     embedding_api_key: Mapped[str | None] = mapped_column(Text)
+    embedding_api_base: Mapped[str | None] = mapped_column(Text)
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
     )

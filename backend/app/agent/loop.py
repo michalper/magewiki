@@ -92,6 +92,7 @@ async def run_agent(session: AsyncSession, messages: list[dict], audience: str) 
         response = await litellm.acompletion(
             model=llm_config.model,
             api_key=llm_config.api_key,
+            api_base=llm_config.api_base,
             messages=history,
             tools=TOOL_SCHEMAS,
             tool_choice="auto",
@@ -134,20 +135,25 @@ async def run_agent(session: AsyncSession, messages: list[dict], audience: str) 
     yield {"event": "sources", "sources": [vars(s) for s in sources.values()]}
 
     history.append({"role": "user", "content": FINAL_ANSWER_INSTRUCTION})
+    final_turn_kwargs = {}
+    if llm_config.model.startswith("anthropic/"):
+        # Anthropic binds a "thinking" block's signature to the exact tools list it
+        # was generated with, so dropping `tools` here invalidates any thinking
+        # block still in history, raising "Invalid signature in thinking block" —
+        # keep the same list, with tool_choice="none" blocking further calls.
+        final_turn_kwargs = {"tools": TOOL_SCHEMAS, "tool_choice": "none"}
+    # Other providers don't have that constraint, and at least Ollama's tool_choice
+    # "none" isn't honored (the model still emits a tool_call with no text, verified
+    # empirically with llama3.1) — simplest fix there is to drop `tools` entirely.
     stream = await litellm.acompletion(
         model=llm_config.model,
         api_key=llm_config.api_key,
+        api_base=llm_config.api_base,
         messages=history,
-        # Keep the same tools list as the tool-calling rounds above: Anthropic binds a
-        # "thinking" block's signature to the exact tools list it was generated with, and
-        # dropping `tools` here invalidates any thinking block still in history, raising
-        # "Invalid signature in thinking block" — tool_choice="none" blocks further calls
-        # without changing that list.
-        tools=TOOL_SCHEMAS,
-        tool_choice="none",
         stream=True,
         stream_options={"include_usage": True},
         _skip_mcp_handler=True,
+        **final_turn_kwargs,
     )
     async for chunk in stream:
         delta = chunk.choices[0].delta.content if chunk.choices else None

@@ -29,8 +29,24 @@ async def test_get_llm_settings_defaults_when_unconfigured():
     body = response.json()
     assert body["llm_model"] == settings.llm_model
     assert body["llm_key_configured"] is False
+    assert body["llm_api_base"] is None
     assert body["embedding_model"] == settings.embedding_model
     assert body["embedding_key_configured"] is False
+    assert body["embedding_api_base"] is None
+
+
+@pytest.mark.asyncio
+async def test_patch_llm_settings_sets_and_resets_api_base():
+    transport = ASGITransport(app=app)
+    async with AsyncClient(transport=transport, base_url="http://test") as client:
+        set_response = await client.patch(
+            "/settings/llm",
+            json={"llm_model": "ollama_chat/llama3.1", "llm_api_base": "http://host.docker.internal:11434"},
+        )
+        reset_response = await client.patch("/settings/llm", json={"llm_model": None, "llm_api_base": None})
+
+    assert set_response.json()["llm_api_base"] == "http://host.docker.internal:11434"
+    assert reset_response.json()["llm_api_base"] is None
 
 
 @pytest.mark.asyncio

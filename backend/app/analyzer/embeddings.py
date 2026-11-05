@@ -12,8 +12,10 @@ def hash_text(text: str) -> str:
     return hashlib.sha256(text.encode("utf-8")).hexdigest()
 
 
-async def embed_text(text: str, *, model: str, api_key: str | None) -> tuple[list[float], LlmCallResult]:
-    response = await litellm.aembedding(model=model, api_key=api_key, input=[text])
+async def embed_text(
+    text: str, *, model: str, api_key: str | None, api_base: str | None = None
+) -> tuple[list[float], LlmCallResult]:
+    response = await litellm.aembedding(model=model, api_key=api_key, api_base=api_base, input=[text])
     vector = response.data[0]["embedding"]
     tokens_in = response.usage.prompt_tokens
 
@@ -33,8 +35,10 @@ async def embed_text(text: str, *, model: str, api_key: str | None) -> tuple[lis
     return vector, result
 
 
-async def embed_query_text(query: str, *, model: str, api_key: str | None) -> list[float]:
-    vector, _result = await embed_text(query, model=model, api_key=api_key)
+async def embed_query_text(
+    query: str, *, model: str, api_key: str | None, api_base: str | None = None
+) -> list[float]:
+    vector, _result = await embed_text(query, model=model, api_key=api_key, api_base=api_base)
     return vector
 
 

@@ -13,6 +13,7 @@ class Settings(BaseSettings):
     embedding_model: str = "openai/text-embedding-3-small"
     openai_api_key: str = ""
     webhook_hmac_secret: str = ""
+    ollama_base_url: str = ""
 
     @property
     def cors_origin_list(self) -> list[str]:
