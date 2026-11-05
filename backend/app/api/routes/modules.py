@@ -58,6 +58,12 @@ class ScanResponse(BaseModel):
     modules: list[ModuleScanOutcomeResponse]
 
 
+def _extract_tags(doc: dict | None) -> list[str]:
+    if not doc:
+        return []
+    return [t.get("name") for t in doc.get("tags", []) if t.get("name")]
+
+
 class ModuleSummary(BaseModel):
     id: int
     name: str
@@ -70,6 +76,7 @@ class ModuleSummary(BaseModel):
     plugin_count: int
     observer_count: int
     last_scanned_at: datetime
+    tags: list[str] = []
 
 
 class MethodSummary(BaseModel):
@@ -172,7 +179,9 @@ async def list_modules(session: AsyncSession = Depends(get_session)) -> list[Mod
     )
 
     rows = await session.execute(
-        select(Module, class_count, plugin_count, observer_count).order_by(Module.name)
+        select(Module, class_count, plugin_count, observer_count, ModuleDocument.doc)
+        .outerjoin(ModuleDocument, ModuleDocument.module_id == Module.id)
+        .order_by(Module.name)
     )
 
     return [
@@ -188,8 +197,9 @@ async def list_modules(session: AsyncSession = Depends(get_session)) -> list[Mod
             plugin_count=plugins,
             observer_count=observers,
             last_scanned_at=module.last_scanned_at,
+            tags=_extract_tags(doc),
         )
-        for module, classes, plugins, observers in rows
+        for module, classes, plugins, observers, doc in rows
     ]
 
 
@@ -214,6 +224,7 @@ async def get_module(module_id: int, session: AsyncSession = Depends(get_session
     observers = (
         await session.scalars(select(EventObserver).where(EventObserver.module_id == module_id))
     ).all()
+    doc_row = await session.scalar(select(ModuleDocument.doc).where(ModuleDocument.module_id == module_id))
 
     class_summaries = []
     for c in classes:
@@ -240,6 +251,7 @@ async def get_module(module_id: int, session: AsyncSession = Depends(get_session
         plugin_count=sum(1 for c in classes if c.is_plugin),
         observer_count=sum(1 for c in classes if c.is_observer),
         last_scanned_at=module.last_scanned_at,
+        tags=_extract_tags(doc_row),
         dependencies=[d.depends_on_name for d in dependencies],
         classes=class_summaries,
         preferences=[DiPreferenceSummary(for_type=p.for_type, preference_type=p.preference_type) for p in preferences],

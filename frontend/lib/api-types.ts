@@ -336,6 +336,11 @@ export interface components {
              * Format: date-time
              */
             last_scanned_at: string;
+            /**
+             * Tags
+             * @default []
+             */
+            tags: string[];
             /** Dependencies */
             dependencies: string[];
             /** Classes */
@@ -397,6 +402,11 @@ export interface components {
              * Format: date-time
              */
             last_scanned_at: string;
+            /**
+             * Tags
+             * @default []
+             */
+            tags: string[];
         };
         /** PhpClassSummary */
         PhpClassSummary: {

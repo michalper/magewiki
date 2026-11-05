@@ -48,6 +48,11 @@ export default function ModuleDetailPage({ params }: { params: Promise<{ id: str
             <Badge variant={moduleQuery.data.state === "up_to_date" ? "default" : "outline"}>
               {moduleQuery.data.state}
             </Badge>
+            {moduleQuery.data.tags.map((tag) => (
+              <Badge key={tag} variant="outline">
+                {tag}
+              </Badge>
+            ))}
           </div>
           <Link href={`/modules/${id}/graph`} className="text-sm underline underline-offset-4 self-start">
             View dependency graph →

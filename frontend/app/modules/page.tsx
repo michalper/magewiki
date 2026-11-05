@@ -137,6 +137,7 @@ export default function ModulesPage() {
               <TableHead>Enabled</TableHead>
               <TableHead>State</TableHead>
               <TableHead>Source</TableHead>
+              <TableHead>Tags</TableHead>
               <TableHead className="text-right">Classes</TableHead>
               <TableHead className="text-right">Plugins</TableHead>
               <TableHead className="text-right">Observers</TableHead>
@@ -161,6 +162,19 @@ export default function ModulesPage() {
                   <StateBadge state={m.state} />
                 </TableCell>
                 <TableCell>{m.source_type}</TableCell>
+                <TableCell>
+                  {m.tags.length === 0 ? (
+                    <span className="text-zinc-400">—</span>
+                  ) : (
+                    <div className="flex flex-wrap gap-1">
+                      {m.tags.map((tag) => (
+                        <Badge key={tag} variant="outline">
+                          {tag}
+                        </Badge>
+                      ))}
+                    </div>
+                  )}
+                </TableCell>
                 <TableCell className="text-right">{m.class_count}</TableCell>
                 <TableCell className="text-right">{m.plugin_count}</TableCell>
                 <TableCell className="text-right">{m.observer_count}</TableCell>
