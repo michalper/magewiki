@@ -1,3 +1,4 @@
+import logging
 from pathlib import Path
 
 from sqlalchemy import delete, select, update
@@ -32,7 +33,10 @@ from app.models import (
     PhpClass,
     PhpClassMethod,
 )
+from app.scanner.orchestrator import ScanAlreadyInProgressError, scan_repository
 from app.tasks.queue import get_arq_pool
+
+logger = logging.getLogger(__name__)
 
 
 async def _get_or_create_cache_entry(
@@ -384,3 +388,33 @@ async def embed_chunks(ctx: dict, module_id: int, module_current_hash: str) -> N
             )
             await session.commit()
         raise
+
+
+async def scan_repository_job(ctx: dict, repo_root: str) -> None:
+    """ARQ job wrapper around scan_repository — used by the HMAC webhook (and the
+    nightly cron below). Opens its own session like the other jobs in this module.
+    scan_repository's own Postgres advisory lock already makes two overlapping
+    scans of the same repo (cron/webhook/manual) safe; ScanAlreadyInProgressError
+    just means another trigger got there first, so this is a no-op, not a failure.
+    """
+    async with async_session_factory() as session:
+        try:
+            await scan_repository(repo_root, session)
+        except ScanAlreadyInProgressError:
+            pass
+
+
+async def nightly_scan_all(ctx: dict) -> None:
+    """Cron safety net (see CLAUDE.md "Scan, cron, and cost control"): re-scan every
+    repo_root already known to the DB, so drift since the last scan/webhook gets
+    caught even if nothing ever pinged us. One repo failing (e.g. its path no
+    longer exists) must not stop the rest.
+    """
+    async with async_session_factory() as session:
+        repo_roots = (await session.scalars(select(Module.repo_root).distinct())).all()
+
+    for repo_root in repo_roots:
+        try:
+            await scan_repository_job(ctx, repo_root)
+        except Exception:  # noqa: BLE001 - one bad repo must not abort the nightly run
+            logger.exception("nightly_scan_all: scan failed for %s", repo_root)
