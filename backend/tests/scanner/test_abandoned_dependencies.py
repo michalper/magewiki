@@ -37,6 +37,33 @@ class _FakeAsyncClient:
 
 
 @pytest.mark.asyncio
+async def test_check_abandoned_outdated_handles_multiple_cache_misses_concurrently(db_session, monkeypatch):
+    """Regression test for the batch-then-gather-then-write redesign: several
+    packages all missing from cache in one call must each get their own
+    correctly-matched data, not mixed up or dropped, when fetched concurrently
+    rather than one at a time. One of them 404s (no P2 entry at all) and must
+    not break the others.
+    """
+    suffix = uuid.uuid4().hex[:8]
+    packages = [f"vendor/pkg-{suffix}-{i}" for i in range(3)]
+    data = {
+        packages[0]: [{"version": "2.0.0", "abandoned": "vendor/successor"}],
+        packages[1]: [{"version": "3.0.0", "abandoned": False}],
+        # packages[2] deliberately omitted -> 404
+    }
+    monkeypatch.setattr(
+        "app.scanner.abandoned_dependencies.httpx.AsyncClient", lambda *a, **k: _FakeAsyncClient(data)
+    )
+
+    findings = await check_abandoned_outdated(db_session, {p: "^1.0" for p in packages})
+
+    by_type = {f.check_type: f.message for f in findings}
+    assert "vendor/successor" in by_type["abandoned_dependency"]
+    assert "3.0.0" in by_type["outdated_dependency"]
+    assert len(findings) == 2  # packages[2]'s 404 contributed nothing, didn't error
+
+
+@pytest.mark.asyncio
 async def test_check_abandoned_outdated_flags_an_abandoned_package(db_session, monkeypatch):
     package = f"vendor/pkg-{uuid.uuid4().hex[:8]}"
     data = {package: [{"version": "2.0.0", "abandoned": "vendor/successor"}]}
