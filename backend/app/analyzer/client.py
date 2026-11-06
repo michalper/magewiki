@@ -31,6 +31,15 @@ def _strip_markdown_fence(text: str) -> str:
     return match.group(1).strip() if match else text.strip()
 
 
+def _sum_llm_call_results(results: list[LlmCallResult]) -> LlmCallResult:
+    return LlmCallResult(
+        response_json=results[-1].response_json,
+        tokens_in=sum(r.tokens_in for r in results),
+        tokens_out=sum(r.tokens_out for r in results),
+        cost_usd=sum((r.cost_usd for r in results), Decimal(0)),
+    )
+
+
 def _result_from_response(response, response_json: dict, model: str) -> LlmCallResult:
     tokens_in = response.usage.prompt_tokens
     tokens_out = response.usage.completion_tokens
@@ -76,6 +85,10 @@ async def _call_tool_use(
     function calling.
     """
     last_error: str | None = None
+    # A failed-validation attempt still made a real, billed LLM call — its cost must
+    # still reach the budget tracker even though its (invalid) output is discarded,
+    # or a retry-heavy module silently costs more than analysis_cache ever records.
+    spent_so_far: list[LlmCallResult] = []
     for attempt in range(_MAX_ATTEMPTS):
         attempt_prompt = (
             prompt
@@ -106,14 +119,19 @@ async def _call_tool_use(
         except json.JSONDecodeError:
             return None  # malformed tool-call args aren't worth retrying this way; fall back instead
 
+        attempt_result = _result_from_response(response, response_json, model)
+
         try:
             validated = validate(response_json)
         except ValidationError as exc:
             last_error = str(exc)
+            spent_so_far.append(attempt_result)
             continue
 
-        return validated, _result_from_response(response, response_json, model)
+        return validated, _sum_llm_call_results([*spent_so_far, attempt_result])
 
+    # spent_so_far's accumulated cost is lost here too — same residual gap noted
+    # in _call_plain_json's exhausted-retries path, same reason left as-is.
     return None  # exhausted retries without a provider-level rejection — let plain-JSON try instead
 
 
@@ -136,6 +154,9 @@ async def _call_plain_json(
     )
 
     last_error: str | None = None
+    # Same accounting as _call_tool_use: a failed/invalid attempt still made a
+    # real, billed LLM call, and its cost must still reach the budget tracker.
+    spent_so_far: list[LlmCallResult] = []
     for attempt in range(_MAX_ATTEMPTS):
         attempt_prompt = (
             instructions
@@ -155,14 +176,26 @@ async def _call_plain_json(
             response_json = json.loads(_strip_markdown_fence(content))
         except json.JSONDecodeError as exc:
             last_error = f"not valid JSON: {exc}"
+            spent_so_far.append(_result_from_response(response, {}, model))
             continue
+
+        attempt_result = _result_from_response(response, response_json, model)
+
         try:
             validated = validate(response_json)
         except ValidationError as exc:
             last_error = str(exc)
+            spent_so_far.append(attempt_result)
             continue
-        return validated, _result_from_response(response, response_json, model)
+        return validated, _sum_llm_call_results([*spent_so_far, attempt_result])
 
+    # spent_so_far's accumulated cost is lost here (no LlmCallResult to attach it
+    # to on a raised exception) — same residual gap as _call_tool_use returning
+    # None after exhausting retries. Narrower in practice: _MAX_ATTEMPTS=2 bounds
+    # it to at most one lost attempt's cost, and fixing it would mean changing
+    # this function's exception contract so every caller up to jobs.py's except
+    # handlers could record a failed job's partial spend — a bigger change than
+    # this fix's scope (closing the common retry-then-succeed case).
     raise ValueError(f"LLM did not return a valid, schema-compliant JSON object after retry: {last_error}")
 
 
