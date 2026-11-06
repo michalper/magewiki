@@ -8,7 +8,7 @@ class DiscoveredModule:
 
     root: Path  # absolute filesystem path to the module's own root
     relative_path: Path  # relative to the repo_root that was scanned
-    source_type: str  # "app_code" | "vendor" | "standalone"
+    source_type: str  # "app_code" | "vendor" | "standalone" | "composer_path"
 
 
 @dataclass
