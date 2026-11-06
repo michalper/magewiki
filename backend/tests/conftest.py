@@ -2,11 +2,13 @@ import os
 import subprocess
 import tempfile
 import urllib.request
+from decimal import Decimal
 from pathlib import Path
 
 import asyncpg
 import pytest
 import pytest_asyncio
+from sqlalchemy import delete, select
 
 # Tests must never run against the same database the live api/worker
 # containers use — a long-lived dev DB accumulates cross-run garbage (the
@@ -55,8 +57,12 @@ os.environ["MAGEWIKI_SCAN_ROOT_1"] = str(Path(__file__).parent.resolve())
 os.environ["MAGEWIKI_SCAN_ROOT_2"] = tempfile.gettempdir()
 os.environ["MAGEWIKI_SCAN_ROOT_3"] = ""
 
+from app.analyzer.client import LlmCallResult
+from app.analyzer.schemas import FileSummary
 from app.config import settings
 from app.db import async_session_factory
+from app.models import Module
+from app.scanner.orchestrator import scan_repository
 
 
 def _ollama_reachable() -> bool:
@@ -107,6 +113,42 @@ def demo_store_path() -> Path:
 @pytest.fixture
 def demo_module_path(demo_store_path: Path) -> Path:
     return demo_store_path / "app" / "code" / "Vendor" / "Module"
+
+
+# Plain importable helpers, not fixtures — every caller needs them with a
+# specific session/path/suffix already in hand, which a fixture can't express
+# as cleanly. Previously copy-pasted byte-for-byte into 9 different test
+# files (tests/tasks/, tests/agent/, tests/search/, tests/scanner/,
+# tests/analyzer/) — consolidated here, same import style already used for
+# requires_ordo_fixture etc. elsewhere in this file.
+
+
+async def delete_module_if_present(session, repo_root: str, name: str) -> None:
+    existing = await session.scalar(select(Module).where(Module.repo_root == repo_root, Module.name == name))
+    if existing is not None:
+        await session.execute(delete(Module).where(Module.id == existing.id))
+        await session.commit()
+
+
+async def scan_demo_store(demo_store_path: Path, session, name: str = "Vendor_Module") -> Module:
+    repo_root = str(demo_store_path.resolve())
+    await delete_module_if_present(session, repo_root, name)
+    await scan_repository(repo_root, session)
+    return await session.scalar(select(Module).where(Module.repo_root == repo_root, Module.name == name))
+
+
+def fake_summarize_file(call_log: list[str] | None = None):
+    log = call_log if call_log is not None else []
+
+    async def _fake(relative_path: str, content: str, **kwargs):
+        log.append(relative_path)
+        summary = FileSummary(file_summary=f"Summary of {relative_path}", notable_behavior=None)
+        result = LlmCallResult(
+            response_json=summary.model_dump(), tokens_in=100, tokens_out=20, cost_usd=Decimal("0.001")
+        )
+        return summary, result
+
+    return _fake
 
 
 @pytest_asyncio.fixture(scope="session", autouse=True)

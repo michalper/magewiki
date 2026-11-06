@@ -2,24 +2,18 @@ import shutil
 from pathlib import Path
 
 import pytest
-from sqlalchemy import delete, select
+from sqlalchemy import select
 
 from app.models import FileHash, Module
 from app.scanner.orchestrator import scan_repository
 from app.tasks.queue import get_arq_pool
-
-
-async def _delete_module_if_present(session, repo_root: str, name: str) -> None:
-    existing = await session.scalar(select(Module).where(Module.repo_root == repo_root, Module.name == name))
-    if existing is not None:
-        await session.execute(delete(Module).where(Module.id == existing.id))
-        await session.commit()
+from tests.conftest import delete_module_if_present
 
 
 @pytest.mark.asyncio
 async def test_scan_enqueues_a_real_job_on_the_arq_queue(demo_store_path: Path, db_session):
     repo_root = str(demo_store_path.resolve())
-    await _delete_module_if_present(db_session, repo_root, "Vendor_Module")
+    await delete_module_if_present(db_session, repo_root, "Vendor_Module")
 
     result = await scan_repository(repo_root, db_session)
     assert result.tasks_enqueued == 7
@@ -52,7 +46,7 @@ async def test_scan_enqueues_synthesize_directly_for_a_removal_only_diff(
     repo_copy = tmp_path / "demo-store"
     shutil.copytree(demo_store_path, repo_copy)
     repo_root = str(repo_copy.resolve())
-    await _delete_module_if_present(db_session, repo_root, "Vendor_Module")
+    await delete_module_if_present(db_session, repo_root, "Vendor_Module")
 
     first = await scan_repository(repo_root, db_session)
     assert first.tasks_enqueued == 7

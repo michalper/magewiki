@@ -1,20 +1,12 @@
 from pathlib import Path
 
 import pytest
-from sqlalchemy import delete, select
+from sqlalchemy import delete
 
 from app.agent.loop import run_agent
 from app.config import settings
-from app.models import Module, RuntimeLlmConfig
-from app.scanner.orchestrator import scan_repository
-from tests.conftest import requires_anthropic_key, requires_ollama
-
-
-async def _delete_module_if_present(session, repo_root: str, name: str) -> None:
-    existing = await session.scalar(select(Module).where(Module.repo_root == repo_root, Module.name == name))
-    if existing is not None:
-        await session.execute(delete(Module).where(Module.id == existing.id))
-        await session.commit()
+from app.models import RuntimeLlmConfig
+from tests.conftest import requires_anthropic_key, requires_ollama, scan_demo_store
 
 
 @requires_anthropic_key
@@ -27,10 +19,7 @@ async def test_real_agent_cites_the_right_module_for_a_plugin_question(demo_stor
     see CLAUDE.md "RAG and the agent" / anti-hallucination rules: every claim must
     cite its module, and this question has exactly one correct citation.
     """
-    repo_root = str(demo_store_path.resolve())
-    await _delete_module_if_present(db_session, repo_root, "Vendor_Module")
-    await scan_repository(repo_root, db_session)
-    module = await db_session.scalar(select(Module).where(Module.repo_root == repo_root, Module.name == "Vendor_Module"))
+    module = await scan_demo_store(demo_store_path, db_session)
 
     question = (
         "Which module defines a plugin on Magento\\Quote\\Model\\Quote\\Address\\Total\\Collector? "
@@ -58,10 +47,7 @@ async def test_real_agent_with_ollama_cites_the_right_module(demo_store_path: Pa
     answer once run_agent.py's model-specific tool_choice="none" workaround (see
     agent/loop.py) is skipped for non-Anthropic providers.
     """
-    repo_root = str(demo_store_path.resolve())
-    await _delete_module_if_present(db_session, repo_root, "Vendor_Module")
-    await scan_repository(repo_root, db_session)
-    module = await db_session.scalar(select(Module).where(Module.repo_root == repo_root, Module.name == "Vendor_Module"))
+    module = await scan_demo_store(demo_store_path, db_session)
 
     db_session.add(RuntimeLlmConfig(id=1, llm_model="ollama_chat/llama3.1", llm_api_base=settings.ollama_base_url))
     await db_session.commit()

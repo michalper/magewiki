@@ -7,24 +7,9 @@ from sqlalchemy import delete, select
 from app.analyzer.client import LlmCallResult
 from app.analyzer.schemas import ModuleDoc
 from app.models import AnalysisCache, FileAnalysis, Module
-from app.scanner.orchestrator import scan_repository
 from app.search.hybrid import hybrid_search
 from app.tasks.jobs import embed_chunks, synthesize_module
-from tests.conftest import requires_openai_key
-
-
-async def _delete_module_if_present(session, repo_root: str, name: str) -> None:
-    existing = await session.scalar(select(Module).where(Module.repo_root == repo_root, Module.name == name))
-    if existing is not None:
-        await session.execute(delete(Module).where(Module.id == existing.id))
-        await session.commit()
-
-
-async def _scan_demo_store(demo_store_path: Path, session) -> Module:
-    repo_root = str(demo_store_path.resolve())
-    await _delete_module_if_present(session, repo_root, "Vendor_Module")
-    await scan_repository(repo_root, session)
-    return await session.scalar(select(Module).where(Module.repo_root == repo_root, Module.name == "Vendor_Module"))
+from tests.conftest import requires_openai_key, scan_demo_store
 
 
 def _fake_doc() -> ModuleDoc:
@@ -70,7 +55,7 @@ async def test_hybrid_search_ranks_real_embeddings_by_meaning(demo_store_path: P
     honest end-to-end check of Phase 4's "a query returns the right files"
     criterion, independent of live-Anthropic phrasing variance.
     """
-    module = await _scan_demo_store(demo_store_path, db_session)
+    module = await scan_demo_store(demo_store_path, db_session)
 
     await _seed_file_summary(
         db_session,
