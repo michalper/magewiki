@@ -197,5 +197,5 @@ async def synthesize_module_doc(
         return ModuleDoc.model_validate(data, context={"known_sources": known_sources})
 
     return await _call_llm(
-        prompt, ModuleDoc.model_json_schema(), model, api_key, api_base, _validate, max_tokens=8000
+        prompt, ModuleDoc.model_json_schema(), model, api_key, api_base, _validate, max_tokens=16000
     )
