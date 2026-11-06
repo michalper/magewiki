@@ -235,6 +235,7 @@ async def test_read_file_returns_stored_chunk_text(db_session):
     result = await read_file(db_session, module_id=module.id, relative_path="Plugin/SampleCheckoutPlugin.php")
 
     assert result["found"] is True
+    assert result["module_name"] == module.name
     assert result["chunks"] == [{"chunk_type": "file", "text": "Blocks checkout over the credit limit."}]
 
     await db_session.execute(delete(Module).where(Module.id == module.id))

@@ -195,8 +195,11 @@ async def read_file(session: AsyncSession, module_id: int, relative_path: str) -
     if not chunks:
         return {"found": False}
 
+    module_name = await session.scalar(select(Module.name).where(Module.id == module_id))
+
     return {
         "found": True,
+        "module_name": module_name,
         "chunks": [{"chunk_type": c.chunk_type, "text": c.text} for c in chunks],
     }
 
