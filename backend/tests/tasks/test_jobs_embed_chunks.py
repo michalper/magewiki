@@ -207,6 +207,46 @@ async def test_embed_chunks_pauses_on_budget_exceeded(demo_store_path: Path, db_
 
 
 @pytest.mark.asyncio
+async def test_embed_chunks_rechecks_budget_mid_loop_not_just_once_before_it(
+    demo_store_path: Path, db_session, monkeypatch
+):
+    """Regression test: a module with many cache misses makes many real, billed
+    embed_text calls in one job — the budget check used to run only once before
+    the loop, so a budget that crossed its limit partway through still let every
+    remaining miss call through uncounted. Simulate the limit being crossed after
+    the first call, and confirm the loop stops there instead of running all 10.
+    """
+    module = await _reach_embedding_state(demo_store_path, db_session, monkeypatch)
+
+    call_count = 0
+
+    async def _exceeded_after_first_call(session):
+        return call_count >= 1
+
+    call_log: list[str] = []
+    real_fake_embed = _fake_embed_text(call_log)
+
+    async def _counting_embed_text(text: str, **kwargs):
+        nonlocal call_count
+        call_count += 1
+        return await real_fake_embed(text, **kwargs)
+
+    monkeypatch.setattr("app.tasks.jobs.is_budget_exceeded", _exceeded_after_first_call)
+    monkeypatch.setattr("app.tasks.jobs.embed_text", _counting_embed_text)
+
+    await embed_chunks(None, module.id, module.current_hash)
+
+    assert len(call_log) == 1  # stopped after the first call, not all 10 misses
+    await db_session.refresh(module)
+    assert module.state == "paused_budget"
+
+    # Must not KeyError while rebuilding chunks for the embeddings this abort
+    # left un-fetched — the fix returns before that chunk-rebuild runs at all.
+    chunks = (await db_session.scalars(select(Chunk).where(Chunk.module_id == module.id))).all()
+    assert chunks == []
+
+
+@pytest.mark.asyncio
 async def test_embed_chunks_failure_does_not_clobber_a_newer_scan_generations_state(
     demo_store_path: Path, db_session, monkeypatch
 ):
