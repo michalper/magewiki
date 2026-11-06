@@ -2,7 +2,7 @@ from decimal import Decimal
 from pathlib import Path
 
 import pytest
-from sqlalchemy import delete, select
+from sqlalchemy import delete, select, update
 
 from app.analyzer.client import LlmCallResult
 from app.analyzer.schemas import FileSummary, ModuleDoc
@@ -204,6 +204,34 @@ async def test_embed_chunks_pauses_on_budget_exceeded(demo_store_path: Path, db_
 
     chunks = (await db_session.scalars(select(Chunk).where(Chunk.module_id == module.id))).all()
     assert chunks == []
+
+
+@pytest.mark.asyncio
+async def test_embed_chunks_failure_does_not_clobber_a_newer_scan_generations_state(
+    demo_store_path: Path, db_session, monkeypatch
+):
+    """Same regression as analyze_file's/synthesize_module's equivalent tests — a job
+    that fails AFTER a newer scan generation has already completed must not overwrite
+    that newer generation's state with 'failed'.
+    """
+    module = await _reach_embedding_state(demo_store_path, db_session, monkeypatch)
+    original_hash = module.current_hash
+
+    async def _race_then_fail(text, **kwargs):
+        await db_session.execute(
+            update(Module).where(Module.id == module.id).values(current_hash="newer-generation-hash", state="up_to_date")
+        )
+        await db_session.commit()
+        raise RuntimeError("simulated embedding failure in the stale job")
+
+    monkeypatch.setattr("app.tasks.jobs.embed_text", _race_then_fail)
+
+    with pytest.raises(RuntimeError):
+        await embed_chunks(None, module.id, original_hash)
+
+    await db_session.refresh(module)
+    assert module.current_hash == "newer-generation-hash"
+    assert module.state == "up_to_date"  # not clobbered back to "failed"
 
 
 @pytest.mark.asyncio

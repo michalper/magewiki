@@ -2,7 +2,7 @@ from decimal import Decimal
 from pathlib import Path
 
 import pytest
-from sqlalchemy import delete, select
+from sqlalchemy import delete, select, update
 
 from app.analyzer.client import LlmCallResult
 from app.analyzer.schemas import FileSummary, ModuleDoc
@@ -140,6 +140,39 @@ async def test_synthesize_module_pauses_on_budget_exceeded(demo_store_path: Path
 
     doc_row = await db_session.scalar(select(ModuleDocument).where(ModuleDocument.module_id == module.id))
     assert doc_row is None
+
+
+@pytest.mark.asyncio
+async def test_synthesize_module_failure_does_not_clobber_a_newer_scan_generations_state(
+    demo_store_path: Path, db_session, monkeypatch
+):
+    """Same regression as analyze_file's equivalent test — a job that fails AFTER a
+    newer scan generation has already completed must not overwrite that newer
+    generation's state with 'failed'.
+    """
+    module = await _scan_demo_store(demo_store_path, db_session)
+    await _analyze_all_files(module, db_session, monkeypatch)
+    await db_session.refresh(module)
+    original_hash = module.current_hash
+
+    await db_session.execute(delete(AnalysisCache).where(AnalysisCache.content_hash == original_hash))
+    await db_session.commit()
+
+    async def _race_then_fail(facts, known_sources, **kwargs):
+        await db_session.execute(
+            update(Module).where(Module.id == module.id).values(current_hash="newer-generation-hash", state="up_to_date")
+        )
+        await db_session.commit()
+        raise RuntimeError("simulated synthesis failure in the stale job")
+
+    monkeypatch.setattr("app.tasks.jobs.synthesize_module_doc", _race_then_fail)
+
+    with pytest.raises(RuntimeError):
+        await synthesize_module(None, module.id, original_hash)
+
+    await db_session.refresh(module)
+    assert module.current_hash == "newer-generation-hash"
+    assert module.state == "up_to_date"  # not clobbered back to "failed"
 
 
 @pytest.mark.asyncio

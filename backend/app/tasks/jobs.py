@@ -184,9 +184,13 @@ async def analyze_file(
                 )
     except Exception as exc:
         async with async_session_factory() as session:
+            # Guarded by current_hash, same as every success-path update in this
+            # function — without it, a stale job from a superseded scan generation
+            # that fails AFTER a newer scan has already finished would overwrite the
+            # new generation's healthy state with this old generation's failure.
             await session.execute(
                 update(Module)
-                .where(Module.id == module_id)
+                .where(Module.id == module_id, Module.current_hash == module_current_hash)
                 .values(state="failed", retry_count=Module.retry_count + 1, last_error=str(exc))
             )
             await session.commit()
@@ -288,9 +292,13 @@ async def synthesize_module(ctx: dict | None, module_id: int, module_current_has
             )
     except Exception as exc:
         async with async_session_factory() as session:
+            # Guarded by current_hash, same as every success-path update in this
+            # function — without it, a stale job from a superseded scan generation
+            # that fails AFTER a newer scan has already finished would overwrite the
+            # new generation's healthy state with this old generation's failure.
             await session.execute(
                 update(Module)
-                .where(Module.id == module_id)
+                .where(Module.id == module_id, Module.current_hash == module_current_hash)
                 .values(state="failed", retry_count=Module.retry_count + 1, last_error=str(exc))
             )
             await session.commit()
@@ -405,9 +413,13 @@ async def embed_chunks(ctx: dict | None, module_id: int, module_current_hash: st
             await session.commit()
     except Exception as exc:
         async with async_session_factory() as session:
+            # Guarded by current_hash, same as every success-path update in this
+            # function — without it, a stale job from a superseded scan generation
+            # that fails AFTER a newer scan has already finished would overwrite the
+            # new generation's healthy state with this old generation's failure.
             await session.execute(
                 update(Module)
-                .where(Module.id == module_id)
+                .where(Module.id == module_id, Module.current_hash == module_current_hash)
                 .values(state="failed", retry_count=Module.retry_count + 1, last_error=str(exc))
             )
             await session.commit()
