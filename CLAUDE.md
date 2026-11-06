@@ -240,6 +240,31 @@ System prompt enforces: answer only from tool results, every claim cited, no res
 
 Explicitly **not** chosen: pure vector RAG, GraphRAG, a separate vector database, LangChain as the core. Post-1.0: reranking, query rewriting, a retrieval-debugging panel in the UI.
 
+**Configurable embedding dimension (recorded 2026-11-06):** real bug, found while
+actually running the Phase 7 eval suite against Ollama's `bge-m3` after hitting an
+OpenAI "no credits remaining" error mid-run: `chunks.embedding` was hardcoded
+`Vector(1536)` (OpenAI `text-embedding-3-small`'s dimension) with an HNSW index built
+on that fixed dimension — despite this file's own BYOK row promising `bge-m3` (1024-dim)
+as a local embedding option. Inserting a `bge-m3` embedding failed outright
+(`expected 1536 dimensions, not 1024`). Worse: the runtime BYOK override
+(`RuntimeLlmConfig.embedding_model`, settable live via `/settings` with zero redeploy)
+had **no guard at all** — any operator picking a non-1536-dim model via the Settings UI
+would hit the identical crash later, inside an unrelated scan's embed step. New
+`EMBEDDING_DIMENSIONS` setting (`.env`, default `1536`) plus migration `0013` resize
+`chunks.embedding`/its HNSW index to match — the migration refuses (raises, doesn't
+silently truncate) if `chunks` already has rows in a different dimension, since
+switching embedding models never had a safe automatic data-migration path anyway
+(different models produce incomparable vector spaces). `PATCH /settings/llm` now probes
+a changed `embedding_model`'s *real* output dimension with one tiny live call
+(`embed_text`, not a hardcoded model→dimension lookup table that would go stale) and
+rejects a mismatch with a 400 before saving, instead of only failing later. **Still
+explicitly not solved**: no column tracks which model produced an existing chunk's
+embedding, and there's no automatic re-embed-everything workflow when the model
+changes — confirmed via research that this gap already existed before this fix (model
+switching has always silently left old embeddings in a stale vector space); closing it
+is materially bigger scope than what was needed to unblock the eval and is deferred,
+not forgotten.
+
 ## Test data
 
 Always **public code** (e.g. a local clone of `magento/magento2`, or other publicly available modules), **never confidential client code**. The repo is public from day one — no secrets and no NDA-covered client code ever enter the commit history.
