@@ -205,6 +205,8 @@ function downloadCsv(modules: ModuleSummary[]) {
 }
 
 const TABLE_COLUMN_COUNT = 13;
+const PREVIEW_FINDING_COUNT = 5;
+const SEVERITY_ORDER: Record<Severity, number> = { blocking: 0, warning: 1, info: 2, ok: 3, none: 4 };
 
 function ModuleRow({
   module,
@@ -225,22 +227,22 @@ function ModuleRow({
     <>
       <TableRow>
         <TableCell>
-          <div className="flex items-center gap-1 font-mono">
+          <div className="flex items-center gap-1">
             <button
               type="button"
               onClick={onToggle}
               aria-expanded={expanded}
               aria-label={expanded ? "Collapse" : "Expand"}
-              className="text-zinc-400 hover:text-foreground"
+              className="text-muted-foreground hover:text-foreground"
             >
               {expanded ? <ChevronDown className="size-3.5" /> : <ChevronRight className="size-3.5" />}
             </button>
-            <Link href={`/modules/${module.id}`} className="underline underline-offset-4">
+            <Link href={`/modules/${module.id}`} className="font-medium hover:text-primary hover:underline">
               {module.name}
             </Link>
           </div>
         </TableCell>
-        <TableCell className="font-mono text-zinc-500">{module.composer_name ?? "—"}</TableCell>
+        <TableCell className="text-muted-foreground">{module.composer_name ?? "—"}</TableCell>
         <TableCell>
           <EnabledBadge enabled={module.enabled} />
         </TableCell>
@@ -284,25 +286,30 @@ function ModuleRow({
             {detailQuery.isError && <p className="text-sm text-red-600 py-2">Failed to load findings.</p>}
             {detailQuery.data &&
               (detailQuery.data.quality_findings.length === 0 ? (
-                <p className="text-sm text-zinc-500 py-2">No quality findings.</p>
+                <p className="text-sm text-muted-foreground py-2">No quality findings.</p>
               ) : (
-                <ul className="text-sm py-2 space-y-1">
-                  {detailQuery.data.quality_findings.slice(0, 20).map((f, i) => (
-                    <li key={i} className="flex items-center gap-2">
-                      <SeverityBadge severity={f.severity as Severity}>{f.severity}</SeverityBadge>
-                      <span className="font-mono text-zinc-500">
-                        {f.file_path}
-                        {f.line ? `:${f.line}` : ""}
-                      </span>
-                      <span>{f.message}</span>
-                    </li>
-                  ))}
-                  {detailQuery.data.quality_findings.length > 20 && (
-                    <li className="text-zinc-500">
-                      +{detailQuery.data.quality_findings.length - 20} more
-                    </li>
+                <div className="py-2 space-y-2">
+                  <ul className="text-sm space-y-1.5">
+                    {[...detailQuery.data.quality_findings]
+                      .sort((a, b) => SEVERITY_ORDER[a.severity as Severity] - SEVERITY_ORDER[b.severity as Severity])
+                      .slice(0, PREVIEW_FINDING_COUNT)
+                      .map((f, i) => (
+                        <li key={i} className="flex items-center gap-2">
+                          <SeverityBadge severity={f.severity as Severity}>{f.severity}</SeverityBadge>
+                          <span className="font-mono text-muted-foreground shrink-0 max-w-[260px] truncate">
+                            {f.file_path}
+                            {f.line ? `:${f.line}` : ""}
+                          </span>
+                          <span className="truncate min-w-0">{f.message}</span>
+                        </li>
+                      ))}
+                  </ul>
+                  {detailQuery.data.quality_findings.length > PREVIEW_FINDING_COUNT && (
+                    <Link href={`/modules/${module.id}`} className="text-sm text-primary hover:underline">
+                      View all {detailQuery.data.quality_findings.length} findings →
+                    </Link>
                   )}
-                </ul>
+                </div>
               ))}
           </TableCell>
         </TableRow>
