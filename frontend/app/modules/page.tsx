@@ -7,6 +7,7 @@ import { ChevronDown, ChevronRight } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
+import { EnabledBadge } from "@/components/enabled-badge";
 import { SeverityBadge, SEVERITY_ORDER, type Severity } from "@/components/severity-badge";
 import { notifyQueryParamChange, useQueryParam } from "@/lib/use-query-param";
 import {
@@ -51,15 +52,6 @@ async function triggerScan(path: string): Promise<ScanResponse> {
     throw new Error(body?.detail ?? `API responded with ${res.status}`);
   }
   return res.json();
-}
-
-function EnabledBadge({ enabled }: { enabled: boolean | null }) {
-  if (enabled === null) return <Badge variant="outline">unknown</Badge>;
-  return enabled ? (
-    <Badge variant="default">enabled</Badge>
-  ) : (
-    <Badge variant="secondary">disabled</Badge>
-  );
 }
 
 const STATE_VARIANTS: Record<string, "default" | "secondary" | "outline" | "destructive"> = {

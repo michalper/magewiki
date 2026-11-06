@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { useQuery } from "@tanstack/react-query";
 import { Badge } from "@/components/ui/badge";
+import { EnabledBadge } from "@/components/enabled-badge";
 import { SeverityBadge, SEVERITY_ORDER, type Severity } from "@/components/severity-badge";
 import type { components } from "@/lib/api-types";
 
@@ -42,9 +43,7 @@ export default function ModuleDetailClient({ id }: { id: string }) {
         <>
           <div className="flex items-center gap-3">
             <h1 className="text-2xl font-semibold tracking-tight font-mono">{moduleQuery.data.name}</h1>
-            <Badge variant={moduleQuery.data.enabled ? "default" : "secondary"}>
-              {moduleQuery.data.enabled ? "enabled" : "disabled"}
-            </Badge>
+            <EnabledBadge enabled={moduleQuery.data.enabled} />
             <Badge variant={moduleQuery.data.state === "up_to_date" ? "default" : "outline"}>
               {moduleQuery.data.state}
             </Badge>
