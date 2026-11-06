@@ -95,7 +95,9 @@ function QualityBadges({ module }: { module: ModuleSummary }) {
     module.phpstan_error_count > 0 ||
     module.phpmd_issue_count > 0 ||
     module.phpcs_violation_count > 0 ||
-    module.php_compat_issue_count > 0;
+    module.php_compat_issue_count > 0 ||
+    module.magento_php_incompatible_count > 0 ||
+    module.magento_version_blocker_count > 0;
   if (!hasAny) return <SeverityBadge severity="ok">clean</SeverityBadge>;
   return (
     <div className="flex flex-wrap gap-1">
@@ -131,6 +133,16 @@ function QualityBadges({ module }: { module: ModuleSummary }) {
       {module.php_compat_issue_count > 0 && (
         <SeverityBadge severity="warning">{module.php_compat_issue_count} php-compat</SeverityBadge>
       )}
+      {module.magento_php_incompatible_count > 0 && (
+        <SeverityBadge severity="blocking">
+          {module.magento_php_incompatible_count} magento-php
+        </SeverityBadge>
+      )}
+      {module.magento_version_blocker_count > 0 && (
+        <SeverityBadge severity="blocking">
+          {module.magento_version_blocker_count} magento-upgrade
+        </SeverityBadge>
+      )}
     </div>
   );
 }
@@ -157,6 +169,8 @@ function toCsv(modules: ModuleSummary[]): string {
     "phpmd_issue_count",
     "phpcs_violation_count",
     "php_compat_issue_count",
+    "magento_php_incompatible_count",
+    "magento_version_blocker_count",
     "last_scanned_at",
   ];
   const escape = (v: unknown) => {
@@ -185,6 +199,8 @@ function toCsv(modules: ModuleSummary[]): string {
       m.phpmd_issue_count,
       m.phpcs_violation_count,
       m.php_compat_issue_count,
+      m.magento_php_incompatible_count,
+      m.magento_version_blocker_count,
       m.last_scanned_at,
     ]
       .map(escape)

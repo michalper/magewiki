@@ -153,7 +153,9 @@ function TopFindingsBar({ modules }: { modules: ModuleSummary[] }) {
         m.phpstan_error_count +
         m.phpmd_issue_count +
         m.phpcs_violation_count +
-        m.php_compat_issue_count,
+        m.php_compat_issue_count +
+        m.magento_php_incompatible_count +
+        m.magento_version_blocker_count,
     }))
     .filter((d) => d.total > 0)
     .sort((a, b) => b.total - a.total)
@@ -204,6 +206,10 @@ export default function StatsPage() {
       phpmdIssues: modules.reduce((sum, m) => sum + m.phpmd_issue_count, 0),
       phpcsViolations: modules.reduce((sum, m) => sum + m.phpcs_violation_count, 0),
       phpCompatIssues: modules.reduce((sum, m) => sum + m.php_compat_issue_count, 0),
+      magentoUpgradeBlockers: modules.reduce(
+        (sum, m) => sum + m.magento_php_incompatible_count + m.magento_version_blocker_count,
+        0
+      ),
     }),
     [modules]
   );
@@ -249,6 +255,11 @@ export default function StatsPage() {
               accent={totals.abandoned > 0 ? palette.status.warning : undefined}
             />
             <StatTile label="Outdated dependencies" value={totals.outdated} />
+            <StatTile
+              label="Magento upgrade blockers"
+              value={totals.magentoUpgradeBlockers}
+              accent={totals.magentoUpgradeBlockers > 0 ? palette.status.critical : undefined}
+            />
             <StatTile
               label="PHP static-analysis findings"
               value={totals.phpstanErrors + totals.phpmdIssues + totals.phpcsViolations + totals.phpCompatIssues}

@@ -91,6 +91,8 @@ class ModuleSummary(BaseModel):
     phpmd_issue_count: int = 0
     phpcs_violation_count: int = 0
     php_compat_issue_count: int = 0
+    magento_php_incompatible_count: int = 0
+    magento_version_blocker_count: int = 0
 
 
 class MethodSummary(BaseModel):
@@ -243,6 +245,12 @@ async def list_modules(session: AsyncSession = Depends(get_session)) -> list[Mod
             phpmd_issue_count=counts_by_module.get(module.id, {}).get("phpmd_issue", 0),
             phpcs_violation_count=counts_by_module.get(module.id, {}).get("phpcs_violation", 0),
             php_compat_issue_count=counts_by_module.get(module.id, {}).get("php_compat_issue", 0),
+            magento_php_incompatible_count=counts_by_module.get(module.id, {}).get(
+                "magento_php_incompatible", 0
+            ),
+            magento_version_blocker_count=counts_by_module.get(module.id, {}).get(
+                "magento_version_blocker", 0
+            ),
         )
         for module, classes, plugins, observers, doc in module_rows
     ]
@@ -270,6 +278,8 @@ class RepoSummary(BaseModel):
     phpmd_issue_count: int
     phpcs_violation_count: int
     php_compat_issue_count: int
+    magento_php_incompatible_count: int
+    magento_version_blocker_count: int
     last_scanned_at: datetime
 
 
@@ -315,6 +325,8 @@ async def list_repos(session: AsyncSession = Depends(get_session)) -> list[RepoS
                 "phpmd_issue_count": 0,
                 "phpcs_violation_count": 0,
                 "php_compat_issue_count": 0,
+                "magento_php_incompatible_count": 0,
+                "magento_version_blocker_count": 0,
                 "last_scanned_at": last_scanned_at,
             },
         )
@@ -336,6 +348,8 @@ async def list_repos(session: AsyncSession = Depends(get_session)) -> list[RepoS
         repo["phpmd_issue_count"] += counts.get("phpmd_issue", 0)
         repo["phpcs_violation_count"] += counts.get("phpcs_violation", 0)
         repo["php_compat_issue_count"] += counts.get("php_compat_issue", 0)
+        repo["magento_php_incompatible_count"] += counts.get("magento_php_incompatible", 0)
+        repo["magento_version_blocker_count"] += counts.get("magento_version_blocker", 0)
         if last_scanned_at > repo["last_scanned_at"]:
             repo["last_scanned_at"] = last_scanned_at
 
@@ -407,6 +421,12 @@ async def get_module(module_id: int, session: AsyncSession = Depends(get_session
         phpmd_issue_count=sum(1 for f in quality_findings if f.check_type == "phpmd_issue"),
         phpcs_violation_count=sum(1 for f in quality_findings if f.check_type == "phpcs_violation"),
         php_compat_issue_count=sum(1 for f in quality_findings if f.check_type == "php_compat_issue"),
+        magento_php_incompatible_count=sum(
+            1 for f in quality_findings if f.check_type == "magento_php_incompatible"
+        ),
+        magento_version_blocker_count=sum(
+            1 for f in quality_findings if f.check_type == "magento_version_blocker"
+        ),
         dependencies=[d.depends_on_name for d in dependencies],
         classes=class_summaries,
         preferences=[DiPreferenceSummary(for_type=p.for_type, preference_type=p.preference_type) for p in preferences],

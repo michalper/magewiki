@@ -196,7 +196,8 @@ class ModuleQualityFinding(Base):
         CheckConstraint(
             "check_type IN ('composer_completeness','deprecated_annotation','hardcoded_secret',"
             "'security_advisory','abandoned_dependency','outdated_dependency',"
-            "'phpstan_error','phpmd_issue','phpcs_violation','php_compat_issue')",
+            "'phpstan_error','phpmd_issue','phpcs_violation','php_compat_issue',"
+            "'magento_php_incompatible','magento_version_blocker')",
             name="ck_module_quality_findings_check_type",
         ),
         CheckConstraint(

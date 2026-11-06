@@ -26,7 +26,9 @@ function totalFindings(r: RepoSummary): number {
     r.phpstan_error_count +
     r.phpmd_issue_count +
     r.phpcs_violation_count +
-    r.php_compat_issue_count
+    r.php_compat_issue_count +
+    r.magento_php_incompatible_count +
+    r.magento_version_blocker_count
   );
 }
 
@@ -107,6 +109,16 @@ export default function ReposPage() {
                     {repo.php_compat_issue_count > 0 && (
                       <SeverityBadge severity="warning">
                         {repo.php_compat_issue_count} php-compat
+                      </SeverityBadge>
+                    )}
+                    {repo.magento_php_incompatible_count > 0 && (
+                      <SeverityBadge severity="blocking">
+                        {repo.magento_php_incompatible_count} magento-php
+                      </SeverityBadge>
+                    )}
+                    {repo.magento_version_blocker_count > 0 && (
+                      <SeverityBadge severity="blocking">
+                        {repo.magento_version_blocker_count} magento-upgrade
                       </SeverityBadge>
                     )}
                   </>
