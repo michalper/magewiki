@@ -45,6 +45,36 @@ class _RaisingAsyncClient:
         raise httpx.ConnectError("connection refused")
 
 
+class _EmptyBodyResponse:
+    """PHP's built-in dev server returns 200 with an empty body on an
+    uncaught exception/fatal error inside index.php, rather than a proper
+    500 — confirmed in production. raise_for_status() doesn't catch that
+    (200 isn't an error status), so .json() then raises json.JSONDecodeError
+    on the empty body, same as this fake.
+    """
+
+    status_code = 200
+
+    def raise_for_status(self) -> None:
+        pass
+
+    def json(self):
+        import json
+
+        return json.loads("")
+
+
+class _EmptyBodyAsyncClient:
+    async def __aenter__(self):
+        return self
+
+    async def __aexit__(self, *args):
+        return False
+
+    async def post(self, url, json=None):
+        return _EmptyBodyResponse()
+
+
 @pytest.mark.asyncio
 async def test_check_php_static_analysis_maps_each_tool_to_its_check_type(tmp_path, monkeypatch):
     module_root = tmp_path / "Vendor" / "Module"
@@ -73,6 +103,25 @@ async def test_check_php_static_analysis_fails_open_on_connection_error(tmp_path
     module_root = tmp_path / "Vendor" / "Module"
     module_root.mkdir(parents=True)
     monkeypatch.setattr("app.scanner.php_analyzer_client.httpx.AsyncClient", lambda *a, **k: _RaisingAsyncClient())
+
+    findings = await check_php_static_analysis(module_root)
+
+    assert findings == []
+
+
+@pytest.mark.asyncio
+async def test_check_php_static_analysis_fails_open_on_an_empty_200_body(tmp_path, monkeypatch):
+    """Regression test: this previously propagated a bare json.JSONDecodeError
+    all the way up through check_php_static_analysis, failing persistence of
+    the *whole module* in scan_repository — not just "no findings from this
+    one tool", which is what every other failure mode here is designed to
+    degrade to.
+    """
+    module_root = tmp_path / "Vendor" / "Module"
+    module_root.mkdir(parents=True)
+    monkeypatch.setattr(
+        "app.scanner.php_analyzer_client.httpx.AsyncClient", lambda *a, **k: _EmptyBodyAsyncClient()
+    )
 
     findings = await check_php_static_analysis(module_root)
 

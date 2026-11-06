@@ -21,6 +21,18 @@ async def _call_tool(tool: str, module_path: str) -> list[dict]:
             data = response.json()
     except httpx.HTTPError:
         return []
+    except ValueError:
+        # PHP's built-in dev server returns 200 with an empty body on an
+        # uncaught exception/fatal error inside index.php, rather than a
+        # proper 500 — raise_for_status() doesn't catch that (200 isn't an
+        # error status), so response.json() raises json.JSONDecodeError
+        # (a ValueError subclass) on the empty body instead. Confirmed in
+        # production: this previously propagated all the way up and failed
+        # the *whole module's* persistence, not just "no findings from this
+        # tool" as the fail-open contract here promises.
+        return []
+    if not isinstance(data, dict):
+        return []
     return data.get("findings", [])
 
 
