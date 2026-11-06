@@ -103,12 +103,24 @@ function run_phpcs(string $root, string $modulePath): array
     // swallows that into an empty, wrongly-"clean" result) — write the
     // report to its own file instead.
     $reportFile = tempnam(sys_get_temp_dir(), 'phpcs_');
-    run_command([
-        ...with_memory_limit($root . '/vendor/bin/phpcs'), '--standard=Magento2', '--report=json',
-        '--report-file=' . $reportFile, '--extensions=php', '--ignore=*/vendor/*', $modulePath,
-    ]);
-    $data = json_decode((string) file_get_contents($reportFile), true);
-    unlink($reportFile);
+    // tempnam() returns false (not an exception) if it can't create the file
+    // — e.g. a full/unwritable temp dir — which previously reached
+    // file_get_contents(false) as an uncaught TypeError, a 500 the Python
+    // client already tolerates (fails open to "no phpcs findings"), but
+    // worth not crashing on: fail open explicitly instead, same as every
+    // other tool here when its own report can't be parsed.
+    if ($reportFile === false) {
+        return [];
+    }
+    try {
+        run_command([
+            ...with_memory_limit($root . '/vendor/bin/phpcs'), '--standard=Magento2', '--report=json',
+            '--report-file=' . $reportFile, '--extensions=php', '--ignore=*/vendor/*', $modulePath,
+        ]);
+        $data = json_decode((string) file_get_contents($reportFile), true);
+    } finally {
+        unlink($reportFile);
+    }
     $findings = [];
     foreach (($data['files'] ?? []) as $file => $info) {
         foreach (($info['messages'] ?? []) as $message) {
@@ -162,5 +174,22 @@ if (!isset($tools[$requestPath])) {
     exit;
 }
 
-$findings = ($tools[$requestPath])($analyzerRoot, $realModulePath);
+try {
+    $findings = ($tools[$requestPath])($analyzerRoot, $realModulePath);
+} catch (Throwable $e) {
+    // An uncaught exception/fatal error here previously reached PHP's
+    // built-in dev server's own handler, which closes the connection with a
+    // 200 and an empty body rather than a proper 500 — the Python client's
+    // raise_for_status() doesn't catch that (200 isn't an error status), so
+    // it went on to fail parsing an empty body as JSON. Confirmed in
+    // production: that propagated all the way up and failed persisting the
+    // *whole module*, not just "no findings from this one tool" the way
+    // every other failure mode here is designed to degrade. A real 500 with
+    // a JSON body is both correctly caught by the Python client already
+    // (fails open per tool) and gives something useful in logs instead of a
+    // silent empty response.
+    http_response_code(500);
+    echo json_encode(['error' => $e->getMessage()]);
+    exit;
+}
 echo json_encode(['findings' => $findings]);
