@@ -25,6 +25,7 @@ class ComposerResult:
     license: list[str] | None
     description: str | None = None
     has_php_requirement: bool = False
+    php_constraint: str | None = None
     has_magento_dependency: bool = False
     has_autoload_psr4: bool = False
     has_autoload_files: bool = False

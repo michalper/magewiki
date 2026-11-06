@@ -124,6 +124,7 @@ MVP = Phases 0–5. Each phase is done separately: first a plan for approval, th
 | 10 | Dependency intelligence: CVE/security-advisory check + abandoned/outdated check | A module with a known-vulnerable dependency shows a blocking CVE badge citing the advisory |
 | 11 | Multi-repo fleet view | A repos-list page aggregates health across every repo MageWiki has scanned |
 | 12 | PHP static-analysis toolchain (PHPStan/PHPMD/phpcs/Rector) | Equivalent scanners run against a module and their findings show up as badges |
+| 12b | Magento upgrade readiness (PHP-version and magento/\* dependency compatibility against the latest Magento release) | A module whose composer.json can't support the latest Magento release shows a blocking badge citing exactly why |
 | 13 | One cloud (GCP or Azure) via Terraform, managed Postgres + pgvector | Public demo deployment |
 
 Version 1.0 ships before Phases 7b–9: a finished project with six technologies beats an unfinished one with ten.
@@ -159,6 +160,35 @@ now carries 10 flat per-check-type count fields (3 added in Phase 9, 3 more in P
 here) — a generic `dict[check_type, count]` would scale better, but wasn't worth refactoring three
 times' worth of already-shipped, working frontend code for a cleanliness win nobody asked for.
 Worth doing if an even 5th wave of check types ever shows up.
+
+**Phase 12b decision (recorded 2026-11-06):** this is v1's actual headline feature ("upgrade
+readiness"), deliberately left out of Phase 12 and called out there as "no 'upgrade readiness'
+gate concept yet." Live-tested during planning: Magento's own packages
+(`magento/framework`, every `magento/module-*`, `magento/product-community-edition`) **do not
+exist on public Packagist** — confirmed via a direct request, 404 — they're distributed only
+through Magento's private, auth-gated `repo.magento.com` Composer repository. That means Phase
+10's existing Packagist-based checks have never actually been able to evaluate real Magento
+package compatibility, only third-party libraries. The data instead comes from Magento's public
+GitHub repo (`github.com/magento/magento2`), which exposes `composer.json` at every release tag
+with no authentication needed — Marketplace auth is only required to *install* packages, not to
+read metadata from the public source mirror; this is the same data source v1 itself used. A
+second real bug found via live verification (not mocks): the monorepo's own `composer.lock` never
+lists `magento/framework` or any `magento/module-*` package in its `packages` array — those
+components are `replace`d by the project itself (self-satisfied from the git checkout, not
+resolved from Packagist), so the exact per-component version actually comes from `composer.json`'s
+`replace` map, not `composer.lock` at all (`app/scanner/magento_github.py`). Two new blocking
+check types, `magento_php_incompatible` and `magento_version_blocker`, reuse the generic
+`module_quality_findings` table and `semver.py`'s `constraints_overlap()` — no new detection
+machinery. Per the user's request for a cyclical check (not just on manual scan), a new
+independent cron `refresh_magento_release_cache` (`app/tasks/worker.py`) pre-warms the cached
+"latest release" data daily; the existing `nightly_scan_all` cron then naturally picks up a new
+Magento release on its next run, since it already recomputes every quality finding from scratch —
+no separate recompute path was needed. Also worth flagging: GitHub's `/releases/latest` is
+documented to exclude prereleases, but at verification time it resolved to `2.4.10-alpha1`
+(`minimum-stability: alpha` in Magento's own composer.json) — Magento evidently doesn't mark its
+newest tag as a GitHub "prerelease" even though its own stability flag says alpha. Not treated as
+a bug to fix now (this is exactly what "the latest tagged release in the public repo" means today);
+worth revisiting with an explicit stable-tag filter if it turns out to matter in practice.
 
 ### Backlog: porting ideas from v1
 

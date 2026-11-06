@@ -33,6 +33,11 @@ from app.models import (
     PhpClassMethod,
 )
 from app.runtime_config import resolve_embedding_config, resolve_llm_config
+from app.scanner.magento_github import (
+    fetch_release_component_versions,
+    fetch_release_php_constraint,
+    resolve_latest_release,
+)
 from app.scanner.orchestrator import ScanAlreadyInProgressError, scan_repository
 from app.tasks.queue import get_arq_pool
 
@@ -435,3 +440,21 @@ async def nightly_scan_all(ctx: dict) -> None:
             await scan_repository_job(ctx, repo_root)
         except Exception:  # noqa: BLE001 - one bad repo must not abort the nightly run
             logger.exception("nightly_scan_all: scan failed for %s", repo_root)
+
+
+async def refresh_magento_release_cache(ctx: dict) -> None:
+    """Phase 13 cron: pre-warm the cached "latest Magento release" data daily,
+    decoupled from nightly_scan_all so it stays fresh even if that job is
+    failing. A new release becomes visible to every module's upgrade-
+    readiness check within at most a day, via the next nightly_scan_all run
+    (which recomputes every quality finding from scratch already — no
+    separate recompute path needed here).
+    """
+    async with async_session_factory() as session:
+        tag = await resolve_latest_release(session)
+        if tag is None:
+            logger.warning("refresh_magento_release_cache: could not resolve the latest Magento release")
+            return
+        await fetch_release_php_constraint(session, tag)
+        await fetch_release_component_versions(session, tag)
+        await session.commit()

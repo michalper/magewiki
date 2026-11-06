@@ -11,6 +11,7 @@ def test_parse_composer_json_with_array_license(demo_module_path: Path):
     assert result.license == ["MIT", "OSL-3.0"]
     assert result.description == "Sample fixture module for scanner tests"
     assert result.has_php_requirement is True
+    assert result.php_constraint == ">=8.1"
     assert result.has_magento_dependency is True
     assert result.has_autoload_psr4 is True
     assert result.has_autoload_files is True

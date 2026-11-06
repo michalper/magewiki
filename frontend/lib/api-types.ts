@@ -420,6 +420,16 @@ export interface components {
              * @default 0
              */
             php_compat_issue_count: number;
+            /**
+             * Magento Php Incompatible Count
+             * @default 0
+             */
+            magento_php_incompatible_count: number;
+            /**
+             * Magento Version Blocker Count
+             * @default 0
+             */
+            magento_version_blocker_count: number;
             /** Dependencies */
             dependencies: string[];
             /** Classes */
@@ -553,6 +563,16 @@ export interface components {
              * @default 0
              */
             php_compat_issue_count: number;
+            /**
+             * Magento Php Incompatible Count
+             * @default 0
+             */
+            magento_php_incompatible_count: number;
+            /**
+             * Magento Version Blocker Count
+             * @default 0
+             */
+            magento_version_blocker_count: number;
         };
         /** PhpClassSummary */
         PhpClassSummary: {
@@ -622,6 +642,10 @@ export interface components {
             phpcs_violation_count: number;
             /** Php Compat Issue Count */
             php_compat_issue_count: number;
+            /** Magento Php Incompatible Count */
+            magento_php_incompatible_count: number;
+            /** Magento Version Blocker Count */
+            magento_version_blocker_count: number;
             /**
              * Last Scanned At
              * Format: date-time
