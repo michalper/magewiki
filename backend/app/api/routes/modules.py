@@ -26,7 +26,7 @@ from app.models import (
     PhpClass,
     PhpClassMethod,
 )
-from app.scanner.orchestrator import ScanAlreadyInProgressError, ScanResult, scan_repository, scan_repository_events
+from app.scanner.orchestrator import ScanAlreadyInProgressError, ScanResult, scan_paths, scan_paths_events
 
 router = APIRouter()
 
@@ -60,6 +60,7 @@ class ScanResponse(BaseModel):
     tasks_enqueued: int
     warnings: list[str]
     modules: list[ModuleScanOutcomeResponse]
+    stores_scanned: int
 
 
 def _extract_tags(doc: dict | None) -> list[str]:
@@ -190,6 +191,7 @@ def _scan_response(result: ScanResult, duration_seconds: float) -> ScanResponse:
             )
             for m in result.modules
         ],
+        stores_scanned=result.stores_scanned,
     )
 
 
@@ -200,7 +202,7 @@ async def scan(request: ScanRequest, session: AsyncSession = Depends(get_session
 
     started = time.monotonic()
     try:
-        result = await scan_repository(request.path, session)
+        result = await scan_paths(request.path, session)
     except ScanAlreadyInProgressError as exc:
         raise HTTPException(status_code=409, detail=str(exc)) from exc
     duration = time.monotonic() - started
@@ -217,7 +219,7 @@ def _format_sse(event: dict) -> str:
 async def _scan_sse_stream(path: str, session: AsyncSession) -> AsyncIterator[str]:
     started = time.monotonic()
     try:
-        async for event in scan_repository_events(path, session):
+        async for event in scan_paths_events(path, session):
             if event["event"] == "done":
                 duration = time.monotonic() - started
                 response = _scan_response(event["result"], duration)
@@ -230,12 +232,15 @@ async def _scan_sse_stream(path: str, session: AsyncSession) -> AsyncIterator[st
 
 @router.post("/scan/stream")
 async def scan_stream(request: ScanRequest, session: AsyncSession = Depends(get_session)) -> StreamingResponse:
-    """Live progress for a scan — same scan_repository_events() generator the
+    """Live progress for a scan — same scan_paths_events() generator the
     non-streaming /scan drains silently, but piped straight to the client as
     SSE (same pattern as /chat) so the UI can show a progress bar and a
     terminal-style log instead of a single multi-minute blocking request with
     no feedback. Per-module commits in the generator mean GET /modules
-    actually reflects progress mid-scan, not just at the end.
+    actually reflects progress mid-scan, not just at the end. `path` may be a
+    single store root or a directory containing several stores side by side
+    — scan_paths_events() expands and scans each one in turn, emitting a
+    "store" event before each.
     """
     if not os.path.isdir(request.path):
         raise HTTPException(status_code=400, detail=_not_a_directory_detail(request.path))
@@ -415,6 +420,62 @@ async def list_repos(session: AsyncSession = Depends(get_session)) -> list[RepoS
             repo["last_scanned_at"] = last_scanned_at
 
     return [RepoSummary(repo_root=repo_root, **data) for repo_root, data in sorted(repos.items())]
+
+
+class OverlapStoreEntry(BaseModel):
+    repo_root: str
+    current_hash: str | None
+    enabled: bool | None
+
+
+class ModuleOverlapEntry(BaseModel):
+    name: str
+    composer_name: str | None
+    store_count: int
+    version_drift: bool
+    stores: list[OverlapStoreEntry]
+
+
+@router.get("/modules/overlap", response_model=list[ModuleOverlapEntry])
+async def list_module_overlap(session: AsyncSession = Depends(get_session)) -> list[ModuleOverlapEntry]:
+    """Modules installed under more than one repo_root — e.g. a shared
+    in-house module deployed to several stores, or the same third-party
+    module repeated across a fleet. Module.current_hash is computed purely
+    from path-relative-to-module-root + file bytes (repo_root never enters
+    the hash), so two installs of the literally same version naturally hash
+    identically — version_drift flags when they don't.
+    """
+    rows = (
+        await session.execute(
+            select(Module.name, Module.composer_name, Module.repo_root, Module.current_hash, Module.enabled)
+        )
+    ).all()
+
+    by_name: dict[str, list] = {}
+    for name, composer_name, repo_root, current_hash, enabled in rows:
+        by_name.setdefault(name, []).append((composer_name, repo_root, current_hash, enabled))
+
+    entries = []
+    for name, group in by_name.items():
+        if len({repo_root for _, repo_root, _, _ in group}) < 2:
+            continue
+        composer_name = next((c for c, _, _, _ in group if c), None)
+        hashes = {h for _, _, h, _ in group}
+        entries.append(
+            ModuleOverlapEntry(
+                name=name,
+                composer_name=composer_name,
+                store_count=len(group),
+                version_drift=len(hashes) > 1,
+                stores=[
+                    OverlapStoreEntry(repo_root=repo_root, current_hash=current_hash, enabled=enabled)
+                    for _, repo_root, current_hash, enabled in sorted(group, key=lambda g: g[1])
+                ],
+            )
+        )
+
+    entries.sort(key=lambda e: (-e.store_count, e.name))
+    return entries
 
 
 @router.get("/modules/{module_id}", response_model=ModuleDetail)

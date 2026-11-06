@@ -66,12 +66,15 @@ export interface paths {
         put?: never;
         /**
          * Scan Stream
-         * @description Live progress for a scan — same scan_repository_events() generator the
+         * @description Live progress for a scan — same scan_paths_events() generator the
          *     non-streaming /scan drains silently, but piped straight to the client as
          *     SSE (same pattern as /chat) so the UI can show a progress bar and a
          *     terminal-style log instead of a single multi-minute blocking request with
          *     no feedback. Per-module commits in the generator mean GET /modules
-         *     actually reflects progress mid-scan, not just at the end.
+         *     actually reflects progress mid-scan, not just at the end. `path` may be a
+         *     single store root or a directory containing several stores side by side
+         *     — scan_paths_events() expands and scans each one in turn, emitting a
+         *     "store" event before each.
          */
         post: operations["scan_stream_scan_stream_post"];
         delete?: never;
@@ -106,6 +109,31 @@ export interface paths {
         };
         /** List Repos */
         get: operations["list_repos_repos_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/modules/overlap": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List Module Overlap
+         * @description Modules installed under more than one repo_root — e.g. a shared
+         *     in-house module deployed to several stores, or the same third-party
+         *     module repeated across a fleet. Module.current_hash is computed purely
+         *     from path-relative-to-module-root + file bytes (repo_root never enters
+         *     the hash), so two installs of the literally same version naturally hash
+         *     identically — version_drift flags when they don't.
+         */
+        get: operations["list_module_overlap_modules_overlap_get"];
         put?: never;
         post?: never;
         delete?: never;
@@ -493,6 +521,19 @@ export interface components {
              */
             quality_findings: components["schemas"]["QualityFindingResponse"][];
         };
+        /** ModuleOverlapEntry */
+        ModuleOverlapEntry: {
+            /** Name */
+            name: string;
+            /** Composer Name */
+            composer_name: string | null;
+            /** Store Count */
+            store_count: number;
+            /** Version Drift */
+            version_drift: boolean;
+            /** Stores */
+            stores: components["schemas"]["OverlapStoreEntry"][];
+        };
         /** ModuleScanOutcomeResponse */
         ModuleScanOutcomeResponse: {
             /** Name */
@@ -626,6 +667,15 @@ export interface components {
              */
             magento_version_blocker_count: number;
         };
+        /** OverlapStoreEntry */
+        OverlapStoreEntry: {
+            /** Repo Root */
+            repo_root: string;
+            /** Current Hash */
+            current_hash: string | null;
+            /** Enabled */
+            enabled: boolean | null;
+        };
         /** PhpClassSummary */
         PhpClassSummary: {
             /** Fqcn */
@@ -733,6 +783,8 @@ export interface components {
             warnings: string[];
             /** Modules */
             modules: components["schemas"]["ModuleScanOutcomeResponse"][];
+            /** Stores Scanned */
+            stores_scanned: number;
         };
         /** ScanRootsResponse */
         ScanRootsResponse: {
@@ -923,6 +975,26 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["RepoSummary"][];
+                };
+            };
+        };
+    };
+    list_module_overlap_modules_overlap_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ModuleOverlapEntry"][];
                 };
             };
         };

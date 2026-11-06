@@ -6,11 +6,19 @@ import { SeverityBadge } from "@/components/severity-badge";
 import type { paths } from "@/lib/api-types";
 
 type RepoSummary = paths["/repos"]["get"]["responses"][200]["content"]["application/json"][number];
+type ModuleOverlapEntry =
+  paths["/modules/overlap"]["get"]["responses"][200]["content"]["application/json"][number];
 
 const apiUrl = () => process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000";
 
 async function fetchRepos(): Promise<RepoSummary[]> {
   const res = await fetch(`${apiUrl()}/repos`);
+  if (!res.ok) throw new Error(`API responded with ${res.status}`);
+  return res.json();
+}
+
+async function fetchModuleOverlap(): Promise<ModuleOverlapEntry[]> {
+  const res = await fetch(`${apiUrl()}/modules/overlap`);
   if (!res.ok) throw new Error(`API responded with ${res.status}`);
   return res.json();
 }
@@ -34,6 +42,7 @@ function totalFindings(r: RepoSummary): number {
 
 export default function ReposPage() {
   const reposQuery = useQuery({ queryKey: ["repos"], queryFn: fetchRepos });
+  const overlapQuery = useQuery({ queryKey: ["modules-overlap"], queryFn: fetchModuleOverlap });
 
   return (
     <div className="flex flex-col flex-1 gap-6 p-8 max-w-5xl mx-auto w-full">
@@ -126,6 +135,56 @@ export default function ReposPage() {
               </div>
             </Link>
           ))}
+        </div>
+      )}
+
+      {overlapQuery.data && overlapQuery.data.length > 0 && (
+        <div className="flex flex-col gap-3">
+          <h2 className="text-lg font-semibold tracking-tight">Shared across stores</h2>
+          <p className="text-sm text-muted-foreground">
+            Modules found under more than one repo — a shared in-house module, or the same
+            third-party module repeated across the fleet.
+          </p>
+          <div className="rounded-2xl bg-card p-2 shadow-sm">
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="text-left text-muted-foreground">
+                  <th className="p-3 font-medium">Module</th>
+                  <th className="p-3 font-medium">Stores</th>
+                  <th className="p-3 font-medium">Version</th>
+                  <th className="p-3 font-medium">In</th>
+                </tr>
+              </thead>
+              <tbody>
+                {overlapQuery.data.map((entry) => (
+                  <tr key={entry.name} className="border-t border-border">
+                    <td className="p-3 font-mono">{entry.name}</td>
+                    <td className="p-3">{entry.store_count}</td>
+                    <td className="p-3">
+                      {entry.version_drift ? (
+                        <SeverityBadge severity="warning">drift</SeverityBadge>
+                      ) : (
+                        <SeverityBadge severity="ok">same</SeverityBadge>
+                      )}
+                    </td>
+                    <td className="p-3">
+                      <div className="flex flex-wrap gap-2">
+                        {entry.stores.map((store) => (
+                          <Link
+                            key={store.repo_root}
+                            href={`/modules?repo=${encodeURIComponent(store.repo_root)}`}
+                            className="font-mono text-xs text-muted-foreground hover:text-foreground hover:underline"
+                          >
+                            {store.repo_root}
+                          </Link>
+                        ))}
+                      </div>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
         </div>
       )}
     </div>

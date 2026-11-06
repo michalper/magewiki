@@ -31,6 +31,7 @@ from app.scanner.dto import DiscoveredModule, PendingAnalysisJob
 from app.scanner.events_xml import parse_events_xml
 from app.scanner.hashing import aggregate_hash, compute_module_file_hashes, diff_file_hashes
 from app.scanner.magento_upgrade import check_magento_upgrade_readiness
+from app.scanner.multi_store import find_store_roots
 from app.scanner.module_xml import InvalidModuleXmlError, parse_module_xml
 from app.scanner.php_analyzer_client import check_php_static_analysis
 from app.scanner.php_classes import catalog_module_classes
@@ -76,6 +77,7 @@ class ScanResult:
     tasks_enqueued: int = 0
     warnings: list[str] = field(default_factory=list)
     modules: list[ModuleScanOutcome] = field(default_factory=list)
+    stores_scanned: int = 1
 
 
 @dataclass
@@ -98,6 +100,55 @@ async def scan_repository(repo_root: str, session: AsyncSession) -> ScanResult:
             result = event["result"]
     assert result is not None  # "done" is always the generator's last event
     return result
+
+
+async def scan_paths(path: str, session: AsyncSession) -> ScanResult:
+    """Non-streaming counterpart to scan_paths_events(), same drain pattern as
+    scan_repository().
+    """
+    result: ScanResult | None = None
+    async for event in scan_paths_events(path, session):
+        if event["event"] == "done":
+            result = event["result"]
+    assert result is not None  # "done" is always the generator's last event
+    return result
+
+
+async def scan_paths_events(path: str, session: AsyncSession) -> AsyncIterator[dict]:
+    """Expands `path` into one or more store/module roots (find_store_roots)
+    and scans each in turn — a directory containing several stores side by
+    side (e.g. /sites/store-a, /sites/store-b, ...) scans all of them in one
+    operation instead of requiring one POST /scan per store. Delegates
+    straight to scan_repository_events() unchanged whenever `path` resolves
+    to zero or one roots, so every existing single-store call site (cron,
+    webhook, CLI, evaluation — none of which call this new function anyway,
+    only the interactive POST /scan[/stream] routes do) keeps behaving
+    identically; this function is additive, not a replacement.
+    """
+    roots = find_store_roots(Path(path).resolve())
+    if len(roots) <= 1:
+        async for event in scan_repository_events(path, session):
+            yield event
+        return
+
+    combined = ScanResult(repo_root=path, stores_scanned=len(roots))
+    for index, root in enumerate(roots, start=1):
+        yield {"event": "store", "name": root.name, "index": index, "total": len(roots)}
+        async for event in scan_repository_events(str(root), session):
+            if event["event"] == "done":
+                store_result: ScanResult = event["result"]
+                combined.modules_found += store_result.modules_found
+                combined.modules_created += store_result.modules_created
+                combined.modules_updated += store_result.modules_updated
+                combined.classes_total += store_result.classes_total
+                combined.plugins_total += store_result.plugins_total
+                combined.observers_total += store_result.observers_total
+                combined.tasks_enqueued += store_result.tasks_enqueued
+                combined.warnings.extend(f"[{root.name}] {w}" for w in store_result.warnings)
+                combined.modules.extend(store_result.modules)
+            else:
+                yield event
+    yield {"event": "done", "result": combined}
 
 
 async def scan_repository_events(repo_root: str, session: AsyncSession) -> AsyncIterator[dict]:
