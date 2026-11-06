@@ -11,6 +11,12 @@ class Settings(BaseSettings):
     llm_monthly_budget_usd: float = 20.0
     anthropic_api_key: str = ""
     embedding_model: str = "openai/text-embedding-3-small"
+    # The chunks.embedding pgvector column's dimension is fixed at migration time
+    # (see alembic/versions/0013_configurable_embedding_dimension.py) — must match
+    # whatever EMBEDDING_MODEL actually outputs. 1536 = OpenAI text-embedding-3-small/
+    # -ada-002; 1024 = bge-m3 (Ollama). Changing this requires re-running migrations
+    # and a full re-embed (old vectors are in a different, incompatible vector space).
+    embedding_dimensions: int = 1536
     openai_api_key: str = ""
     webhook_hmac_secret: str = ""
     ollama_base_url: str = ""

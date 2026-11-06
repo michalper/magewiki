@@ -1,7 +1,9 @@
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.analyzer.embeddings import embed_text
+from app.config import settings
 from app.db import get_session
 from app.models import RuntimeLlmConfig
 from app.runtime_config import resolve_embedding_config, resolve_llm_config
@@ -71,6 +73,34 @@ async def update_llm_settings(
         row.embedding_api_key = update.embedding_api_key
     if "embedding_api_base" in fields_set:
         row.embedding_api_base = update.embedding_api_base
+
+    if "embedding_model" in fields_set:
+        # chunks.embedding is a fixed-dimension pgvector column (see
+        # alembic/versions/0013_configurable_embedding_dimension.py) — switching to a
+        # model with a different output dimension would crash the next scan's embed
+        # step, not this request. Probe the real dimension now, with one tiny live
+        # call, so the mismatch is caught here with an actionable error instead.
+        effective = await resolve_embedding_config(session)
+        try:
+            vector, _result = await embed_text(
+                "dimension probe", model=effective.model, api_key=effective.api_key, api_base=effective.api_base
+            )
+        except Exception as exc:  # noqa: BLE001 - surfaced to the caller as a 400, not a crash
+            await session.rollback()
+            raise HTTPException(
+                status_code=400, detail=f"could not verify {effective.model}'s embedding dimension: {exc}"
+            ) from exc
+        if len(vector) != settings.embedding_dimensions:
+            await session.rollback()
+            raise HTTPException(
+                status_code=400,
+                detail=(
+                    f"{effective.model} outputs {len(vector)}-dimensional embeddings, but this "
+                    f"deployment's chunks table is configured for {settings.embedding_dimensions} "
+                    "(EMBEDDING_DIMENSIONS) — changing embedding models to a different dimension "
+                    "requires updating EMBEDDING_DIMENSIONS, re-running migrations, and a full re-embed."
+                ),
+            )
 
     await session.commit()
     await session.refresh(row)

@@ -28,11 +28,13 @@ never interfere with each other's vector ranking):
 
 from dataclasses import dataclass
 
+from app.config import settings
+
 DIM_SPACING = 10
 
 
 def _vector(active: dict[int, float]) -> list[float]:
-    v = [0.0] * 1536
+    v = [0.0] * settings.embedding_dimensions
     for i, val in active.items():
         v[i] = val
     return v
