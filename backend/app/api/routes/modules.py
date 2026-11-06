@@ -81,6 +81,7 @@ class ModuleSummary(BaseModel):
     tags: list[str] = []
     has_readme: bool = False
     has_tests: bool = False
+    has_module_doc: bool = False
     composer_issue_count: int = 0
     deprecated_count: int = 0
     secrets_count: int = 0
@@ -235,6 +236,7 @@ async def list_modules(session: AsyncSession = Depends(get_session)) -> list[Mod
             tags=_extract_tags(doc),
             has_readme=module.has_readme,
             has_tests=module.has_tests,
+            has_module_doc=doc is not None,
             composer_issue_count=counts_by_module.get(module.id, {}).get("composer_completeness", 0),
             deprecated_count=counts_by_module.get(module.id, {}).get("deprecated_annotation", 0),
             secrets_count=counts_by_module.get(module.id, {}).get("hardcoded_secret", 0),
@@ -411,6 +413,7 @@ async def get_module(module_id: int, session: AsyncSession = Depends(get_session
         tags=_extract_tags(doc_row),
         has_readme=module.has_readme,
         has_tests=module.has_tests,
+        has_module_doc=doc_row is not None,
         composer_issue_count=sum(1 for f in quality_findings if f.check_type == "composer_completeness"),
         deprecated_count=sum(1 for f in quality_findings if f.check_type == "deprecated_annotation"),
         secrets_count=sum(1 for f in quality_findings if f.check_type == "hardcoded_secret"),

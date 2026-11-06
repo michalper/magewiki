@@ -2,6 +2,8 @@ import { Badge } from "@/components/ui/badge";
 
 export type Severity = "blocking" | "warning" | "info" | "ok" | "none";
 
+export const SEVERITY_ORDER: Record<Severity, number> = { blocking: 0, warning: 1, info: 2, ok: 3, none: 4 };
+
 const SEVERITY_CLASSES: Record<Severity, string> = {
   blocking:
     "border-transparent bg-red-100 text-red-700 dark:bg-red-950 dark:text-red-400",

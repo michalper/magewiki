@@ -3,10 +3,12 @@
 import Link from "next/link";
 import { useQuery } from "@tanstack/react-query";
 import { Badge } from "@/components/ui/badge";
-import { SeverityBadge, type Severity } from "@/components/severity-badge";
+import { SeverityBadge, SEVERITY_ORDER, type Severity } from "@/components/severity-badge";
 import type { components } from "@/lib/api-types";
 
 type ModuleDetail = components["schemas"]["ModuleDetail"];
+
+const PREVIEW_FINDING_COUNT = 10;
 
 const apiUrl = () => process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000";
 
@@ -73,30 +75,7 @@ export default function ModuleDetailClient({ id }: { id: string }) {
             </div>
           )}
 
-          {moduleQuery.data.quality_findings.length > 0 && (
-            <div className="rounded-2xl bg-card p-5 shadow-sm">
-              <h2 className="text-lg font-medium mb-3">Quality findings</h2>
-              <ul className="text-sm space-y-2">
-                {moduleQuery.data.quality_findings.slice(0, 20).map((f, i) => (
-                  <li key={i} className="flex items-center gap-2">
-                    <SeverityBadge severity={f.severity as Severity}>{f.severity}</SeverityBadge>
-                    <span className="font-mono text-muted-foreground">
-                      {f.file_path}
-                      {f.line ? `:${f.line}` : ""}
-                    </span>
-                    <span>{f.message}</span>
-                  </li>
-                ))}
-                {moduleQuery.data.quality_findings.length > 20 && (
-                  <li className="text-muted-foreground">
-                    +{moduleQuery.data.quality_findings.length - 20} more
-                  </li>
-                )}
-              </ul>
-            </div>
-          )}
-
-          <div className="rounded-2xl bg-card p-5 shadow-sm">
+          <div id="readme" className="rounded-2xl bg-card p-5 shadow-sm scroll-mt-20">
             <h2 className="text-lg font-medium mb-3">README</h2>
             {readmeQuery.isLoading && <p className="text-sm text-muted-foreground">Loading...</p>}
             {readmeQuery.data === null && (
@@ -108,6 +87,39 @@ export default function ModuleDetailClient({ id }: { id: string }) {
               </pre>
             )}
           </div>
+
+          {moduleQuery.data.quality_findings.length > 0 && (
+            <div className="rounded-2xl bg-card p-5 shadow-sm">
+              <h2 className="text-lg font-medium mb-3">
+                Quality findings{" "}
+                <span className="text-sm font-normal text-muted-foreground">
+                  (most severe {Math.min(PREVIEW_FINDING_COUNT, moduleQuery.data.quality_findings.length)} of{" "}
+                  {moduleQuery.data.quality_findings.length})
+                </span>
+              </h2>
+              <ul className="text-sm space-y-2">
+                {[...moduleQuery.data.quality_findings]
+                  .sort((a, b) => SEVERITY_ORDER[a.severity as Severity] - SEVERITY_ORDER[b.severity as Severity])
+                  .slice(0, PREVIEW_FINDING_COUNT)
+                  .map((f, i) => (
+                    <li key={i} className="flex items-center gap-2">
+                      <SeverityBadge severity={f.severity as Severity}>{f.severity}</SeverityBadge>
+                      <span className="font-mono text-muted-foreground shrink-0 max-w-[280px] truncate">
+                        {f.file_path}
+                        {f.line ? `:${f.line}` : ""}
+                      </span>
+                      <span className="truncate min-w-0">{f.message}</span>
+                    </li>
+                  ))}
+                {moduleQuery.data.quality_findings.length > PREVIEW_FINDING_COUNT && (
+                  <li className="text-muted-foreground">
+                    +{moduleQuery.data.quality_findings.length - PREVIEW_FINDING_COUNT} more — use Export CSV
+                    on the modules list for the full set
+                  </li>
+                )}
+              </ul>
+            </div>
+          )}
         </>
       )}
     </div>

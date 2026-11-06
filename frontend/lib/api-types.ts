@@ -371,6 +371,11 @@ export interface components {
              */
             has_tests: boolean;
             /**
+             * Has Module Doc
+             * @default false
+             */
+            has_module_doc: boolean;
+            /**
              * Composer Issue Count
              * @default 0
              */
@@ -513,6 +518,11 @@ export interface components {
              * @default false
              */
             has_tests: boolean;
+            /**
+             * Has Module Doc
+             * @default false
+             */
+            has_module_doc: boolean;
             /**
              * Composer Issue Count
              * @default 0
