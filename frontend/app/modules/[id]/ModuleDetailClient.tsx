@@ -7,6 +7,7 @@ import { Badge } from "@/components/ui/badge";
 import { EnabledBadge } from "@/components/enabled-badge";
 import { SeverityBadge, SEVERITY_ORDER, type Severity } from "@/components/severity-badge";
 import { StateBadge } from "@/components/state-badge";
+import { apiFetch, apiUrl } from "@/lib/api";
 import type { components } from "@/lib/api-types";
 
 type ModuleDetail = components["schemas"]["ModuleDetail"];
@@ -27,15 +28,14 @@ const README_MARKDOWN_COMPONENTS: Components = {
   strong: (props) => <strong className="font-semibold" {...props} />,
 };
 
-const apiUrl = () => process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000";
-
 async function fetchModule(id: string): Promise<ModuleDetail> {
-  const res = await fetch(`${apiUrl()}/modules/${id}`);
-  if (!res.ok) throw new Error(`API responded with ${res.status}`);
-  return res.json();
+  return apiFetch(`/modules/${id}`);
 }
 
 async function fetchReadme(id: string): Promise<string | null> {
+  // apiFetch always parses JSON and can't special-case 404 as "not an error" —
+  // this is the one fetch in the app that returns plain text and treats a
+  // missing README as a valid, non-error result, so it stays bespoke.
   const res = await fetch(`${apiUrl()}/modules/${id}/readme`);
   if (res.status === 404) return null;
   if (!res.ok) throw new Error(`API responded with ${res.status}`);

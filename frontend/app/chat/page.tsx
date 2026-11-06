@@ -5,11 +5,10 @@ import Link from "next/link";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
+import { apiUrl } from "@/lib/api";
 import type { Audience, ChatEvent, Source } from "@/lib/chat-types";
 import { streamSse } from "@/lib/sse";
 import { useDocumentTitle } from "@/lib/use-document-title";
-
-const apiUrl = () => process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000";
 
 type DisplayMessage = {
   role: "user" | "assistant";

@@ -5,34 +5,26 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
+import { apiFetch } from "@/lib/api";
 import type { components } from "@/lib/api-types";
 import { useDocumentTitle } from "@/lib/use-document-title";
 
 type LlmSettingsResponse = components["schemas"]["LlmSettingsResponse"];
 type LlmSettingsUpdate = components["schemas"]["LlmSettingsUpdate"];
 
-const apiUrl = () => process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000";
-
 async function fetchSettings(): Promise<LlmSettingsResponse> {
-  const res = await fetch(`${apiUrl()}/settings/llm`);
-  if (!res.ok) throw new Error(`API responded with ${res.status}`);
-  return res.json();
+  return apiFetch("/settings/llm");
 }
 
 async function patchSettings(update: LlmSettingsUpdate): Promise<LlmSettingsResponse> {
-  const res = await fetch(`${apiUrl()}/settings/llm`, {
+  // The backend's 400s here are actionable (e.g. "re-enter the key to change the
+  // host" from the api_base/api_key coupling security check) — apiFetch already
+  // surfaces the real message instead of a generic "failed to save".
+  return apiFetch("/settings/llm", {
     method: "PATCH",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(update),
   });
-  if (!res.ok) {
-    // The backend's 400s here are actionable (e.g. "re-enter the key to change the
-    // host" from the api_base/api_key coupling security check) — surface the real
-    // message instead of a generic "failed to save".
-    const body = await res.json().catch(() => null);
-    throw new Error(body?.detail ?? `API responded with ${res.status}`);
-  }
-  return res.json();
 }
 
 function KeyBadge({ configured }: { configured: boolean }) {
