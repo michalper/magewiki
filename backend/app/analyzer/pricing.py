@@ -15,5 +15,5 @@ MODEL_PRICES_USD_PER_MTOK: dict[str, dict[str, Decimal]] = {
 def compute_cost_usd(model: str, tokens_in: int, tokens_out: int) -> Decimal:
     prices = MODEL_PRICES_USD_PER_MTOK.get(model)
     if prices is None:
-        return Decimal("0")
+        return Decimal(0)
     return (Decimal(tokens_in) * prices["input"] + Decimal(tokens_out) * prices["output"]) / Decimal(1_000_000)

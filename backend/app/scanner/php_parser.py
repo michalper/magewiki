@@ -1,5 +1,5 @@
-from tree_sitter import Language, Node, Parser
 import tree_sitter_php
+from tree_sitter import Language, Node, Parser
 
 _language = Language(tree_sitter_php.language_php())
 _parser = Parser(_language)

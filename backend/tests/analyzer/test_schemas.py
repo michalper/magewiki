@@ -1,7 +1,7 @@
 import pytest
 from pydantic import ValidationError
 
-from app.analyzer.schemas import FileSummary, Feature, ModuleDoc
+from app.analyzer.schemas import Feature, FileSummary, ModuleDoc
 
 
 def _valid_doc_payload(source: str) -> dict:

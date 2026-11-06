@@ -11,13 +11,14 @@ import asyncio
 from datetime import UTC, datetime
 from pathlib import Path
 
-import app.evaluation.isolated_retrieval as isolated_retrieval
-import app.search.hybrid as hybrid
+from sqlalchemy import delete, select
+
 from app.db import async_session_factory
-from app.evaluation.ci_dataset import CiScenario, CI_SCENARIOS
+from app.evaluation import isolated_retrieval
+from app.evaluation.ci_dataset import CI_SCENARIOS, CiScenario
 from app.evaluation.metrics import aggregate, render_markdown_table
 from app.models import Chunk, Module
-from sqlalchemy import delete, select
+from app.search import hybrid
 
 CI_MODULE_REPO_ROOT = "__magewiki_ci_eval__"
 REPORT_PATH = Path(__file__).parent / "report" / "ci_eval_comment.md"
@@ -72,8 +73,8 @@ def _markdown(metrics: dict[str, dict[str, float]]) -> str:
             "",
             render_markdown_table(metrics, ks=(1, 3)),
             "",
-            "_Synthetic fixture — not the real Ordo_Automation numbers in README._ "
-            "_Proves fusion logic, not real-world quality._",
+            ("_Synthetic fixture — not the real Ordo_Automation numbers in README._ "
+             "_Proves fusion logic, not real-world quality._"),
         ]
     )
 

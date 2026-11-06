@@ -46,6 +46,12 @@ pip-audit = "^2.7"
 target-version = "py311"
 line-length = 100
 
+[tool.ruff.lint.flake8-bugbear]
+# FastAPI's dependency-injection pattern (`session: AsyncSession = Depends(get_session)`)
+# is a function call in an argument default by design — not the mutable-default-argument
+# bug B008 exists to catch. This is FastAPI's own documented ruff config recommendation.
+extend-immutable-calls = ["fastapi.Depends", "fastapi.Query", "fastapi.Path", "fastapi.Body"]
+
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 asyncio_mode = "auto"

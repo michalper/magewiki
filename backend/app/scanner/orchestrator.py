@@ -38,8 +38,8 @@ from app.scanner.dto import (
 from app.scanner.events_xml import parse_events_xml
 from app.scanner.hashing import aggregate_hash, compute_module_file_hashes, diff_file_hashes
 from app.scanner.magento_upgrade import check_magento_upgrade_readiness
-from app.scanner.multi_store import find_store_roots
 from app.scanner.module_xml import InvalidModuleXmlError, parse_module_xml
+from app.scanner.multi_store import find_store_roots
 from app.scanner.php_analyzer_client import check_php_static_analysis
 from app.scanner.php_classes import catalog_module_classes
 from app.scanner.readme_check import has_readme
@@ -262,7 +262,7 @@ async def _run_scan(root: Path, session: AsyncSession) -> AsyncIterator[dict]:
                     session, root, pm, config_map, all_plugin_classes, all_observer_classes, outcome, module_job_specs
                 )
             await session.commit()
-        except Exception as exc:  # noqa: BLE001 - one module's failure must not abort the scan
+        except Exception as exc:
             outcome.status = "error"
             message = f"{pm.module_xml.name}: {exc}"
             outcome.warnings.append(message)

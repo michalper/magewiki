@@ -87,8 +87,7 @@ def _parse_simple(token: str) -> Interval:
         # Not expressible as a single interval; treat as unbounded (never
         # the reason an overlap check says "no overlap") rather than wrong.
         return _UNBOUNDED
-    if token.startswith("="):
-        token = token[1:]
+    token = token.removeprefix("=")
 
     if token.startswith("^"):
         v = _parse_version(token[1:])
@@ -100,7 +99,7 @@ def _parse_simple(token: str) -> Interval:
         bump_index = max(len(v) - 2, 0)
         return Interval(v, True, _bump(v, bump_index), False)
 
-    if token.endswith(".*") or token.endswith(".x"):
+    if token.endswith((".*", ".x")):
         base = token[:-2]
         v = _parse_version(base)
         return Interval(v, True, _bump(v, len(v) - 1), False)

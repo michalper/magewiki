@@ -33,12 +33,14 @@ async def test_scan_stream_relays_discovered_module_done_in_order(tmp_path, monk
     monkeypatch.setattr("app.scanner.orchestrator.scan_repository_events", fake_scan_repository_events)
 
     transport = ASGITransport(app=app)
-    async with AsyncClient(transport=transport, base_url="http://test") as client:
-        async with client.stream("POST", "/scan/stream", json={"path": str(tmp_path)}) as response:
-            assert response.status_code == 200
-            raw_text = ""
-            async for chunk in response.aiter_text():
-                raw_text += chunk
+    async with (
+        AsyncClient(transport=transport, base_url="http://test") as client,
+        client.stream("POST", "/scan/stream", json={"path": str(tmp_path)}) as response,
+    ):
+        assert response.status_code == 200
+        raw_text = ""
+        async for chunk in response.aiter_text():
+            raw_text += chunk
 
     events = _parse_sse(raw_text)
     event_types = [e[0] for e in events]
@@ -58,11 +60,13 @@ async def test_scan_stream_relays_already_in_progress_as_an_error_event(tmp_path
     monkeypatch.setattr("app.scanner.orchestrator.scan_repository_events", fake_scan_repository_events)
 
     transport = ASGITransport(app=app)
-    async with AsyncClient(transport=transport, base_url="http://test") as client:
-        async with client.stream("POST", "/scan/stream", json={"path": str(tmp_path)}) as response:
-            raw_text = ""
-            async for chunk in response.aiter_text():
-                raw_text += chunk
+    async with (
+        AsyncClient(transport=transport, base_url="http://test") as client,
+        client.stream("POST", "/scan/stream", json={"path": str(tmp_path)}) as response,
+    ):
+        raw_text = ""
+        async for chunk in response.aiter_text():
+            raw_text += chunk
 
     events = _parse_sse(raw_text)
     assert events[0][0] == "error"

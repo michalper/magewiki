@@ -54,7 +54,7 @@ async def _seed_file_summary(session, module: Module, relative_path: str, conten
         response={"file_summary": summary, "notable_behavior": None},
         tokens_in=0,
         tokens_out=0,
-        cost_usd=Decimal("0"),
+        cost_usd=Decimal(0),
     )
     session.add(cache)
     await session.flush()
@@ -93,7 +93,7 @@ async def test_hybrid_search_ranks_real_embeddings_by_meaning(demo_store_path: P
 
     async def _fake_synthesize(facts, known_sources, **kwargs):
         result = LlmCallResult(
-            response_json=fake_doc.model_dump(mode="json"), tokens_in=0, tokens_out=0, cost_usd=Decimal("0")
+            response_json=fake_doc.model_dump(mode="json"), tokens_in=0, tokens_out=0, cost_usd=Decimal(0)
         )
         return fake_doc, result
 

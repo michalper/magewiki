@@ -4,7 +4,12 @@ from pathlib import Path
 import pytest
 
 from app.evaluation.dataset import ENUMERATION_QUESTIONS, NEGATIVE_QUESTIONS, RETRIEVAL_QUESTIONS
-from app.evaluation.runner import run_enumeration_eval, run_negative_eval, run_retrieval_eval, seed_corpus
+from app.evaluation.runner import (
+    run_enumeration_eval,
+    run_negative_eval,
+    run_retrieval_eval,
+    seed_corpus,
+)
 from tests.conftest import ORDO_FIXTURE_ENV, requires_ordo_fixture
 
 

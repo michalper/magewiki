@@ -92,7 +92,7 @@ async def run_agent(session: AsyncSession, messages: list[dict], audience: str) 
     sources: dict[tuple, Source] = {}
     tokens_in_total = 0
     tokens_out_total = 0
-    cost_total = Decimal("0")
+    cost_total = Decimal(0)
 
     forced_retry_used = False
     for _round in range(MAX_TOOL_ROUNDS):

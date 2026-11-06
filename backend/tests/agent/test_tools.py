@@ -122,7 +122,7 @@ async def test_get_module_analyzed_includes_doc_fields(demo_store_path: Path, db
         response={},
         tokens_in=0,
         tokens_out=0,
-        cost_usd=Decimal("0"),
+        cost_usd=Decimal(0),
     )
     db_session.add(cache)
     await db_session.flush()
@@ -255,7 +255,7 @@ async def test_list_modules_filters_by_status_and_tags(db_session):
         response={},
         tokens_in=0,
         tokens_out=0,
-        cost_usd=Decimal("0"),
+        cost_usd=Decimal(0),
     )
     db_session.add(cache)
     await db_session.flush()

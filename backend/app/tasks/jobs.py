@@ -182,7 +182,7 @@ async def analyze_file(
                     module_current_hash,
                     _job_id=f"synthesize:{module_id}:{module_current_hash}",
                 )
-    except Exception as exc:  # noqa: BLE001 - recorded on the module, then re-raised for ARQ's retry
+    except Exception as exc:
         async with async_session_factory() as session:
             await session.execute(
                 update(Module)
@@ -286,7 +286,7 @@ async def synthesize_module(ctx: dict | None, module_id: int, module_current_has
                 module_current_hash,
                 _job_id=f"embed:{module_id}:{module_current_hash}",
             )
-    except Exception as exc:  # noqa: BLE001
+    except Exception as exc:
         async with async_session_factory() as session:
             await session.execute(
                 update(Module)
@@ -403,7 +403,7 @@ async def embed_chunks(ctx: dict | None, module_id: int, module_current_hash: st
                 .values(state="up_to_date", analyzed_hash=module_current_hash, last_error=None, retry_count=0)
             )
             await session.commit()
-    except Exception as exc:  # noqa: BLE001
+    except Exception as exc:
         async with async_session_factory() as session:
             await session.execute(
                 update(Module)
@@ -440,7 +440,7 @@ async def nightly_scan_all(ctx: dict) -> None:
     for repo_root in repo_roots:
         try:
             await scan_repository_job(ctx, repo_root)
-        except Exception:  # noqa: BLE001 - one bad repo must not abort the nightly run
+        except Exception:
             logger.exception("nightly_scan_all: scan failed for %s", repo_root)
 
 
