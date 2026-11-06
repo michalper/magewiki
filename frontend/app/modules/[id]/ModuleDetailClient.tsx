@@ -32,17 +32,17 @@ export default function ModuleDetailClient({ id }: { id: string }) {
 
   return (
     <div className="flex flex-col flex-1 gap-6 p-8 max-w-4xl mx-auto w-full">
-      <Link href="/modules" className="text-sm underline underline-offset-4 self-start">
+      <Link href="/modules" className="text-sm text-primary hover:underline self-start">
         ← All modules
       </Link>
 
       {moduleQuery.isLoading && <p>Loading...</p>}
-      {moduleQuery.isError && <p className="text-red-600">Failed to load module.</p>}
+      {moduleQuery.isError && <p className="text-destructive">Failed to load module.</p>}
 
       {moduleQuery.data && (
         <>
           <div className="flex items-center gap-3">
-            <h1 className="text-2xl font-semibold tracking-tight font-mono">{moduleQuery.data.name}</h1>
+            <h1 className="text-2xl font-semibold tracking-tight">{moduleQuery.data.name}</h1>
             <EnabledBadge enabled={moduleQuery.data.enabled} />
             <Badge variant={moduleQuery.data.state === "up_to_date" ? "default" : "outline"}>
               {moduleQuery.data.state}
@@ -59,10 +59,10 @@ export default function ModuleDetailClient({ id }: { id: string }) {
               {moduleQuery.data.has_tests ? "tests" : "no tests"}
             </SeverityBadge>
           </div>
-          <Link href={`/modules/${id}/graph`} className="text-sm underline underline-offset-4 self-start">
+          <Link href={`/modules/${id}/graph`} className="text-sm text-primary hover:underline self-start">
             View dependency graph →
           </Link>
-          <p className="text-sm text-zinc-500">
+          <p className="text-sm text-muted-foreground">
             Last scanned {new Date(moduleQuery.data.last_scanned_at).toLocaleString()} — composer:{" "}
             {moduleQuery.data.composer_name ?? "—"}
           </p>

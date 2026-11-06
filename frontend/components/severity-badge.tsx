@@ -11,7 +11,7 @@ const SEVERITY_CLASSES: Record<Severity, string> = {
     "border-transparent bg-orange-100 text-orange-700 dark:bg-orange-950 dark:text-orange-400",
   info: "border-transparent bg-blue-100 text-blue-700 dark:bg-blue-950 dark:text-blue-400",
   ok: "border-transparent bg-green-100 text-green-700 dark:bg-green-950 dark:text-green-400",
-  none: "border-transparent bg-zinc-100 text-zinc-500 dark:bg-zinc-800 dark:text-zinc-400",
+  none: "border-transparent bg-muted text-muted-foreground",
 };
 
 export function SeverityBadge({

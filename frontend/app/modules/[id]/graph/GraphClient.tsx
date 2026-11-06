@@ -55,16 +55,16 @@ export default function GraphClient({ id }: { id: string }) {
 
   return (
     <div className="flex flex-col flex-1 gap-4 p-8 max-w-4xl mx-auto w-full">
-      <Link href={`/modules/${id}`} className="text-sm underline underline-offset-4 self-start">
+      <Link href={`/modules/${id}`} className="text-sm text-primary hover:underline self-start">
         ← Module details
       </Link>
 
       {graphQuery.isLoading && <p>Loading...</p>}
-      {graphQuery.isError && <p className="text-red-600">Failed to load dependency graph.</p>}
+      {graphQuery.isError && <p className="text-destructive">Failed to load dependency graph.</p>}
 
       {graphQuery.data && (
         <>
-          <h1 className="text-2xl font-semibold tracking-tight font-mono">
+          <h1 className="text-2xl font-semibold tracking-tight">
             {graphQuery.data.center_label} — dependency graph
           </h1>
 
@@ -112,10 +112,10 @@ export default function GraphClient({ id }: { id: string }) {
               const isCenter = node.id === centerId;
               const clickable = node.kind === "module" && node.module_id !== null && !isCenter;
               const nodeClasses = isCenter
-                ? "bg-zinc-900 text-white dark:bg-zinc-100 dark:text-black border-zinc-900"
+                ? "bg-primary text-primary-foreground border-primary"
                 : node.kind === "external"
-                  ? "bg-zinc-50 text-zinc-400 border-dashed border-zinc-300 dark:bg-zinc-900 dark:text-zinc-600"
-                  : "bg-white text-zinc-900 border-zinc-300 hover:bg-zinc-50 dark:bg-zinc-950 dark:text-zinc-100";
+                  ? "bg-muted text-muted-foreground border-dashed border-border"
+                  : "bg-card text-foreground border-border hover:bg-accent/40";
 
               const content = (
                 <div
@@ -139,7 +139,7 @@ export default function GraphClient({ id }: { id: string }) {
             })}
           </div>
 
-          <div className="flex gap-4 justify-center text-sm text-zinc-500">
+          <div className="flex gap-4 justify-center text-sm text-muted-foreground">
             {Object.entries(RELATION_COLORS).map(([relation, color]) => (
               <span key={relation} className="flex items-center gap-1.5">
                 <span className="inline-block w-3 h-0.5" style={{ backgroundColor: color }} />

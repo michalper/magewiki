@@ -40,10 +40,10 @@ export default function ReposPage() {
       <h1 className="text-2xl font-semibold tracking-tight">Repos</h1>
 
       {reposQuery.isLoading && <p>Loading...</p>}
-      {reposQuery.isError && <p className="text-red-600">Failed to load repos.</p>}
+      {reposQuery.isError && <p className="text-destructive">Failed to load repos.</p>}
 
       {reposQuery.data && reposQuery.data.length === 0 && (
-        <p className="text-zinc-500">No repos scanned yet.</p>
+        <p className="text-muted-foreground">No repos scanned yet.</p>
       )}
 
       {reposQuery.data && reposQuery.data.length > 0 && (
@@ -56,11 +56,11 @@ export default function ReposPage() {
             >
               <div className="flex items-center justify-between">
                 <span className="font-mono text-sm">{repo.repo_root}</span>
-                <span className="text-sm text-zinc-500">
+                <span className="text-sm text-muted-foreground">
                   {repo.module_count} module{repo.module_count === 1 ? "" : "s"}
                 </span>
               </div>
-              <div className="flex flex-wrap items-center gap-3 text-sm text-zinc-500">
+              <div className="flex flex-wrap items-center gap-3 text-sm text-muted-foreground">
                 <span>
                   {repo.enabled_count}/{repo.module_count} enabled
                 </span>

@@ -75,23 +75,23 @@ export default function SettingsPage() {
   return (
     <div className="flex flex-col flex-1 gap-8 p-8 max-w-2xl mx-auto w-full">
       <h1 className="text-2xl font-semibold tracking-tight">Settings — BYOK</h1>
-      <p className="text-sm text-zinc-500">
+      <p className="text-sm text-muted-foreground">
         Override the model and API key used for chat/analysis and embeddings, without editing{" "}
         <code>.env</code> or restarting containers. Leaving a field blank keeps the current value;
         use &ldquo;Reset to .env default&rdquo; to clear an override.
       </p>
 
       {settingsQuery.isLoading && <p>Loading...</p>}
-      {settingsQuery.isError && <p className="text-red-600">Failed to load settings.</p>}
+      {settingsQuery.isError && <p className="text-destructive">Failed to load settings.</p>}
 
       {settingsQuery.data && (
         <>
-          <section className="flex flex-col gap-3 border rounded-lg p-4">
+          <section className="flex flex-col gap-3 rounded-2xl bg-card p-5 shadow-sm">
             <div className="flex items-center justify-between">
               <h2 className="font-medium">LLM (chat / analysis)</h2>
               <KeyBadge configured={settingsQuery.data.llm_key_configured} />
             </div>
-            <p className="text-sm text-zinc-500">
+            <p className="text-sm text-muted-foreground">
               Current: <span className="font-mono">{settingsQuery.data.llm_model}</span>
               {settingsQuery.data.llm_api_base && (
                 <>
@@ -134,12 +134,12 @@ export default function SettingsPage() {
             </div>
           </section>
 
-          <section className="flex flex-col gap-3 border rounded-lg p-4">
+          <section className="flex flex-col gap-3 rounded-2xl bg-card p-5 shadow-sm">
             <div className="flex items-center justify-between">
               <h2 className="font-medium">Embeddings</h2>
               <KeyBadge configured={settingsQuery.data.embedding_key_configured} />
             </div>
-            <p className="text-sm text-zinc-500">
+            <p className="text-sm text-muted-foreground">
               Current: <span className="font-mono">{settingsQuery.data.embedding_model}</span>
               {settingsQuery.data.embedding_api_base && (
                 <>
@@ -186,7 +186,7 @@ export default function SettingsPage() {
             </div>
           </section>
 
-          {patchMutation.isError && <p className="text-red-600 text-sm">Failed to save settings.</p>}
+          {patchMutation.isError && <p className="text-destructive text-sm">Failed to save settings.</p>}
         </>
       )}
     </div>
