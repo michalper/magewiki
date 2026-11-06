@@ -132,8 +132,14 @@ function run_rector(string $root, string $modulePath): array
     $findings = [];
     foreach (($data['file_diffs'] ?? []) as $diff) {
         $rules = implode(', ', $diff['applied_rectors'] ?? []);
+        // Rector reports "file" relative to this process's CWD (/opt/analyzer
+        // per the Dockerfile's WORKDIR), not absolute like every other tool
+        // here — resolve it so downstream relativization against the module
+        // root actually works instead of producing a "../../Users/..." path.
+        $rawFile = $diff['file'] ?? '';
+        $resolvedFile = realpath($rawFile);
         $findings[] = [
-            'file' => $diff['file'] ?? '',
+            'file' => $resolvedFile !== false ? $resolvedFile : $rawFile,
             'line' => null,
             'message' => 'Rector would apply: ' . ($rules !== '' ? $rules : 'unknown rule'),
         ];
