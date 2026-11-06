@@ -55,6 +55,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/repos": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List Repos */
+        get: operations["list_repos_repos_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/modules/{module_id}": {
         parameters: {
             query?: never;
@@ -321,6 +338,8 @@ export interface components {
             source_type: string;
             /** Path */
             path: string;
+            /** Repo Root */
+            repo_root: string;
             /** Enabled */
             enabled: boolean | null;
             /** State */
@@ -432,6 +451,8 @@ export interface components {
             source_type: string;
             /** Path */
             path: string;
+            /** Repo Root */
+            repo_root: string;
             /** Enabled */
             enabled: boolean | null;
             /** State */
@@ -522,6 +543,42 @@ export interface components {
             line: number | null;
             /** Message */
             message: string;
+        };
+        /**
+         * RepoSummary
+         * @description Phase 11: aggregate health across every repo MageWiki has scanned.
+         *     `Module.repo_root` already lets multiple repos coexist in one DB — this
+         *     is purely an aggregation over existing data, no multi-tenancy/"client"
+         *     concept, per docs/v1-port-roadmap.md's scoped-down Phase 11 design.
+         */
+        RepoSummary: {
+            /** Repo Root */
+            repo_root: string;
+            /** Module Count */
+            module_count: number;
+            /** Enabled Count */
+            enabled_count: number;
+            /** Has Readme Count */
+            has_readme_count: number;
+            /** Has Tests Count */
+            has_tests_count: number;
+            /** Composer Issue Count */
+            composer_issue_count: number;
+            /** Deprecated Count */
+            deprecated_count: number;
+            /** Secrets Count */
+            secrets_count: number;
+            /** Security Advisory Count */
+            security_advisory_count: number;
+            /** Abandoned Dependency Count */
+            abandoned_dependency_count: number;
+            /** Outdated Dependency Count */
+            outdated_dependency_count: number;
+            /**
+             * Last Scanned At
+             * Format: date-time
+             */
+            last_scanned_at: string;
         };
         /** ScanRequest */
         ScanRequest: {
@@ -664,6 +721,26 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["ModuleSummary"][];
+                };
+            };
+        };
+    };
+    list_repos_repos_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RepoSummary"][];
                 };
             };
         };

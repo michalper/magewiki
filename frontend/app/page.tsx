@@ -48,6 +48,9 @@ export default function Home() {
         <Link href="/modules" className="text-sm underline underline-offset-4">
           View scanned modules →
         </Link>
+        <Link href="/repos" className="text-sm underline underline-offset-4">
+          Repos →
+        </Link>
         <Link href="/stats" className="text-sm underline underline-offset-4">
           Stats →
         </Link>

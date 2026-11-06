@@ -9,6 +9,7 @@ import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { SeverityBadge, type Severity } from "@/components/severity-badge";
 import { ThemeToggle } from "@/components/theme-toggle";
+import { notifyQueryParamChange, useQueryParam } from "@/lib/use-query-param";
 import {
   Table,
   TableBody,
@@ -324,7 +325,15 @@ export default function ModulesPage() {
   const [sortKey, setSortKey] = useState<SortKey>("name");
   const [sortDir, setSortDir] = useState<"asc" | "desc">("asc");
   const [expandedIds, setExpandedIds] = useState<Set<number>>(new Set());
+  // Read directly from the URL — avoids useSearchParams' Suspense-boundary
+  // requirement for a filter this page doesn't need to statically render.
+  const repoFilter = useQueryParam("repo");
   const queryClient = useQueryClient();
+
+  function clearRepoFilter() {
+    window.history.replaceState(null, "", "/modules");
+    notifyQueryParamChange();
+  }
 
   const modulesQuery = useQuery({ queryKey: ["modules"], queryFn: fetchModules });
 
@@ -346,6 +355,7 @@ export default function ModulesPage() {
 
   const filteredAndSorted = useMemo(() => {
     const list = (modulesQuery.data ?? []).filter((m) => {
+      if (repoFilter && m.repo_root !== repoFilter) return false;
       if (sourceFilter !== "all" && m.source_type !== sourceFilter) return false;
       if (stateFilter !== "all" && m.state !== stateFilter) return false;
       if (search.trim()) {
@@ -364,7 +374,7 @@ export default function ModulesPage() {
       if (av > bv) return 1 * dir;
       return 0;
     });
-  }, [modulesQuery.data, search, sourceFilter, stateFilter, sortKey, sortDir]);
+  }, [modulesQuery.data, repoFilter, search, sourceFilter, stateFilter, sortKey, sortDir]);
 
   function toggleSort(key: SortKey) {
     if (sortKey === key) {
@@ -387,9 +397,24 @@ export default function ModulesPage() {
   return (
     <div className="flex flex-col flex-1 gap-6 p-8 max-w-7xl mx-auto w-full">
       <div className="flex items-center justify-between">
-        <h1 className="text-2xl font-semibold tracking-tight">Modules</h1>
+        <div className="flex items-center gap-4">
+          <h1 className="text-2xl font-semibold tracking-tight">Modules</h1>
+          <Link href="/repos" className="text-sm underline underline-offset-4">
+            Repos →
+          </Link>
+        </div>
         <ThemeToggle />
       </div>
+
+      {repoFilter && (
+        <div className="flex items-center gap-2 text-sm">
+          <span className="text-zinc-500">Filtering by repo:</span>
+          <span className="font-mono">{repoFilter}</span>
+          <button type="button" onClick={clearRepoFilter} className="text-red-600 underline underline-offset-4">
+            Clear
+          </button>
+        </div>
+      )}
 
       <form
         className="flex gap-2"
