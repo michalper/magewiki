@@ -65,7 +65,7 @@ function SourceChips({ sources }: { sources: Source[] }) {
     <div className="flex flex-wrap gap-2 mt-2">
       {sources.map((s, i) => (
         <Link key={`${s.module_id}-${s.relative_path ?? ""}-${i}`} href={`/modules/${s.module_id}`}>
-          <Badge variant="outline" className="cursor-pointer hover:bg-zinc-100 dark:hover:bg-zinc-800">
+          <Badge variant="outline" className="cursor-pointer hover:bg-accent">
             {s.module_name}
             {s.relative_path ? `:${s.relative_path}` : ""}
           </Badge>
@@ -143,7 +143,7 @@ export default function ChatPage() {
 
       <div className="flex flex-col gap-4 flex-1">
         {messages.length === 0 && (
-          <p className="text-zinc-500 text-sm">
+          <p className="text-muted-foreground text-sm">
             Ask about scanned modules, e.g. &ldquo;Do we have a Klaviyo integration?&rdquo;
           </p>
         )}
@@ -152,12 +152,12 @@ export default function ChatPage() {
             key={i}
             className={
               m.role === "user"
-                ? "self-end bg-zinc-900 text-white dark:bg-zinc-100 dark:text-black rounded-lg px-4 py-2 max-w-[80%]"
-                : "self-start bg-zinc-100 dark:bg-zinc-900 rounded-lg px-4 py-2 max-w-[80%]"
+                ? "self-end bg-primary text-primary-foreground rounded-2xl px-4 py-2 max-w-[80%]"
+                : "self-start bg-muted text-foreground rounded-2xl px-4 py-2 max-w-[80%]"
             }
           >
             <p className="whitespace-pre-wrap text-sm">{m.content}</p>
-            {m.error && <p className="text-red-600 text-sm mt-1">{m.error}</p>}
+            {m.error && <p className="text-destructive text-sm mt-1">{m.error}</p>}
             {m.sources && <SourceChips sources={m.sources} />}
           </div>
         ))}

@@ -268,7 +268,7 @@ function ModuleRow({
         </TableCell>
         <TableCell>
           {module.tags.length === 0 ? (
-            <span className="text-zinc-400">—</span>
+            <span className="text-muted-foreground">—</span>
           ) : (
             <div className="flex flex-wrap gap-1">
               {module.tags.map((tag) => (
@@ -282,7 +282,7 @@ function ModuleRow({
         <TableCell className="text-right">{module.class_count}</TableCell>
         <TableCell className="text-right">{module.plugin_count}</TableCell>
         <TableCell className="text-right">{module.observer_count}</TableCell>
-        <TableCell className="text-zinc-500">
+        <TableCell className="text-muted-foreground">
           {new Date(module.last_scanned_at).toLocaleString()}
         </TableCell>
       </TableRow>
@@ -297,8 +297,8 @@ function ModuleRow({
                 View AI-generated README →
               </Link>
             )}
-            {detailQuery.isLoading && <p className="text-sm text-zinc-500 py-2">Loading findings...</p>}
-            {detailQuery.isError && <p className="text-sm text-red-600 py-2">Failed to load findings.</p>}
+            {detailQuery.isLoading && <p className="text-sm text-muted-foreground py-2">Loading findings...</p>}
+            {detailQuery.isError && <p className="text-sm text-destructive py-2">Failed to load findings.</p>}
             {detailQuery.data &&
               (detailQuery.data.quality_findings.length === 0 ? (
                 <p className="text-sm text-muted-foreground py-2">No quality findings.</p>
@@ -445,9 +445,9 @@ export default function ModulesPage() {
 
       {repoFilter && (
         <div className="flex items-center gap-2 text-sm">
-          <span className="text-zinc-500">Filtering by repo:</span>
+          <span className="text-muted-foreground">Filtering by repo:</span>
           <span className="font-mono">{repoFilter}</span>
-          <button type="button" onClick={clearRepoFilter} className="text-red-600 underline underline-offset-4">
+          <button type="button" onClick={clearRepoFilter} className="text-primary hover:underline">
             Clear
           </button>
         </div>
@@ -472,11 +472,11 @@ export default function ModulesPage() {
       </form>
 
       {scanMutation.isError && (
-        <p className="text-red-600 text-sm">{(scanMutation.error as Error).message}</p>
+        <p className="text-destructive text-sm">{(scanMutation.error as Error).message}</p>
       )}
 
       {scanMutation.isSuccess && (
-        <div className="text-sm text-zinc-600 dark:text-zinc-400 space-y-1">
+        <div className="text-sm text-muted-foreground space-y-1">
           <p>
             Found {scanMutation.data.modules_found} modules (
             {scanMutation.data.modules_created} created,{" "}
@@ -485,7 +485,7 @@ export default function ModulesPage() {
             {scanMutation.data.tasks_enqueued} analysis tasks queued.
           </p>
           {scanMutation.data.warnings.map((w, i) => (
-            <p key={i} className="text-yellow-600">
+            <p key={i} className="text-orange-600 dark:text-orange-400">
               {w}
             </p>
           ))}
@@ -493,10 +493,10 @@ export default function ModulesPage() {
       )}
 
       {modulesQuery.isLoading && <p>Loading modules...</p>}
-      {modulesQuery.isError && <p className="text-red-600">Failed to load modules.</p>}
+      {modulesQuery.isError && <p className="text-destructive">Failed to load modules.</p>}
 
       {modulesQuery.data && modulesQuery.data.length === 0 && (
-        <p className="text-zinc-500">No modules scanned yet.</p>
+        <p className="text-muted-foreground">No modules scanned yet.</p>
       )}
 
       {modulesQuery.data && modulesQuery.data.length > 0 && (
@@ -511,7 +511,7 @@ export default function ModulesPage() {
             <select
               value={sourceFilter}
               onChange={(e) => setSourceFilter(e.target.value)}
-              className="h-8 rounded-lg border border-border bg-background px-2 text-sm"
+              className="h-8 rounded-lg border border-input bg-transparent px-2 text-sm dark:bg-input/30"
             >
               <option value="all">All sources</option>
               {sources.map((s) => (
@@ -523,7 +523,7 @@ export default function ModulesPage() {
             <select
               value={stateFilter}
               onChange={(e) => setStateFilter(e.target.value)}
-              className="h-8 rounded-lg border border-border bg-background px-2 text-sm"
+              className="h-8 rounded-lg border border-input bg-transparent px-2 text-sm dark:bg-input/30"
             >
               <option value="all">All states</option>
               {states.map((s) => (
@@ -535,7 +535,7 @@ export default function ModulesPage() {
             <Button type="button" variant="outline" size="sm" onClick={() => downloadCsv(filteredAndSorted)}>
               Export CSV
             </Button>
-            <span className="text-sm text-zinc-500 ml-auto">
+            <span className="text-sm text-muted-foreground ml-auto">
               {filteredAndSorted.length} of {modulesQuery.data.length} modules
             </span>
           </div>

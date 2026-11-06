@@ -7,6 +7,7 @@ import {
   BarChart,
   CartesianGrid,
   Cell,
+  LabelList,
   Legend,
   Pie,
   PieChart,
@@ -56,7 +57,7 @@ function StatTile({
       className="flex flex-col gap-1 rounded-2xl bg-card p-5 shadow-sm"
       style={accent ? { borderLeftColor: accent, borderLeftWidth: 3 } : undefined}
     >
-      <span className="text-xs uppercase tracking-wide text-zinc-500">{label}</span>
+      <span className="text-xs uppercase tracking-wide text-muted-foreground">{label}</span>
       <span className="text-2xl font-semibold tabular-nums">{value}</span>
     </div>
   );
@@ -105,7 +106,7 @@ function ProgressRing({
           <span className="text-lg font-semibold">{pct}%</span>
         </div>
       </div>
-      <span className="text-sm text-center text-zinc-500">{label}</span>
+      <span className="text-sm text-center text-muted-foreground">{label}</span>
     </div>
   );
 }
@@ -122,7 +123,7 @@ function StateDonut({ modules }: { modules: ModuleSummary[] }) {
 
   return (
     <div className="rounded-2xl bg-card p-5 shadow-sm">
-      <h3 className="text-sm font-medium mb-2 text-zinc-500">Module state</h3>
+      <h3 className="text-sm font-medium mb-2 text-muted-foreground">Module state</h3>
       <ResponsiveContainer width="100%" height={220}>
         <PieChart>
           <Pie data={counts} dataKey="value" nameKey="name" innerRadius={50} outerRadius={80} stroke="none">
@@ -164,22 +165,32 @@ function TopFindingsBar({ modules }: { modules: ModuleSummary[] }) {
   if (data.length === 0) {
     return (
       <div className="rounded-2xl bg-card p-5 shadow-sm">
-        <h3 className="text-sm font-medium mb-2 text-zinc-500">Top modules by quality findings</h3>
-        <p className="text-sm text-zinc-500">No quality findings across any scanned module.</p>
+        <h3 className="text-sm font-medium mb-2 text-muted-foreground">Top modules by quality findings</h3>
+        <p className="text-sm text-muted-foreground">No quality findings across any scanned module.</p>
       </div>
     );
   }
 
   return (
     <div className="rounded-2xl bg-card p-5 shadow-sm">
-      <h3 className="text-sm font-medium mb-2 text-zinc-500">Top modules by quality findings</h3>
+      <h3 className="text-sm font-medium mb-2 text-muted-foreground">Top modules by quality findings</h3>
+      <p className="text-xs text-muted-foreground mb-2">Log scale — counts span multiple orders of magnitude</p>
       <ResponsiveContainer width="100%" height={Math.max(200, data.length * 32)}>
-        <BarChart data={data} layout="vertical" margin={{ left: 24 }}>
+        <BarChart data={data} layout="vertical" margin={{ left: 24, right: 36 }}>
           <CartesianGrid horizontal={false} stroke={palette.ink.gridline} />
-          <XAxis type="number" allowDecimals={false} tick={{ fill: palette.ink.muted, fontSize: 12 }} />
+          <XAxis
+            type="number"
+            scale="log"
+            domain={[0.9, "auto"]}
+            allowDataOverflow
+            allowDecimals={false}
+            tick={{ fill: palette.ink.muted, fontSize: 12 }}
+          />
           <YAxis type="category" dataKey="name" width={160} tick={{ fill: palette.ink.muted, fontSize: 12 }} />
           <Tooltip />
-          <Bar dataKey="total" fill={palette.sequential} radius={[0, 4, 4, 0]} maxBarSize={24} />
+          <Bar dataKey="total" fill={palette.sequential} radius={[0, 4, 4, 0]} maxBarSize={24}>
+            <LabelList dataKey="total" position="right" fill={palette.ink.muted} fontSize={12} />
+          </Bar>
         </BarChart>
       </ResponsiveContainer>
     </div>
@@ -219,10 +230,10 @@ export default function StatsPage() {
       <h1 className="text-2xl font-semibold tracking-tight">Stats</h1>
 
       {modulesQuery.isLoading && <p>Loading...</p>}
-      {modulesQuery.isError && <p className="text-red-600">Failed to load modules.</p>}
+      {modulesQuery.isError && <p className="text-destructive">Failed to load modules.</p>}
 
       {modulesQuery.data && modules.length === 0 && (
-        <p className="text-zinc-500">No modules scanned yet.</p>
+        <p className="text-muted-foreground">No modules scanned yet.</p>
       )}
 
       {modulesQuery.data && modules.length > 0 && (
