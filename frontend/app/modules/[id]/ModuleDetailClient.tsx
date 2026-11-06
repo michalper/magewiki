@@ -74,13 +74,13 @@ export default function ModuleDetailClient({ id }: { id: string }) {
           )}
 
           {moduleQuery.data.quality_findings.length > 0 && (
-            <div>
-              <h2 className="text-lg font-medium mb-2">Quality findings</h2>
-              <ul className="text-sm space-y-1">
+            <div className="rounded-2xl bg-card p-5 shadow-sm">
+              <h2 className="text-lg font-medium mb-3">Quality findings</h2>
+              <ul className="text-sm space-y-2">
                 {moduleQuery.data.quality_findings.slice(0, 20).map((f, i) => (
                   <li key={i} className="flex items-center gap-2">
                     <SeverityBadge severity={f.severity as Severity}>{f.severity}</SeverityBadge>
-                    <span className="font-mono text-zinc-500">
+                    <span className="font-mono text-muted-foreground">
                       {f.file_path}
                       {f.line ? `:${f.line}` : ""}
                     </span>
@@ -88,7 +88,7 @@ export default function ModuleDetailClient({ id }: { id: string }) {
                   </li>
                 ))}
                 {moduleQuery.data.quality_findings.length > 20 && (
-                  <li className="text-zinc-500">
+                  <li className="text-muted-foreground">
                     +{moduleQuery.data.quality_findings.length - 20} more
                   </li>
                 )}
@@ -96,14 +96,14 @@ export default function ModuleDetailClient({ id }: { id: string }) {
             </div>
           )}
 
-          <div>
-            <h2 className="text-lg font-medium mb-2">README</h2>
-            {readmeQuery.isLoading && <p className="text-sm text-zinc-500">Loading...</p>}
+          <div className="rounded-2xl bg-card p-5 shadow-sm">
+            <h2 className="text-lg font-medium mb-3">README</h2>
+            {readmeQuery.isLoading && <p className="text-sm text-muted-foreground">Loading...</p>}
             {readmeQuery.data === null && (
-              <p className="text-sm text-zinc-500">This module has not been analyzed yet.</p>
+              <p className="text-sm text-muted-foreground">This module has not been analyzed yet.</p>
             )}
             {readmeQuery.data && (
-              <pre className="whitespace-pre-wrap text-sm bg-zinc-50 dark:bg-zinc-900 rounded-lg p-4 overflow-x-auto">
+              <pre className="whitespace-pre-wrap text-sm bg-muted rounded-xl p-4 overflow-x-auto">
                 {readmeQuery.data}
               </pre>
             )}
