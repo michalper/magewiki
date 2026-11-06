@@ -371,6 +371,7 @@ export default function ModulesPage() {
   const [search, setSearch] = useState("");
   const [sourceFilter, setSourceFilter] = useState("all");
   const [stateFilter, setStateFilter] = useState("all");
+  const [enabledFilter, setEnabledFilter] = useState("all");
   const [sortKey, setSortKey] = useState<SortKey>("name");
   const [sortDir, setSortDir] = useState<"asc" | "desc">("asc");
   const [expandedIds, setExpandedIds] = useState<Set<number>>(new Set());
@@ -457,6 +458,9 @@ export default function ModulesPage() {
       if (repoFilter && m.repo_root !== repoFilter) return false;
       if (sourceFilter !== "all" && m.source_type !== sourceFilter) return false;
       if (stateFilter !== "all" && m.state !== stateFilter) return false;
+      if (enabledFilter === "true" && m.enabled !== true) return false;
+      if (enabledFilter === "false" && m.enabled !== false) return false;
+      if (enabledFilter === "unknown" && m.enabled !== null) return false;
       if (search.trim()) {
         const q = search.trim().toLowerCase();
         if (!m.name.toLowerCase().includes(q) && !(m.composer_name ?? "").toLowerCase().includes(q)) {
@@ -473,7 +477,7 @@ export default function ModulesPage() {
       if (av > bv) return 1 * dir;
       return 0;
     });
-  }, [modulesQuery.data, repoFilter, search, sourceFilter, stateFilter, sortKey, sortDir]);
+  }, [modulesQuery.data, repoFilter, search, sourceFilter, stateFilter, enabledFilter, sortKey, sortDir]);
 
   function toggleSort(key: SortKey) {
     if (sortKey === key) {
@@ -617,6 +621,16 @@ export default function ModulesPage() {
                   {s}
                 </option>
               ))}
+            </select>
+            <select
+              value={enabledFilter}
+              onChange={(e) => setEnabledFilter(e.target.value)}
+              className="h-8 rounded-lg border border-input bg-transparent px-2 text-sm dark:bg-input/30"
+            >
+              <option value="all">All enabled status</option>
+              <option value="true">Enabled</option>
+              <option value="false">Disabled</option>
+              <option value="unknown">Unknown</option>
             </select>
             <Button type="button" variant="outline" size="sm" onClick={() => downloadCsv(filteredAndSorted)}>
               Export CSV

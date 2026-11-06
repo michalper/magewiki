@@ -142,6 +142,24 @@ Verified against the real, previously-failing production case (not just mocks):
 manually re-triggered synthesis for a module that had failed with exactly this error,
 confirmed it now persists a complete, real `ModuleDoc`.
 
+**Enabled-status filter (recorded 2026-11-06):** real-world noise, flagged by a user
+testing against a real 751-module store: Magento's own internal dev/test scaffolding
+(`Magento_TestModule*`, `Magento_TestSetupDeclarationModule*` — some with real
+`magento/module-*-test` composer packages) gets discovered under `vendor/` just like
+any real module and clutters the list. `Module.enabled` already distinguishes this
+case — it's `None` specifically when a module isn't listed in `app/etc/config.php`'s
+`modules` array at all (as opposed to `False`, present with an explicit `0`) — but the
+Modules page had no way to filter by it, only by `source_type`/`state`. Added an
+`enabledFilter` dropdown (`frontend/app/modules/page.tsx`) with the same three-state
+vocabulary as the existing `EnabledBadge` (enabled/disabled/unknown). Deliberately not
+a hardcoded "Magento test module" name pattern — filtering on `enabled` is the more
+"universal" fix and generalizes to any vendor's unregistered dev/test scaffolding, not
+just Magento's own. Opt-in, not a default hide: auditing everything physically in
+`vendor/` (e.g. the Phase 10 CVE check) still has legitimate uses a product module list
+alone doesn't serve. Verified end-to-end against the real store: "Unknown" narrowed 751
+modules to exactly the 53 that included every `Magento_TestModule*`/`Magento_A`/
+`Magento_B`-style fixture; "Enabled" showed the complementary 698.
+
 ## AI analysis and the README-in-the-database model
 
 The AI returns structured JSON stored in the `module_docs` table (`jsonb` column); the README is only a view rendered from a template. Facts come from parsers; only interpretation comes from AI.
