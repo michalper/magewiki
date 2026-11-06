@@ -7,7 +7,7 @@ import { ChevronDown, ChevronRight } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
-import { SeverityBadge, type Severity } from "@/components/severity-badge";
+import { SeverityBadge, SEVERITY_ORDER, type Severity } from "@/components/severity-badge";
 import { notifyQueryParamChange, useQueryParam } from "@/lib/use-query-param";
 import {
   Table,
@@ -222,7 +222,6 @@ function downloadCsv(modules: ModuleSummary[]) {
 
 const TABLE_COLUMN_COUNT = 13;
 const PREVIEW_FINDING_COUNT = 5;
-const SEVERITY_ORDER: Record<Severity, number> = { blocking: 0, warning: 1, info: 2, ok: 3, none: 4 };
 
 function ModuleRow({
   module,
@@ -298,6 +297,14 @@ function ModuleRow({
       {expanded && (
         <TableRow>
           <TableCell colSpan={TABLE_COLUMN_COUNT} className="bg-muted/30 whitespace-normal">
+            {module.has_module_doc && (
+              <Link
+                href={`/modules/${module.id}#readme`}
+                className="inline-flex items-center gap-1 text-sm text-primary hover:underline pt-2"
+              >
+                View AI-generated README →
+              </Link>
+            )}
             {detailQuery.isLoading && <p className="text-sm text-zinc-500 py-2">Loading findings...</p>}
             {detailQuery.isError && <p className="text-sm text-red-600 py-2">Failed to load findings.</p>}
             {detailQuery.data &&
