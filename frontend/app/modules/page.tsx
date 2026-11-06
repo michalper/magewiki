@@ -9,6 +9,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { EnabledBadge } from "@/components/enabled-badge";
+import { CHECK_TYPES, QualityBadges } from "@/components/quality-badges";
 import { SeverityBadge, SEVERITY_ORDER, type Severity } from "@/components/severity-badge";
 import { StateBadge } from "@/components/state-badge";
 import { apiFetch, apiUrl } from "@/lib/api";
@@ -66,68 +67,6 @@ function PresenceBadge({ present, label }: { present: boolean; label: string }) 
   );
 }
 
-function QualityBadges({ module }: { module: ModuleSummary }) {
-  const hasAny =
-    module.composer_issue_count > 0 ||
-    module.deprecated_count > 0 ||
-    module.secrets_count > 0 ||
-    module.security_advisory_count > 0 ||
-    module.abandoned_dependency_count > 0 ||
-    module.outdated_dependency_count > 0 ||
-    module.phpstan_error_count > 0 ||
-    module.phpmd_issue_count > 0 ||
-    module.phpcs_violation_count > 0 ||
-    module.php_compat_issue_count > 0 ||
-    module.magento_php_incompatible_count > 0 ||
-    module.magento_version_blocker_count > 0;
-  if (!hasAny) return <SeverityBadge severity="ok">clean</SeverityBadge>;
-  return (
-    <div className="flex flex-wrap gap-1">
-      {module.secrets_count > 0 && (
-        <SeverityBadge severity="blocking">
-          {module.secrets_count} secret{module.secrets_count === 1 ? "" : "s"}
-        </SeverityBadge>
-      )}
-      {module.security_advisory_count > 0 && (
-        <SeverityBadge severity="blocking">{module.security_advisory_count} CVE</SeverityBadge>
-      )}
-      {module.composer_issue_count > 0 && (
-        <SeverityBadge severity="warning">{module.composer_issue_count} composer</SeverityBadge>
-      )}
-      {module.deprecated_count > 0 && (
-        <SeverityBadge severity="warning">{module.deprecated_count} deprecated</SeverityBadge>
-      )}
-      {module.abandoned_dependency_count > 0 && (
-        <SeverityBadge severity="warning">{module.abandoned_dependency_count} abandoned</SeverityBadge>
-      )}
-      {module.outdated_dependency_count > 0 && (
-        <SeverityBadge severity="info">{module.outdated_dependency_count} outdated</SeverityBadge>
-      )}
-      {module.phpstan_error_count > 0 && (
-        <SeverityBadge severity="warning">{module.phpstan_error_count} phpstan</SeverityBadge>
-      )}
-      {module.phpmd_issue_count > 0 && (
-        <SeverityBadge severity="warning">{module.phpmd_issue_count} phpmd</SeverityBadge>
-      )}
-      {module.phpcs_violation_count > 0 && (
-        <SeverityBadge severity="warning">{module.phpcs_violation_count} phpcs</SeverityBadge>
-      )}
-      {module.php_compat_issue_count > 0 && (
-        <SeverityBadge severity="warning">{module.php_compat_issue_count} php-compat</SeverityBadge>
-      )}
-      {module.magento_php_incompatible_count > 0 && (
-        <SeverityBadge severity="blocking">
-          {module.magento_php_incompatible_count} magento-php
-        </SeverityBadge>
-      )}
-      {module.magento_version_blocker_count > 0 && (
-        <SeverityBadge severity="blocking">
-          {module.magento_version_blocker_count} magento-upgrade
-        </SeverityBadge>
-      )}
-    </div>
-  );
-}
 
 function toCsv(modules: ModuleSummary[]): string {
   const headers = [
@@ -141,18 +80,7 @@ function toCsv(modules: ModuleSummary[]): string {
     "observer_count",
     "has_readme",
     "has_tests",
-    "composer_issue_count",
-    "deprecated_count",
-    "secrets_count",
-    "security_advisory_count",
-    "abandoned_dependency_count",
-    "outdated_dependency_count",
-    "phpstan_error_count",
-    "phpmd_issue_count",
-    "phpcs_violation_count",
-    "php_compat_issue_count",
-    "magento_php_incompatible_count",
-    "magento_version_blocker_count",
+    ...CHECK_TYPES.map((c) => c.key),
     "last_scanned_at",
   ];
   const escape = (v: unknown) => {
@@ -171,18 +99,7 @@ function toCsv(modules: ModuleSummary[]): string {
       m.observer_count,
       m.has_readme,
       m.has_tests,
-      m.composer_issue_count,
-      m.deprecated_count,
-      m.secrets_count,
-      m.security_advisory_count,
-      m.abandoned_dependency_count,
-      m.outdated_dependency_count,
-      m.phpstan_error_count,
-      m.phpmd_issue_count,
-      m.phpcs_violation_count,
-      m.php_compat_issue_count,
-      m.magento_php_incompatible_count,
-      m.magento_version_blocker_count,
+      ...CHECK_TYPES.map((c) => m.finding_counts[c.key] ?? 0),
       m.last_scanned_at,
     ]
       .map(escape)
@@ -254,7 +171,7 @@ function ModuleRow({
           <PresenceBadge present={module.has_tests} label="Tests" />
         </TableCell>
         <TableCell>
-          <QualityBadges module={module} />
+          <QualityBadges findingCounts={module.finding_counts} />
         </TableCell>
         <TableCell>
           {module.tags.length === 0 ? (
