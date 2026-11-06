@@ -1,6 +1,7 @@
 from collections.abc import Sequence
 
 DEFAULT_KS: tuple[int, ...] = (1, 3, 5, 10)
+MODE_LABELS: dict[str, str] = {"vector": "Vector-only", "keyword": "FTS-only", "hybrid": "Hybrid (RRF)"}
 
 
 def hit_at_k(ranked_ids: Sequence[int], relevant_ids: set[int], k: int) -> bool:
@@ -33,3 +34,15 @@ def aggregate(
     }
     result["mrr"] = sum(reciprocal_rank(ranked, relevant) for ranked, relevant in per_question) / n
     return result
+
+
+def render_markdown_table(metrics: dict[str, dict[str, float]], ks: tuple[int, ...] = DEFAULT_KS) -> str:
+    """A `| Mode | recall@k... | MRR |` table for vector/keyword/hybrid metrics."""
+    header = "| Mode | " + " | ".join(f"recall@{k}" for k in ks) + " | MRR |"
+    sep = "|---" * (len(ks) + 2) + "|"
+    rows = []
+    for mode in ("vector", "keyword", "hybrid"):
+        m = metrics[mode]
+        cells = " | ".join(f"{m[f'recall@{k}']:.2f}" for k in ks)
+        rows.append(f"| {MODE_LABELS[mode]} | {cells} | {m['mrr']:.2f} |")
+    return "\n".join([header, sep, *rows])

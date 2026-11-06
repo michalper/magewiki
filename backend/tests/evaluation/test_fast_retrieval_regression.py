@@ -4,17 +4,11 @@ from datetime import UTC, datetime
 import pytest
 from sqlalchemy import delete
 
+from app.evaluation.ci_dataset import _vector
 from app.evaluation.isolated_retrieval import keyword_only_search, vector_only_search
 from app.evaluation.metrics import aggregate
 from app.models import Chunk, Module
 from app.search.hybrid import hybrid_search
-
-
-def _vector(active: dict[int, float]) -> list[float]:
-    v = [0.0] * 1536
-    for i, val in active.items():
-        v[i] = val
-    return v
 
 
 async def _make_module(session, suffix: str) -> Module:

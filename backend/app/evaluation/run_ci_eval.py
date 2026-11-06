@@ -15,7 +15,7 @@ import app.evaluation.isolated_retrieval as isolated_retrieval
 import app.search.hybrid as hybrid
 from app.db import async_session_factory
 from app.evaluation.ci_dataset import CiScenario, CI_SCENARIOS
-from app.evaluation.metrics import aggregate
+from app.evaluation.metrics import aggregate, render_markdown_table
 from app.models import Chunk, Module
 from sqlalchemy import delete, select
 
@@ -66,23 +66,11 @@ async def _cleanup(session, module: Module) -> None:
 
 
 def _markdown(metrics: dict[str, dict[str, float]]) -> str:
-    ks = (1, 3)
-    header = "| Mode | " + " | ".join(f"recall@{k}" for k in ks) + " | MRR |"
-    sep = "|---" * (len(ks) + 2) + "|"
-    label_by_mode = {"vector": "Vector-only", "keyword": "FTS-only", "hybrid": "Hybrid (RRF)"}
-    rows = []
-    for mode in ("vector", "keyword", "hybrid"):
-        m = metrics[mode]
-        cells = " | ".join(f"{m[f'recall@{k}']:.2f}" for k in ks)
-        rows.append(f"| {label_by_mode[mode]} | {cells} | {m['mrr']:.2f} |")
-
     return "\n".join(
         [
             "## RAG eval (synthetic CI corpus)",
             "",
-            header,
-            sep,
-            *rows,
+            render_markdown_table(metrics, ks=(1, 3)),
             "",
             "_Synthetic fixture — not the real Ordo_Automation numbers in README._ "
             "_Proves fusion logic, not real-world quality._",
