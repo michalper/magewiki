@@ -3,8 +3,8 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useQuery } from "@tanstack/react-query";
-import { Boxes } from "lucide-react";
 import { cn } from "cn";
+import { MageWikiIcon } from "@/components/mage-wiki-icon";
 import { ThemeToggle } from "@/components/theme-toggle";
 
 const NAV_LINKS = [
@@ -33,7 +33,7 @@ export function SiteHeader() {
       <div className="mx-auto flex max-w-7xl items-center gap-2 px-8 py-4">
         <Link href="/modules" className="flex items-center gap-2 shrink-0 mr-6">
           <span className="flex size-8 items-center justify-center rounded-xl bg-primary text-primary-foreground">
-            <Boxes className="size-4.5" />
+            <MageWikiIcon className="size-4.5" />
           </span>
           <span className="font-semibold tracking-tight">MageWiki-AI</span>
         </Link>
