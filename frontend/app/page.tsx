@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { useQuery } from "@tanstack/react-query";
 import { Button } from "@/components/ui/button";
+import { ThemeToggle } from "@/components/theme-toggle";
 
 type HealthResponse = {
   status: string;
@@ -43,9 +44,12 @@ export default function Home() {
         An AI catalog and chat agent for Magento 2 modules — scan, analyze,
         and ask natural-language questions with cited sources.
       </p>
-      <div className="flex gap-4">
+      <div className="flex items-center gap-4">
         <Link href="/modules" className="text-sm underline underline-offset-4">
           View scanned modules →
+        </Link>
+        <Link href="/stats" className="text-sm underline underline-offset-4">
+          Stats →
         </Link>
         <Link href="/chat" className="text-sm underline underline-offset-4">
           Chat with the agent →
@@ -53,6 +57,7 @@ export default function Home() {
         <Link href="/settings" className="text-sm underline underline-offset-4">
           Settings →
         </Link>
+        <ThemeToggle />
       </div>
       <div className="flex flex-col items-center gap-2">
         <p>

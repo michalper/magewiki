@@ -341,6 +341,31 @@ export interface components {
              * @default []
              */
             tags: string[];
+            /**
+             * Has Readme
+             * @default false
+             */
+            has_readme: boolean;
+            /**
+             * Has Tests
+             * @default false
+             */
+            has_tests: boolean;
+            /**
+             * Composer Issue Count
+             * @default 0
+             */
+            composer_issue_count: number;
+            /**
+             * Deprecated Count
+             * @default 0
+             */
+            deprecated_count: number;
+            /**
+             * Secrets Count
+             * @default 0
+             */
+            secrets_count: number;
             /** Dependencies */
             dependencies: string[];
             /** Classes */
@@ -351,6 +376,11 @@ export interface components {
             plugins: components["schemas"]["DiPluginSummary"][];
             /** Observers */
             observers: components["schemas"]["EventObserverSummary"][];
+            /**
+             * Quality Findings
+             * @default []
+             */
+            quality_findings: components["schemas"]["QualityFindingResponse"][];
         };
         /** ModuleScanOutcomeResponse */
         ModuleScanOutcomeResponse: {
@@ -407,6 +437,31 @@ export interface components {
              * @default []
              */
             tags: string[];
+            /**
+             * Has Readme
+             * @default false
+             */
+            has_readme: boolean;
+            /**
+             * Has Tests
+             * @default false
+             */
+            has_tests: boolean;
+            /**
+             * Composer Issue Count
+             * @default 0
+             */
+            composer_issue_count: number;
+            /**
+             * Deprecated Count
+             * @default 0
+             */
+            deprecated_count: number;
+            /**
+             * Secrets Count
+             * @default 0
+             */
+            secrets_count: number;
         };
         /** PhpClassSummary */
         PhpClassSummary: {
@@ -424,6 +479,19 @@ export interface components {
             role_signals: string[];
             /** Methods */
             methods: components["schemas"]["MethodSummary"][];
+        };
+        /** QualityFindingResponse */
+        QualityFindingResponse: {
+            /** Check Type */
+            check_type: string;
+            /** Severity */
+            severity: string;
+            /** File Path */
+            file_path: string | null;
+            /** Line */
+            line: number | null;
+            /** Message */
+            message: string;
         };
         /** ScanRequest */
         ScanRequest: {
