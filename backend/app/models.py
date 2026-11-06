@@ -19,6 +19,7 @@ from sqlalchemy.dialects.postgresql import JSONB, TSVECTOR
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from pgvector.sqlalchemy import Vector
 
+from app.config import settings
 from app.db import Base
 
 
@@ -329,7 +330,12 @@ class Chunk(Base):
     method_id: Mapped[int | None] = mapped_column(ForeignKey("php_class_methods.id", ondelete="CASCADE"))
     content_hash: Mapped[str] = mapped_column(Text)
     text: Mapped[str] = mapped_column(Text)
-    embedding: Mapped[list[float]] = mapped_column(Vector(1536))
+    # Must match EMBEDDING_DIMENSIONS / the migrations (see
+    # alembic/versions/0013_configurable_embedding_dimension.py) — this is the
+    # Python-side type SQLAlchemy uses to build bound-parameter casts, independent of
+    # the actual DB column type, so it has to track the same setting or inserts fail
+    # with "expected N dimensions" regardless of what the real column accepts.
+    embedding: Mapped[list[float]] = mapped_column(Vector(settings.embedding_dimensions))
     tsv: Mapped[str] = mapped_column(
         TSVECTOR, Computed("to_tsvector('english', text)", persisted=True)
     )
