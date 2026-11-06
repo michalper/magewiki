@@ -119,12 +119,12 @@ page load then fails because the tables don't exist yet.
 docker compose exec api pytest tests/ -v
 ```
 
-Tests run against the **same** database the `api`/`worker` containers use —
-there's no separate, disposable test database. Expect state changes (and
-occasional cross-test flakiness from shared Postgres/Redis state) if you run
-this against an environment you're also actively scanning with. Run
-migrations (above) before running tests on a fresh database, or most of the
-suite will fail with "relation does not exist" errors.
+Tests run against their own `magewiki_test` database, dropped and recreated
+fresh every run — never the one the running `api`/`worker` containers use, so
+running tests never affects an environment you're also actively scanning
+with. This is set up automatically (`tests/conftest.py` redirects
+`DATABASE_URL`); no separate migration or setup step is needed just for
+tests.
 
 ## Kubernetes (local)
 
