@@ -23,7 +23,7 @@ from app.evaluation.dataset import (
     RetrievalQuestion,
 )
 from app.evaluation.isolated_retrieval import keyword_only_search, vector_only_search
-from app.evaluation.metrics import aggregate
+from app.evaluation.metrics import aggregate, render_markdown_table
 from app.models import Chunk, FileHash, Module
 from app.scanner.orchestrator import scan_repository
 from app.search.hybrid import hybrid_search
@@ -114,16 +114,22 @@ def _resolve_kwargs(tool_kwargs: dict, module_id: int) -> dict:
     return {k: (module_id if v == MODULE_ID_PLACEHOLDER else v) for k, v in tool_kwargs.items()}
 
 
+async def _run_tool_question(session: AsyncSession, module_id: int, q, check) -> QuestionResult:
+    """Shared by enumeration questions and the "tool" mode of negative
+    questions: both call a TOOL_FUNCTIONS entry and check its result against
+    a predicate, differing only in which predicate (q.expected vs
+    q.expected_empty).
+    """
+    kwargs = _resolve_kwargs(q.tool_kwargs, module_id)
+    tool_result = await TOOL_FUNCTIONS[q.tool](session, **kwargs)
+    passed = check(tool_result)
+    return QuestionResult(id=q.id, query=q.query, passed=passed, detail=json.dumps(tool_result)[:500])
+
+
 async def run_enumeration_eval(
     session: AsyncSession, questions: list[EnumerationQuestion], module: Module
 ) -> list[QuestionResult]:
-    results = []
-    for q in questions:
-        kwargs = _resolve_kwargs(q.tool_kwargs, module.id)
-        tool_result = await TOOL_FUNCTIONS[q.tool](session, **kwargs)
-        passed = q.expected(tool_result)
-        results.append(QuestionResult(id=q.id, query=q.query, passed=passed, detail=json.dumps(tool_result)[:500]))
-    return results
+    return [await _run_tool_question(session, module.id, q, q.expected) for q in questions]
 
 
 async def run_negative_eval(
@@ -132,12 +138,7 @@ async def run_negative_eval(
     results = []
     for q in questions:
         if q.mode == "tool":
-            kwargs = _resolve_kwargs(q.tool_kwargs, module.id)
-            tool_result = await TOOL_FUNCTIONS[q.tool](session, **kwargs)
-            passed = q.expected_empty(tool_result)
-            results.append(
-                QuestionResult(id=q.id, query=q.query, passed=passed, detail=json.dumps(tool_result)[:500])
-            )
+            results.append(await _run_tool_question(session, module.id, q, q.expected_empty))
         else:
             final_text = ""
             async for event in run_agent(session, [{"role": "user", "content": q.query}], "dev"):
@@ -166,23 +167,11 @@ class EvalReport:
         }
 
     def to_markdown_table(self) -> str:
-        ks = (1, 3, 5, 10)
-        header = "| Mode | " + " | ".join(f"recall@{k}" for k in ks) + " | MRR |"
-        sep = "|---" * (len(ks) + 2) + "|"
-        label_by_mode = {"vector": "Vector-only", "keyword": "FTS-only", "hybrid": "Hybrid (RRF)"}
-        rows = []
-        for mode in ("vector", "keyword", "hybrid"):
-            m = self.retrieval_metrics[mode]
-            cells = " | ".join(f"{m[f'recall@{k}']:.2f}" for k in ks)
-            rows.append(f"| {label_by_mode[mode]} | {cells} | {m['mrr']:.2f} |")
-
         enum_passed = sum(r.passed for r in self.enumeration_results)
         neg_passed = sum(r.passed for r in self.negative_results)
 
         lines = [
-            header,
-            sep,
-            *rows,
+            render_markdown_table(self.retrieval_metrics, ks=(1, 3, 5, 10)),
             "",
             f"Enumeration: {enum_passed}/{len(self.enumeration_results)} passed.",
             f"Negative/\"not found\": {neg_passed}/{len(self.negative_results)} passed.",
