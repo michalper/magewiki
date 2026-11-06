@@ -102,13 +102,13 @@ export default function ModuleDetailClient({ id }: { id: string }) {
                   .sort((a, b) => SEVERITY_ORDER[a.severity as Severity] - SEVERITY_ORDER[b.severity as Severity])
                   .slice(0, PREVIEW_FINDING_COUNT)
                   .map((f, i) => (
-                    <li key={i} className="flex items-center gap-2">
+                    <li key={i} className="flex items-center gap-2 overflow-x-auto">
                       <SeverityBadge severity={f.severity as Severity}>{f.severity}</SeverityBadge>
-                      <span className="font-mono text-muted-foreground shrink-0 max-w-[280px] truncate">
+                      <span className="font-mono text-muted-foreground shrink-0 whitespace-nowrap">
                         {f.file_path}
                         {f.line ? `:${f.line}` : ""}
                       </span>
-                      <span className="truncate min-w-0">{f.message}</span>
+                      <span className="whitespace-nowrap">{f.message}</span>
                     </li>
                   ))}
                 {moduleQuery.data.quality_findings.length > PREVIEW_FINDING_COUNT && (
