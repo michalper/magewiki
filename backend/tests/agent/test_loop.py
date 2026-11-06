@@ -152,6 +152,49 @@ async def test_run_agent_executes_tool_then_streams_final_answer(db_session, mon
 
 
 @pytest.mark.asyncio
+async def test_run_agent_read_file_citation_includes_module_name(db_session, monkeypatch):
+    """Regression test: _collect_sources() used to pass None for read_file's
+    module_name unconditionally, so every citation from read_file rendered with a
+    blank module name in the UI even though the module was fully known (module_id
+    was right there in the tool call's own args).
+    """
+    suffix = uuid.uuid4().hex[:8]
+    module = await _make_module(db_session, suffix)
+
+    async def _never_exceeded(session):
+        return False
+
+    monkeypatch.setattr(loop_module, "is_budget_exceeded", _never_exceeded)
+
+    async def fake_read_file(session, **kwargs):
+        return {"found": True, "module_name": module.name, "chunks": [{"chunk_type": "file", "text": "..."}]}
+
+    monkeypatch.setitem(loop_module.TOOL_FUNCTIONS, "read_file", fake_read_file)
+
+    calls = []
+
+    async def fake_acompletion(**kwargs):
+        calls.append(kwargs)
+        if kwargs.get("stream"):
+            return _fake_stream(["Hello"])
+        if len(calls) == 1:
+            return _tool_call_response("read_file", {"module_id": module.id, "relative_path": "etc/module.xml"})
+        return _direct_answer_response()
+
+    monkeypatch.setattr(loop_module.litellm, "acompletion", fake_acompletion)
+
+    events = [e async for e in run_agent(db_session, [{"role": "user", "content": "read the file"}], "dev")]
+
+    sources_event = next(e for e in events if e["event"] == "sources")
+    assert sources_event["sources"] == [
+        {"module_id": module.id, "module_name": module.name, "relative_path": "etc/module.xml"}
+    ]
+
+    await db_session.execute(delete(Module).where(Module.id == module.id))
+    await db_session.commit()
+
+
+@pytest.mark.asyncio
 async def test_run_agent_persists_chat_cost(db_session, monkeypatch):
     async def _never_exceeded(session):
         return False

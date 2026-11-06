@@ -67,7 +67,7 @@ def _collect_sources(tool_name: str, args: dict, result: dict, sources: dict[tup
                 _add(r.get("module_id"), r.get("module_name"))
     elif tool_name == "read_file":
         if result.get("found"):
-            _add(args.get("module_id"), None, args.get("relative_path"))
+            _add(args.get("module_id"), result.get("module_name"), args.get("relative_path"))
     elif tool_name == "list_modules":
         for r in result.get("modules", []):
             _add(r.get("module_id"), r.get("name"))
