@@ -7,6 +7,7 @@ import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import type { Audience, ChatEvent, Source } from "@/lib/chat-types";
 import { streamSse } from "@/lib/sse";
+import { useDocumentTitle } from "@/lib/use-document-title";
 
 const apiUrl = () => process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000";
 
@@ -43,6 +44,7 @@ function SourceChips({ sources }: { sources: Source[] }) {
 }
 
 export default function ChatPage() {
+  useDocumentTitle("Chat");
   const [messages, setMessages] = useState<DisplayMessage[]>([]);
   const [input, setInput] = useState("");
   const [audience, setAudience] = useState<Audience>("dev");
@@ -155,6 +157,7 @@ export default function ChatPage() {
           value={input}
           onChange={(e) => setInput(e.target.value)}
           placeholder="Ask a question about the scanned modules..."
+          aria-label="Chat message"
           disabled={isStreaming}
         />
         <Button type="submit" disabled={isStreaming || !input.trim()}>

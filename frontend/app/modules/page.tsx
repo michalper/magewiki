@@ -10,6 +10,8 @@ import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { EnabledBadge } from "@/components/enabled-badge";
 import { SeverityBadge, SEVERITY_ORDER, type Severity } from "@/components/severity-badge";
+import { StateBadge } from "@/components/state-badge";
+import { useDocumentTitle } from "@/lib/use-document-title";
 import { notifyQueryParamChange, useQueryParam } from "@/lib/use-query-param";
 import {
   Table,
@@ -61,20 +63,6 @@ async function streamScan(
   signal?: AbortSignal,
 ): Promise<void> {
   await streamSse<ScanStreamEvent>(`${apiUrl()}/scan/stream`, { path }, onEvent, signal);
-}
-
-const STATE_VARIANTS: Record<string, "default" | "secondary" | "outline" | "destructive"> = {
-  up_to_date: "default",
-  pending: "outline",
-  scanning: "outline",
-  analyzing: "secondary",
-  embedding: "secondary",
-  failed: "destructive",
-  paused_budget: "destructive",
-};
-
-function StateBadge({ state }: { state: string }) {
-  return <Badge variant={STATE_VARIANTS[state] ?? "outline"}>{state}</Badge>;
 }
 
 function PresenceBadge({ present, label }: { present: boolean; label: string }) {
@@ -372,6 +360,7 @@ function SortableHead({
 }
 
 export default function ModulesPage() {
+  useDocumentTitle("Modules");
   const [path, setPath] = useState("");
   const [search, setSearch] = useState("");
   const [sourceFilter, setSourceFilter] = useState("all");
@@ -553,6 +542,7 @@ export default function ModulesPage() {
           value={path}
           onChange={(e) => setPath(e.target.value)}
           placeholder="/path/to/magento-store-or-module"
+          aria-label="Path to scan"
           className="font-mono"
         />
         <Button type="submit" disabled={scanStatus === "running" || !path.trim()}>
@@ -628,6 +618,7 @@ export default function ModulesPage() {
               value={search}
               onChange={(e) => setSearch(e.target.value)}
               placeholder="Search name or composer name..."
+              aria-label="Search modules"
               className="max-w-xs"
             />
             <select
@@ -672,8 +663,8 @@ export default function ModulesPage() {
             </span>
           </div>
 
-          <div className="rounded-2xl bg-card p-2 shadow-sm">
-          <Table>
+          <div className="rounded-2xl bg-card p-2 shadow-sm overflow-x-auto">
+          <Table className="min-w-max">
             <TableHeader>
               <TableRow>
                 <SortableHead
