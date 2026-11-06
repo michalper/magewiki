@@ -45,6 +45,25 @@ Re-analysis by AI runs only for files whose hash changed — a scan with no chan
 - **Budget**: `LLM_MONTHLY_BUDGET_USD` is checked before every LLM call; once exceeded, jobs move to `paused_budget`.
 - **Cron and webhook**: a nightly differential scan (e.g. `0 3 * * *`) is the safety net; a webhook from CI/CD (HMAC-signed, stable `_job_id` as debounce) gives speed. Both call the same `scan_repository` function.
 
+**Generic scan roots decision (recorded 2026-11-06):** `POST /scan`/`POST /webhooks/scan`
+take a `path`, but a running container can never gain access to an arbitrary new host
+path — Docker bind mounts are fixed at container-start time. Before this, the only
+mount mechanism was `MAGEWIKI_ORDO_FIXTURE_PATH`/`MAGEWIKI_MAGENTO_FIXTURE_PATH`, two
+fixture-specific mounts used by the real-fixture tests and the evaluation suite (naming
+one *specific, known* repo each) — not a general "scan whatever repo I want"
+mechanism, so adding any new repo meant hand-editing `docker-compose.yml`. Added
+`MAGEWIKI_SCAN_ROOT_1/2/3` (same `host-path:host-path:ro` bind-mount convention,
+mounted into `api`/`worker`/`php-analyzer`): numbered, not a comma-separated list,
+because `docker-compose.yml`'s `volumes:` can't loop over a variable-length value.
+Once an operator sets one scan root per top-level repo-storage location on a server,
+every repo added under it is scannable immediately via the UI or webhook — no further
+compose edits or restarts. `GET /scan-roots` reports what's currently configured, and
+the Modules page shows it as helper text next to the Scan input, so the system is
+self-documenting instead of requiring a read of `docker-compose.yml`. The two
+fixture-specific vars are unchanged — they serve a different, narrower purpose
+(tests/eval need one named repo, not "any repo under a general area") and keep working
+exactly as before.
+
 ## AI analysis and the README-in-the-database model
 
 The AI returns structured JSON stored in the `module_docs` table (`jsonb` column); the README is only a view rendered from a template. Facts come from parsers; only interpretation comes from AI.

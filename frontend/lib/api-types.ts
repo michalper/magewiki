@@ -21,6 +21,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/scan-roots": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Scan Roots */
+        get: operations["get_scan_roots_scan_roots_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/scan": {
         parameters: {
             query?: never;
@@ -692,6 +709,11 @@ export interface components {
             /** Modules */
             modules: components["schemas"]["ModuleScanOutcomeResponse"][];
         };
+        /** ScanRootsResponse */
+        ScanRootsResponse: {
+            /** Scan Roots */
+            scan_roots: string[];
+        };
         /** SearchResultResponse */
         SearchResultResponse: {
             /** Chunk Id */
@@ -750,6 +772,26 @@ export interface operations {
                     "application/json": {
                         [key: string]: unknown;
                     };
+                };
+            };
+        };
+    };
+    get_scan_roots_scan_roots_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ScanRootsResponse"];
                 };
             };
         };
