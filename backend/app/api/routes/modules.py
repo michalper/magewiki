@@ -27,7 +27,12 @@ from app.models import (
     PhpClass,
     PhpClassMethod,
 )
-from app.scanner.orchestrator import ScanAlreadyInProgressError, ScanResult, scan_paths, scan_paths_events
+from app.scanner.orchestrator import (
+    ScanAlreadyInProgressError,
+    ScanResult,
+    scan_paths,
+    scan_paths_events,
+)
 
 router = APIRouter()
 
@@ -428,8 +433,7 @@ async def list_repos(session: AsyncSession = Depends(get_session)) -> list[RepoS
         repo["php_compat_issue_count"] += counts.get("php_compat_issue", 0)
         repo["magento_php_incompatible_count"] += counts.get("magento_php_incompatible", 0)
         repo["magento_version_blocker_count"] += counts.get("magento_version_blocker", 0)
-        if last_scanned_at > repo["last_scanned_at"]:
-            repo["last_scanned_at"] = last_scanned_at
+        repo["last_scanned_at"] = max(repo["last_scanned_at"], last_scanned_at)
 
     return [RepoSummary(repo_root=repo_root, **data) for repo_root, data in sorted(repos.items())]
 

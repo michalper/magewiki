@@ -1,5 +1,9 @@
+from typing import ClassVar
+
 from arq import cron
 from arq.connections import RedisSettings
+from arq.cron import CronJob
+from arq.typing import WorkerCoroutine
 
 from app.config import settings
 from app.tasks.jobs import (
@@ -13,8 +17,11 @@ from app.tasks.jobs import (
 
 
 class WorkerSettings:
-    functions = [analyze_file, synthesize_module, embed_chunks, scan_repository_job]
-    cron_jobs = [
+    # arq reads these as plain class attributes, never instantiates this class with
+    # per-instance state — ClassVar documents that's intentional, not the mutable-
+    # default-argument footgun RUF012 otherwise exists to catch.
+    functions: ClassVar[list[WorkerCoroutine]] = [analyze_file, synthesize_module, embed_chunks, scan_repository_job]
+    cron_jobs: ClassVar[list[CronJob]] = [
         cron(nightly_scan_all, hour=3, minute=0),
         cron(refresh_magento_release_cache, hour=2, minute=30),
     ]

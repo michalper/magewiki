@@ -6,7 +6,15 @@ from sqlalchemy import delete, select
 
 from app.analyzer.client import LlmCallResult
 from app.analyzer.schemas import FileSummary, ModuleDoc
-from app.models import AnalysisCache, Chunk, FileHash, Module, ModuleDocument, PhpClass, PhpClassMethod
+from app.models import (
+    AnalysisCache,
+    Chunk,
+    FileHash,
+    Module,
+    ModuleDocument,
+    PhpClass,
+    PhpClassMethod,
+)
 from app.scanner.orchestrator import scan_repository
 from app.tasks.jobs import analyze_file, embed_chunks, synthesize_module
 

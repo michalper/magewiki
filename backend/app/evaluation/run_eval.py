@@ -14,7 +14,13 @@ from pathlib import Path
 
 from app.db import async_session_factory
 from app.evaluation.dataset import ENUMERATION_QUESTIONS, NEGATIVE_QUESTIONS, RETRIEVAL_QUESTIONS
-from app.evaluation.runner import EvalReport, run_enumeration_eval, run_negative_eval, run_retrieval_eval, seed_corpus
+from app.evaluation.runner import (
+    EvalReport,
+    run_enumeration_eval,
+    run_negative_eval,
+    run_retrieval_eval,
+    seed_corpus,
+)
 
 # Same env var name as tests/conftest.py's ORDO_FIXTURE_ENV (not imported from
 # the tests package to keep app/ independent of test code).

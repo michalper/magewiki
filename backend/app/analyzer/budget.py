@@ -24,5 +24,5 @@ async def is_budget_exceeded(session: AsyncSession) -> bool:
     # an aggregate-with-no-matching-rows query still always returns exactly one row
     # in Postgres, so this guard is defensive correctness, not dead code bending to
     # satisfy mypy.
-    spent = Decimal(str(raw_spent)) if raw_spent is not None else Decimal("0")
+    spent = Decimal(str(raw_spent)) if raw_spent is not None else Decimal(0)
     return spent >= Decimal(str(settings.llm_monthly_budget_usd))

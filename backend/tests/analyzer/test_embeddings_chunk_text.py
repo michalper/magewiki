@@ -8,16 +8,16 @@ from app.analyzer.schemas import Feature, Integration, ModuleDoc, Tag
 
 
 def _doc(**overrides) -> ModuleDoc:
-    base = dict(
-        summary="A summary.",
-        description="A description.",
-        features=[Feature(name="Feature A", description="Does A.", source="etc/module.xml")],
-        integrations=[Integration(name="Klaviyo", description="Sends events.", source=None)],
-        tags=[Tag(name="marketing", source="ai", confidence=0.8)],
-        confidence=0.9,
-        pm_text="PM text.",
-        dev_text="Dev text.",
-    )
+    base = {
+        "summary": "A summary.",
+        "description": "A description.",
+        "features": [Feature(name="Feature A", description="Does A.", source="etc/module.xml")],
+        "integrations": [Integration(name="Klaviyo", description="Sends events.", source=None)],
+        "tags": [Tag(name="marketing", source="ai", confidence=0.8)],
+        "confidence": 0.9,
+        "pm_text": "PM text.",
+        "dev_text": "Dev text.",
+    }
     base.update(overrides)
     return ModuleDoc.model_validate(base)
 

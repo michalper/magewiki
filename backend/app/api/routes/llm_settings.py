@@ -85,7 +85,7 @@ async def update_llm_settings(
             vector, _result = await embed_text(
                 "dimension probe", model=effective.model, api_key=effective.api_key, api_base=effective.api_base
             )
-        except Exception as exc:  # noqa: BLE001 - surfaced to the caller as a 400, not a crash
+        except Exception as exc:
             await session.rollback()
             raise HTTPException(
                 status_code=400, detail=f"could not verify {effective.model}'s embedding dimension: {exc}"

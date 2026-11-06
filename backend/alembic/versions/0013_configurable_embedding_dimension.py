@@ -17,15 +17,15 @@ path for existing data; the operator must clear chunks (e.g. re-scan from
 empty) first.
 """
 import os
-from typing import Sequence, Union
+from collections.abc import Sequence
 
 from alembic import op
 
 # revision identifiers, used by Alembic.
 revision: str = "0013"
-down_revision: Union[str, None] = "0012"
-branch_labels: Union[str, Sequence[str], None] = None
-depends_on: Union[str, Sequence[str], None] = None
+down_revision: str | None = "0012"
+branch_labels: str | Sequence[str] | None = None
+depends_on: str | Sequence[str] | None = None
 
 _DEFAULT_DIMENSIONS = 1536
 

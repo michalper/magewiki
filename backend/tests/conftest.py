@@ -114,7 +114,10 @@ async def _test_database():
     finally:
         await conn.close()
 
-    subprocess.run(["alembic", "upgrade", "head"], check=True, env=os.environ)
+    # Blocking by design: this is a one-time, session-scoped setup step that runs
+    # before any concurrent async test work starts, so there's no event loop to
+    # block for anyone but this fixture itself.
+    subprocess.run(["alembic", "upgrade", "head"], check=True, env=os.environ)  # noqa: ASYNC221
 
     from app.tasks.queue import get_arq_pool
 

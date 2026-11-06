@@ -27,16 +27,18 @@ async def test_chat_streams_sources_token_done_in_order(monkeypatch):
     monkeypatch.setattr("app.api.routes.chat.run_agent", fake_run_agent)
 
     transport = ASGITransport(app=app)
-    async with AsyncClient(transport=transport, base_url="http://test") as client:
-        async with client.stream(
+    async with (
+        AsyncClient(transport=transport, base_url="http://test") as client,
+        client.stream(
             "POST",
             "/chat",
             json={"messages": [{"role": "user", "content": "hi"}], "audience": "dev"},
-        ) as response:
-            assert response.status_code == 200
-            raw_text = ""
-            async for chunk in response.aiter_text():
-                raw_text += chunk
+        ) as response,
+    ):
+        assert response.status_code == 200
+        raw_text = ""
+        async for chunk in response.aiter_text():
+            raw_text += chunk
 
     events = _parse_sse(raw_text)
     event_types = [e[0] for e in events]
@@ -53,15 +55,17 @@ async def test_chat_streams_error_event_on_budget_exceeded(monkeypatch):
     monkeypatch.setattr("app.api.routes.chat.run_agent", fake_run_agent)
 
     transport = ASGITransport(app=app)
-    async with AsyncClient(transport=transport, base_url="http://test") as client:
-        async with client.stream(
+    async with (
+        AsyncClient(transport=transport, base_url="http://test") as client,
+        client.stream(
             "POST",
             "/chat",
             json={"messages": [{"role": "user", "content": "hi"}], "audience": "pm"},
-        ) as response:
-            raw_text = ""
-            async for chunk in response.aiter_text():
-                raw_text += chunk
+        ) as response,
+    ):
+        raw_text = ""
+        async for chunk in response.aiter_text():
+            raw_text += chunk
 
     events = _parse_sse(raw_text)
     assert events == [("error", '{"detail": "Monthly LLM budget exceeded \\u2014 cannot answer right now."}')]
@@ -78,13 +82,15 @@ async def test_chat_rejects_unknown_audience_falls_back_to_dev(monkeypatch):
     monkeypatch.setattr("app.api.routes.chat.run_agent", fake_run_agent)
 
     transport = ASGITransport(app=app)
-    async with AsyncClient(transport=transport, base_url="http://test") as client:
-        async with client.stream(
+    async with (
+        AsyncClient(transport=transport, base_url="http://test") as client,
+        client.stream(
             "POST",
             "/chat",
             json={"messages": [{"role": "user", "content": "hi"}], "audience": "nonsense"},
-        ) as response:
-            async for _ in response.aiter_text():
-                pass
+        ) as response,
+    ):
+        async for _ in response.aiter_text():
+            pass
 
     assert seen_audience["value"] == "dev"

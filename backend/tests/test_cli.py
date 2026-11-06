@@ -9,6 +9,7 @@ def test_cli_scan_demo_store(demo_store_path: Path):
     # whatever loop the rest of the pytest session's async tests are using.
     result = subprocess.run(
         [sys.executable, "-m", "app.cli", "scan", str(demo_store_path.resolve())],
+        check=False,  # asserted explicitly below, with stderr in the failure message
         capture_output=True,
         text=True,
         cwd=Path(__file__).resolve().parents[1],

@@ -32,7 +32,7 @@ def _stub_embedding_probe(monkeypatch):
 
     async def fake_embed_text(text, *, model, api_key, api_base=None):
         vector = [0.0] * settings.embedding_dimensions
-        return vector, LlmCallResult(response_json={}, tokens_in=1, tokens_out=0, cost_usd=Decimal("0"))
+        return vector, LlmCallResult(response_json={}, tokens_in=1, tokens_out=0, cost_usd=Decimal(0))
 
     monkeypatch.setattr("app.api.routes.llm_settings.embed_text", fake_embed_text)
 
@@ -118,7 +118,7 @@ async def test_patch_llm_settings_explicit_null_resets_to_default():
 async def test_patch_embedding_model_with_matching_dimension_succeeds(monkeypatch):
     async def fake_embed_text(text, *, model, api_key, api_base=None):
         return [0.0] * settings.embedding_dimensions, LlmCallResult(
-            response_json={}, tokens_in=1, tokens_out=0, cost_usd=Decimal("0")
+            response_json={}, tokens_in=1, tokens_out=0, cost_usd=Decimal(0)
         )
 
     monkeypatch.setattr("app.api.routes.llm_settings.embed_text", fake_embed_text)
@@ -140,7 +140,7 @@ async def test_patch_embedding_model_with_mismatched_dimension_is_rejected(monke
     """
 
     async def fake_embed_text(text, *, model, api_key, api_base=None):
-        return [0.0] * 1024, LlmCallResult(response_json={}, tokens_in=1, tokens_out=0, cost_usd=Decimal("0"))
+        return [0.0] * 1024, LlmCallResult(response_json={}, tokens_in=1, tokens_out=0, cost_usd=Decimal(0))
 
     monkeypatch.setattr("app.api.routes.llm_settings.embed_text", fake_embed_text)
 
