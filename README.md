@@ -67,6 +67,15 @@ docker compose exec api python -m app.evaluation.run_eval
 This makes real OpenAI/Anthropic API calls (not free) and writes
 `backend/app/evaluation/report/eval_report.json`.
 
+To run it at $0, point `EMBEDDING_MODEL`/`LLM_MODEL` at a local Ollama model
+instead (`.env`, or the Settings page's BYOK override — see
+`app/runtime_config.py`'s `resolve_embedding_config`/`resolve_llm_config`,
+which the eval runner already goes through, same as the main chat/analysis
+path). Two honest caveats: the resulting recall@k/MRR numbers then measure a
+different embedding model, not comparable to a real OpenAI-embeddings run;
+and this specific path (Ollama + the evaluation suite specifically) hasn't
+been run end-to-end yet, only the main chat/analysis BYOK path has.
+
 | Mode | recall@1 | recall@3 | recall@5 | recall@10 | MRR |
 |---|---|---|---|---|---|
 | Vector-only | — | — | — | — | — |
@@ -79,22 +88,43 @@ This makes real OpenAI/Anthropic API calls (not free) and writes
 cp .env.example .env
 docker compose build
 docker compose up -d
+docker compose exec api alembic upgrade head
 ```
+
+The last step is required — the API container does **not** run migrations on
+startup. Skipping it is the most common first-run issue: the app starts fine
+(it doesn't touch the database until a request comes in), but every scan or
+page load then fails because the tables don't exist yet.
 
 - API health check: http://localhost:8000/health
 - Web UI: http://localhost:3000
 
-Run backend tests:
+### Scan your own Magento store
+
+1. On a fresh server/clone, set at least one `MAGEWIKI_SCAN_ROOT_1` (and
+   optionally `_2`/`_3`) in `.env` to a host directory that contains the
+   store(s)/module(s) you want to scan, then `docker compose up -d` again so
+   the new bind mount takes effect. The Modules page's Scan box shows what's
+   currently configured ("Scannable under: ...").
+2. Open http://localhost:3000/modules, paste the absolute path to a Magento
+   store or a single module (must be under a configured scan root) into the
+   Scan box, and click **Scan**.
+3. If something fails, check the warnings shown under the scan result first —
+   every per-module failure is reported there, not just a silent module
+   count — before checking `docker compose logs api`.
+
+### Running tests
 
 ```bash
-docker compose run --rm api pytest tests/ -v
+docker compose exec api pytest tests/ -v
 ```
 
-Run migrations:
-
-```bash
-docker compose run --rm api alembic upgrade head
-```
+Tests run against the **same** database the `api`/`worker` containers use —
+there's no separate, disposable test database. Expect state changes (and
+occasional cross-test flakiness from shared Postgres/Redis state) if you run
+this against an environment you're also actively scanning with. Run
+migrations (above) before running tests on a fresh database, or most of the
+suite will fail with "relation does not exist" errors.
 
 ## Kubernetes (local)
 
