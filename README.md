@@ -27,7 +27,7 @@ Full architecture and phase plan: see `CLAUDE.md`.
 - [x] **Phase 6** — Cron, HMAC webhook, BYOK in the UI, Ollama, dependency graph
 - [ ] **Phase 7** — Evaluation suite (done), README updated, GIF recording still pending
 - [x] **Phase 7b** — CI/CD (GitHub Actions): lint, tests, Docker build, and the PR-comment RAG eval all verified green
-- [ ] **Phase 8** — Kubernetes
+- [x] **Phase 8** — Kubernetes: Kustomize manifests, scan CronJob, verified end-to-end on a local `kind` cluster
 - [ ] **Phase 9** — Cloud deployment
 
 Full detail (done-criteria, data model, RAG design) per phase: see `CLAUDE.md`.
@@ -80,3 +80,33 @@ Run migrations:
 ```bash
 docker compose run --rm api alembic upgrade head
 ```
+
+## Kubernetes (local)
+
+Plain Kustomize manifests (no Helm) in `k8s/`: `base/` has the full workload set
+(Postgres, Redis, api, worker, web, a one-shot migration `Job`, and a `CronJob`
+that scans the committed `tests/fixtures/demo-store` fixture nightly —
+additive to the app's own internal ARQ cron in the worker process);
+`overlays/kind/` patches the api/web Services to `NodePort` for local access
+and provides the `kind` cluster's port mapping.
+
+```bash
+brew install kind   # if not already installed
+kind create cluster --name magewiki --config k8s/overlays/kind/kind-config.yaml
+
+docker build -t magewiki-backend:dev ./backend
+docker build -t magewiki-frontend:dev ./frontend
+kind load docker-image magewiki-backend:dev --name magewiki
+kind load docker-image magewiki-frontend:dev --name magewiki
+
+cp k8s/base/.env.k8s.example k8s/base/.env.k8s   # fill in; gitignored
+
+kubectl apply -k k8s/overlays/kind
+kubectl wait --for=condition=complete job/migrate -n magewiki --timeout=120s
+kubectl rollout restart deployment/api deployment/worker -n magewiki
+kubectl wait --for=condition=available deployment/api deployment/worker deployment/web -n magewiki --timeout=120s
+```
+
+- API: http://localhost:8080/health — Web UI: http://localhost:3080
+- Trigger the scan CronJob on demand: `kubectl create job --from=cronjob/scan-demo-store manual-test -n magewiki`
+- Teardown: `kind delete cluster --name magewiki`

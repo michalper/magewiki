@@ -1,0 +1,23 @@
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: scan-demo-store
+spec:
+  schedule: "0 3 * * *"
+  jobTemplate:
+    spec:
+      template:
+        spec:
+          restartPolicy: OnFailure
+          containers:
+            - name: curl
+              image: curlimages/curl:8.10.1
+              args:
+                - -sf
+                - -X
+                - POST
+                - http://api:8000/scan
+                - -H
+                - "Content-Type: application/json"
+                - -d
+                - '{"path": "/app/tests/fixtures/demo-store"}'
