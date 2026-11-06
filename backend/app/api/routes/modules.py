@@ -1,4 +1,3 @@
-import json
 import os
 import time
 from collections.abc import AsyncIterator
@@ -14,6 +13,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.analyzer.facts import gather_module_facts
 from app.analyzer.readme import render_readme_markdown
 from app.analyzer.schemas import ModuleDoc
+from app.api.sse import format_sse
 from app.config import settings
 from app.db import get_session
 from app.models import (
@@ -226,12 +226,6 @@ async def scan(request: ScanRequest, session: AsyncSession = Depends(get_session
     return _scan_response(result, duration)
 
 
-def _format_sse(event: dict) -> str:
-    event_type = event["event"]
-    payload = {k: v for k, v in event.items() if k != "event"}
-    return f"event: {event_type}\ndata: {json.dumps(payload)}\n\n"
-
-
 async def _scan_sse_stream(path: str, session: AsyncSession) -> AsyncIterator[str]:
     started = time.monotonic()
     try:
@@ -239,11 +233,11 @@ async def _scan_sse_stream(path: str, session: AsyncSession) -> AsyncIterator[st
             if event["event"] == "done":
                 duration = time.monotonic() - started
                 response = _scan_response(event["result"], duration)
-                yield _format_sse({"event": "done", "result": response.model_dump()})
+                yield format_sse({"event": "done", "result": response.model_dump()})
             else:
-                yield _format_sse(event)
+                yield format_sse(event)
     except ScanAlreadyInProgressError as exc:
-        yield _format_sse({"event": "error", "detail": str(exc)})
+        yield format_sse({"event": "error", "detail": str(exc)})
 
 
 @router.post("/scan/stream")
