@@ -75,6 +75,29 @@ async def test_check_security_advisories_ignores_a_non_overlapping_advisory(db_s
 
 
 @pytest.mark.asyncio
+async def test_check_security_advisories_handles_multiple_cache_misses_concurrently(db_session, monkeypatch):
+    """Regression test for the batch-then-gather-then-write redesign: several
+    packages all missing from cache in one call must each get their own
+    correctly-matched advisories, not mixed up or dropped, when fetched
+    concurrently rather than one at a time.
+    """
+    suffix = uuid.uuid4().hex[:8]
+    packages = [f"vendor/pkg-{suffix}-{i}" for i in range(4)]
+    advisories = {
+        packages[0]: [{"cve": "CVE-A", "title": "A", "affectedVersions": ">=1.0,<1.5"}],
+        packages[2]: [{"cve": "CVE-C", "title": "C", "affectedVersions": ">=1.0,<1.5"}],
+    }
+    monkeypatch.setattr(
+        "app.scanner.security_advisories.httpx.AsyncClient",
+        lambda *a, **k: _FakeAsyncClient(advisories),
+    )
+
+    findings = await check_security_advisories(db_session, {p: "^1.0" for p in packages})
+
+    assert {f.message.split(" — ")[0] for f in findings} == {"CVE-A", "CVE-C"}
+
+
+@pytest.mark.asyncio
 async def test_check_security_advisories_caches_the_response(db_session, monkeypatch):
     package = f"vendor/pkg-{uuid.uuid4().hex[:8]}"
     client = _FakeAsyncClient({})

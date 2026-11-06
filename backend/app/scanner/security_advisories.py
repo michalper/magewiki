@@ -1,3 +1,5 @@
+import asyncio
+
 import httpx
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -8,22 +10,46 @@ from app.scanner.semver import constraints_overlap
 _ADVISORIES_URL = "https://packagist.org/api/security-advisories/"
 
 
-async def _fetch_advisories(session: AsyncSession, package_name: str) -> list[dict]:
-    cache_key = f"advisories:{package_name}"
-    cached = await get_cached(session, cache_key)
-    if cached is not None:
-        return _advisories_for_package(cached, package_name)
+def _cache_key(package_name: str) -> str:
+    return f"advisories:{package_name}"
 
+
+async def _fetch_from_packagist(package_name: str) -> dict | None:
+    """HTTP-only, no session — safe to run concurrently across packages,
+    unlike get_cached/set_cached below which share the scan's one AsyncSession.
+    """
     try:
         async with httpx.AsyncClient(timeout=10.0) as client:
             response = await client.get(_ADVISORIES_URL, params={"packages[]": package_name})
             response.raise_for_status()
-            data = response.json()
+            return response.json()
     except httpx.HTTPError:
-        return []
+        return None
 
-    await set_cached(session, cache_key, data)
-    return _advisories_for_package(data, package_name)
+
+async def _fetch_advisories_for_all(session: AsyncSession, package_names: list[str]) -> dict[str, dict]:
+    """Three phases, each session-safe: (1) sequential cache reads — the only
+    way to touch one shared AsyncSession from a batch of packages, (2)
+    concurrent HTTP fetches for the cache misses, now off the session
+    entirely, (3) sequential cache writes for what was just fetched.
+    """
+    data_by_package: dict[str, dict] = {}
+    misses: list[str] = []
+    for package_name in package_names:
+        cached = await get_cached(session, _cache_key(package_name))
+        if cached is not None:
+            data_by_package[package_name] = cached
+        else:
+            misses.append(package_name)
+
+    if misses:
+        fetched = await asyncio.gather(*(_fetch_from_packagist(name) for name in misses))
+        for package_name, data in zip(misses, fetched, strict=True):
+            if data is not None:
+                await set_cached(session, _cache_key(package_name), data)
+                data_by_package[package_name] = data
+
+    return data_by_package
 
 
 def _advisories_for_package(data: dict, package_name: str) -> list[dict]:
@@ -45,9 +71,12 @@ async def check_security_advisories(
     constraint actually overlaps the advisory's affected-version range, not
     on name match alone.
     """
+    data_by_package = await _fetch_advisories_for_all(session, list(requirements))
+
     findings: list[QualityFinding] = []
     for package_name, declared_constraint in requirements.items():
-        advisories = await _fetch_advisories(session, package_name)
+        data = data_by_package.get(package_name)
+        advisories = _advisories_for_package(data, package_name) if data is not None else []
         for advisory in advisories:
             affected = advisory.get("affectedVersions")
             if not affected or not constraints_overlap(declared_constraint, affected):
