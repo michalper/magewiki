@@ -1,0 +1,31 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: php-analyzer
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: php-analyzer
+  template:
+    metadata:
+      labels:
+        app: php-analyzer
+    spec:
+      containers:
+        - name: php-analyzer
+          image: magewiki-php-analyzer:dev
+          imagePullPolicy: IfNotPresent
+          ports:
+            - containerPort: 8080
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: php-analyzer
+spec:
+  selector:
+    app: php-analyzer
+  ports:
+    - port: 8080
+      targetPort: 8080

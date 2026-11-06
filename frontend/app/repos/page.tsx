@@ -23,7 +23,11 @@ function totalFindings(r: RepoSummary): number {
     r.secrets_count +
     r.security_advisory_count +
     r.abandoned_dependency_count +
-    r.outdated_dependency_count
+    r.outdated_dependency_count +
+    r.phpstan_error_count +
+    r.phpmd_issue_count +
+    r.phpcs_violation_count +
+    r.php_compat_issue_count
   );
 }
 
@@ -99,6 +103,20 @@ export default function ReposPage() {
                     )}
                     {repo.outdated_dependency_count > 0 && (
                       <SeverityBadge severity="info">{repo.outdated_dependency_count} outdated</SeverityBadge>
+                    )}
+                    {repo.phpstan_error_count > 0 && (
+                      <SeverityBadge severity="warning">{repo.phpstan_error_count} phpstan</SeverityBadge>
+                    )}
+                    {repo.phpmd_issue_count > 0 && (
+                      <SeverityBadge severity="warning">{repo.phpmd_issue_count} phpmd</SeverityBadge>
+                    )}
+                    {repo.phpcs_violation_count > 0 && (
+                      <SeverityBadge severity="warning">{repo.phpcs_violation_count} phpcs</SeverityBadge>
+                    )}
+                    {repo.php_compat_issue_count > 0 && (
+                      <SeverityBadge severity="warning">
+                        {repo.php_compat_issue_count} php-compat
+                      </SeverityBadge>
                     )}
                   </>
                 )}

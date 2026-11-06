@@ -29,6 +29,8 @@ services:
     build:
       context: ./backend
     env_file: .env
+    environment:
+      PHP_ANALYZER_URL: http://php-analyzer:8080
     ports:
       - "${API_PORT:-8000}:8000"
     volumes:
@@ -46,6 +48,8 @@ services:
     build:
       context: ./backend
     env_file: .env
+    environment:
+      PHP_ANALYZER_URL: http://php-analyzer:8080
     volumes:
       - ./backend:/app
       - ${MAGEWIKI_ORDO_FIXTURE_PATH:-/dev/null}:${MAGEWIKI_ORDO_FIXTURE_PATH:-/dev/null}:ro
@@ -56,6 +60,15 @@ services:
       redis:
         condition: service_healthy
     command: ["arq", "app.tasks.worker.WorkerSettings"]
+
+  php-analyzer:
+    build:
+      context: .
+      dockerfile: php-analyzer/Dockerfile
+    volumes:
+      - ./backend:/app:ro
+      - ${MAGEWIKI_ORDO_FIXTURE_PATH:-/dev/null}:${MAGEWIKI_ORDO_FIXTURE_PATH:-/dev/null}:ro
+      - ${MAGEWIKI_MAGENTO_FIXTURE_PATH:-/tmp}:${MAGEWIKI_MAGENTO_FIXTURE_PATH:-/tmp}:ro
 
   web:
     build:

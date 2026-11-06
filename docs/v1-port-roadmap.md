@@ -153,10 +153,10 @@ proactively rather than rediscovering the hard way:
 
 ## New phases to append to CLAUDE.md's phase plan
 
-| Phase | Goal | Done when |
-|---|---|---|
-| 9 | Parser-only quality checks (composer completeness, README presence, `@deprecated`, hardcoded secrets, test presence) + badge/KPI-ring UI foundation | New checks show up as badges on the module list and a stats page with KPI rings |
-| 10 | Dependency intelligence: CVE/security-advisory check + abandoned/outdated check | A module with a known-vulnerable dependency shows a blocking CVE badge citing the advisory |
-| 11 | Multi-repo fleet view | A repos-list page aggregates health across every repo MageWiki has scanned |
-| 12 | PHP static-analysis toolchain (PHPStan/PHPMD/phpcs/PhpMetrics/Rector) — optional/stretch, needs explicit sign-off before starting given the PHP-toolchain architecture change | Equivalent scanners run against a module and their findings show up as badges |
-| 13 | One cloud (GCP or Azure) via Terraform, managed Postgres + pgvector *(renumbered from Phase 9 — still deferred, no cloud account/funds)* | Public demo deployment |
+| Phase | Goal | Done when | Status |
+|---|---|---|---|
+| 9 | Parser-only quality checks (composer completeness, README presence, `@deprecated`, hardcoded secrets, test presence) + badge/KPI-ring UI foundation | New checks show up as badges on the module list and a stats page with KPI rings | Done |
+| 10 | Dependency intelligence: CVE/security-advisory check + abandoned/outdated check | A module with a known-vulnerable dependency shows a blocking CVE badge citing the advisory | Done |
+| 11 | Multi-repo fleet view | A repos-list page aggregates health across every repo MageWiki has scanned | Done |
+| 12 | PHP static-analysis toolchain (PHPStan/PHPMD/phpcs/Rector) | Equivalent scanners run against a module and their findings show up as badges | Done — see CLAUDE.md's Phase 12 decision note; PhpMetrics from the original 5-tool list was dropped during scoping, not built |
+| 13 | One cloud (GCP or Azure) via Terraform, managed Postgres + pgvector *(renumbered from Phase 9 — still deferred, no cloud account/funds)* | Public demo deployment | Deferred |

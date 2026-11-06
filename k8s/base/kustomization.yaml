@@ -12,6 +12,7 @@ resources:
   - api.yaml
   - worker.yaml
   - web.yaml
+  - php-analyzer.yaml
   - scan-cronjob.yaml
 
 secretGenerator:

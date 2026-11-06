@@ -10,3 +10,4 @@ data:
   EMBEDDING_MODEL: openai/text-embedding-3-small
   OLLAMA_BASE_URL: ""
   NEXT_PUBLIC_API_URL: http://localhost:8080
+  PHP_ANALYZER_URL: http://php-analyzer:8080

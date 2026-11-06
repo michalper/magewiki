@@ -203,9 +203,12 @@ async def test_scan_repository_records_quality_findings_and_replaces_them_on_res
     findings = (
         await db_session.scalars(select(ModuleQualityFinding).where(ModuleQualityFinding.module_id == module.id))
     ).all()
-    assert len(findings) == 1
-    assert findings[0].check_type == "composer_completeness"
-    assert "require-dev phpunit/phpunit" in findings[0].message
+    # Exact count isn't the point (Phase 12's PHP toolchain adds its own
+    # findings to this same module on top of the composer-completeness one) —
+    # just confirm the specific finding this test is actually about exists.
+    composer_findings = [f for f in findings if f.check_type == "composer_completeness"]
+    assert len(composer_findings) == 1
+    assert "require-dev phpunit/phpunit" in composer_findings[0].message
 
     # Re-scan with no changes: the full-replace delete-then-reinsert must not
     # duplicate rows.
@@ -213,4 +216,4 @@ async def test_scan_repository_records_quality_findings_and_replaces_them_on_res
     findings_after_rescan = (
         await db_session.scalars(select(ModuleQualityFinding).where(ModuleQualityFinding.module_id == module.id))
     ).all()
-    assert len(findings_after_rescan) == 1
+    assert len(findings_after_rescan) == len(findings)

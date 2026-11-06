@@ -400,6 +400,26 @@ export interface components {
              * @default 0
              */
             outdated_dependency_count: number;
+            /**
+             * Phpstan Error Count
+             * @default 0
+             */
+            phpstan_error_count: number;
+            /**
+             * Phpmd Issue Count
+             * @default 0
+             */
+            phpmd_issue_count: number;
+            /**
+             * Phpcs Violation Count
+             * @default 0
+             */
+            phpcs_violation_count: number;
+            /**
+             * Php Compat Issue Count
+             * @default 0
+             */
+            php_compat_issue_count: number;
             /** Dependencies */
             dependencies: string[];
             /** Classes */
@@ -513,6 +533,26 @@ export interface components {
              * @default 0
              */
             outdated_dependency_count: number;
+            /**
+             * Phpstan Error Count
+             * @default 0
+             */
+            phpstan_error_count: number;
+            /**
+             * Phpmd Issue Count
+             * @default 0
+             */
+            phpmd_issue_count: number;
+            /**
+             * Phpcs Violation Count
+             * @default 0
+             */
+            phpcs_violation_count: number;
+            /**
+             * Php Compat Issue Count
+             * @default 0
+             */
+            php_compat_issue_count: number;
         };
         /** PhpClassSummary */
         PhpClassSummary: {
@@ -574,6 +614,14 @@ export interface components {
             abandoned_dependency_count: number;
             /** Outdated Dependency Count */
             outdated_dependency_count: number;
+            /** Phpstan Error Count */
+            phpstan_error_count: number;
+            /** Phpmd Issue Count */
+            phpmd_issue_count: number;
+            /** Phpcs Violation Count */
+            phpcs_violation_count: number;
+            /** Php Compat Issue Count */
+            php_compat_issue_count: number;
             /**
              * Last Scanned At
              * Format: date-time

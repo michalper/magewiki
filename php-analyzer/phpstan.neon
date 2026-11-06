@@ -1,0 +1,6 @@
+parameters:
+    level: 5
+    stubFiles:
+        - magento-core.stub
+    excludePaths:
+        - '*/vendor/*'

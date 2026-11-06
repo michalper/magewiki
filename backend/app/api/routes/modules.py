@@ -87,6 +87,10 @@ class ModuleSummary(BaseModel):
     security_advisory_count: int = 0
     abandoned_dependency_count: int = 0
     outdated_dependency_count: int = 0
+    phpstan_error_count: int = 0
+    phpmd_issue_count: int = 0
+    phpcs_violation_count: int = 0
+    php_compat_issue_count: int = 0
 
 
 class MethodSummary(BaseModel):
@@ -235,6 +239,10 @@ async def list_modules(session: AsyncSession = Depends(get_session)) -> list[Mod
             security_advisory_count=counts_by_module.get(module.id, {}).get("security_advisory", 0),
             abandoned_dependency_count=counts_by_module.get(module.id, {}).get("abandoned_dependency", 0),
             outdated_dependency_count=counts_by_module.get(module.id, {}).get("outdated_dependency", 0),
+            phpstan_error_count=counts_by_module.get(module.id, {}).get("phpstan_error", 0),
+            phpmd_issue_count=counts_by_module.get(module.id, {}).get("phpmd_issue", 0),
+            phpcs_violation_count=counts_by_module.get(module.id, {}).get("phpcs_violation", 0),
+            php_compat_issue_count=counts_by_module.get(module.id, {}).get("php_compat_issue", 0),
         )
         for module, classes, plugins, observers, doc in module_rows
     ]
@@ -258,6 +266,10 @@ class RepoSummary(BaseModel):
     security_advisory_count: int
     abandoned_dependency_count: int
     outdated_dependency_count: int
+    phpstan_error_count: int
+    phpmd_issue_count: int
+    phpcs_violation_count: int
+    php_compat_issue_count: int
     last_scanned_at: datetime
 
 
@@ -299,6 +311,10 @@ async def list_repos(session: AsyncSession = Depends(get_session)) -> list[RepoS
                 "security_advisory_count": 0,
                 "abandoned_dependency_count": 0,
                 "outdated_dependency_count": 0,
+                "phpstan_error_count": 0,
+                "phpmd_issue_count": 0,
+                "phpcs_violation_count": 0,
+                "php_compat_issue_count": 0,
                 "last_scanned_at": last_scanned_at,
             },
         )
@@ -316,6 +332,10 @@ async def list_repos(session: AsyncSession = Depends(get_session)) -> list[RepoS
         repo["security_advisory_count"] += counts.get("security_advisory", 0)
         repo["abandoned_dependency_count"] += counts.get("abandoned_dependency", 0)
         repo["outdated_dependency_count"] += counts.get("outdated_dependency", 0)
+        repo["phpstan_error_count"] += counts.get("phpstan_error", 0)
+        repo["phpmd_issue_count"] += counts.get("phpmd_issue", 0)
+        repo["phpcs_violation_count"] += counts.get("phpcs_violation", 0)
+        repo["php_compat_issue_count"] += counts.get("php_compat_issue", 0)
         if last_scanned_at > repo["last_scanned_at"]:
             repo["last_scanned_at"] = last_scanned_at
 
@@ -383,6 +403,10 @@ async def get_module(module_id: int, session: AsyncSession = Depends(get_session
         security_advisory_count=sum(1 for f in quality_findings if f.check_type == "security_advisory"),
         abandoned_dependency_count=sum(1 for f in quality_findings if f.check_type == "abandoned_dependency"),
         outdated_dependency_count=sum(1 for f in quality_findings if f.check_type == "outdated_dependency"),
+        phpstan_error_count=sum(1 for f in quality_findings if f.check_type == "phpstan_error"),
+        phpmd_issue_count=sum(1 for f in quality_findings if f.check_type == "phpmd_issue"),
+        phpcs_violation_count=sum(1 for f in quality_findings if f.check_type == "phpcs_violation"),
+        php_compat_issue_count=sum(1 for f in quality_findings if f.check_type == "php_compat_issue"),
         dependencies=[d.depends_on_name for d in dependencies],
         classes=class_summaries,
         preferences=[DiPreferenceSummary(for_type=p.for_type, preference_type=p.preference_type) for p in preferences],
