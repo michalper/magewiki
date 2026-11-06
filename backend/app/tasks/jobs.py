@@ -1,10 +1,12 @@
 import logging
+from collections.abc import AsyncIterator
+from contextlib import asynccontextmanager
 from pathlib import Path
 
 from sqlalchemy import delete, select, update
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 
-from app.analyzer.budget import is_budget_exceeded
+from app.analyzer.budget import is_budget_exceeded, pause_module_for_budget
 from app.analyzer.client import summarize_file, synthesize_module_doc
 from app.analyzer.embeddings import (
     build_file_chunk_text,
@@ -88,6 +90,28 @@ async def _lookup_cache(session, content_hash: str, model: str, prompt_version: 
     )
 
 
+@asynccontextmanager
+async def fail_module_on_error(module_id: int, module_current_hash: str) -> AsyncIterator[None]:
+    """Shared by analyze_file/synthesize_module/embed_chunks: on any exception,
+    record it onto the module and re-raise. Guarded by current_hash, same as
+    every success-path update in these functions — without it, a stale job from
+    a superseded scan generation that fails AFTER a newer scan has already
+    finished would overwrite the new generation's healthy state with this old
+    generation's failure.
+    """
+    try:
+        yield
+    except Exception as exc:
+        async with async_session_factory() as session:
+            await session.execute(
+                update(Module)
+                .where(Module.id == module_id, Module.current_hash == module_current_hash)
+                .values(state="failed", retry_count=Module.retry_count + 1, last_error=str(exc))
+            )
+            await session.commit()
+        raise
+
+
 async def analyze_file(
     ctx: dict | None,
     module_id: int,
@@ -103,8 +127,10 @@ async def analyze_file(
     commits at natural stopping points — the same transaction style as
     app/scanner/orchestrator.py.
     """
-    try:
-        async with async_session_factory() as session:
+    async with (
+        fail_module_on_error(module_id, module_current_hash),
+        async_session_factory() as session,
+    ):
             module = await session.get(Module, module_id)
             if module is None or module.current_hash != module_current_hash:
                 return  # stale job from a superseded scan generation
@@ -116,12 +142,7 @@ async def analyze_file(
 
             if cached is None:
                 if await is_budget_exceeded(session):
-                    await session.execute(
-                        update(Module)
-                        .where(Module.id == module_id, Module.current_hash == module_current_hash)
-                        .values(state="paused_budget")
-                    )
-                    await session.commit()
+                    await pause_module_for_budget(session, module_id, module_current_hash)
                     return
 
                 file_path = Path(module.repo_root) / module.path / relative_path
@@ -182,19 +203,6 @@ async def analyze_file(
                     module_current_hash,
                     _job_id=f"synthesize:{module_id}:{module_current_hash}",
                 )
-    except Exception as exc:
-        async with async_session_factory() as session:
-            # Guarded by current_hash, same as every success-path update in this
-            # function — without it, a stale job from a superseded scan generation
-            # that fails AFTER a newer scan has already finished would overwrite the
-            # new generation's healthy state with this old generation's failure.
-            await session.execute(
-                update(Module)
-                .where(Module.id == module_id, Module.current_hash == module_current_hash)
-                .values(state="failed", retry_count=Module.retry_count + 1, last_error=str(exc))
-            )
-            await session.commit()
-        raise
 
 
 async def synthesize_module(ctx: dict | None, module_id: int, module_current_hash: str) -> None:
@@ -203,8 +211,10 @@ async def synthesize_module(ctx: dict | None, module_id: int, module_current_has
     to embed_chunks (state="embedding") rather than finishing the module itself —
     the module isn't truly up to date until chunks are embedded too.
     """
-    try:
-        async with async_session_factory() as session:
+    async with (
+        fail_module_on_error(module_id, module_current_hash),
+        async_session_factory() as session,
+    ):
             module = await session.get(Module, module_id)
             if module is None or module.current_hash != module_current_hash:
                 return  # stale job from a superseded scan generation
@@ -216,12 +226,7 @@ async def synthesize_module(ctx: dict | None, module_id: int, module_current_has
 
             if cached is None:
                 if await is_budget_exceeded(session):
-                    await session.execute(
-                        update(Module)
-                        .where(Module.id == module_id, Module.current_hash == module_current_hash)
-                        .values(state="paused_budget")
-                    )
-                    await session.commit()
+                    await pause_module_for_budget(session, module_id, module_current_hash)
                     return
 
                 facts = await gather_module_facts(session, module_id)
@@ -290,19 +295,6 @@ async def synthesize_module(ctx: dict | None, module_id: int, module_current_has
                 module_current_hash,
                 _job_id=f"embed:{module_id}:{module_current_hash}",
             )
-    except Exception as exc:
-        async with async_session_factory() as session:
-            # Guarded by current_hash, same as every success-path update in this
-            # function — without it, a stale job from a superseded scan generation
-            # that fails AFTER a newer scan has already finished would overwrite the
-            # new generation's healthy state with this old generation's failure.
-            await session.execute(
-                update(Module)
-                .where(Module.id == module_id, Module.current_hash == module_current_hash)
-                .values(state="failed", retry_count=Module.retry_count + 1, last_error=str(exc))
-            )
-            await session.commit()
-        raise
 
 
 async def embed_chunks(ctx: dict | None, module_id: int, module_current_hash: str) -> None:
@@ -310,8 +302,10 @@ async def embed_chunks(ctx: dict | None, module_id: int, module_current_hash: st
     synthesis has produced a module_docs row. The final step of the pipeline —
     sets the module to up_to_date. See CLAUDE.md "Multi-level index".
     """
-    try:
-        async with async_session_factory() as session:
+    async with (
+        fail_module_on_error(module_id, module_current_hash),
+        async_session_factory() as session,
+    ):
             module = await session.get(Module, module_id)
             if module is None or module.current_hash != module_current_hash:
                 return  # stale job from a superseded scan generation
@@ -381,12 +375,7 @@ async def embed_chunks(ctx: dict | None, module_id: int, module_current_hash: st
                 # embeddings this abort left un-fetched in embedding_by_hash.
                 for _ct, _rp, _mid, txt, h in misses:
                     if await is_budget_exceeded(session):
-                        await session.execute(
-                            update(Module)
-                            .where(Module.id == module_id, Module.current_hash == module_current_hash)
-                            .values(state="paused_budget")
-                        )
-                        await session.commit()
+                        await pause_module_for_budget(session, module_id, module_current_hash)
                         return
 
                     vector, result = await embed_text(
@@ -417,19 +406,6 @@ async def embed_chunks(ctx: dict | None, module_id: int, module_current_hash: st
                 .values(state="up_to_date", analyzed_hash=module_current_hash, last_error=None, retry_count=0)
             )
             await session.commit()
-    except Exception as exc:
-        async with async_session_factory() as session:
-            # Guarded by current_hash, same as every success-path update in this
-            # function — without it, a stale job from a superseded scan generation
-            # that fails AFTER a newer scan has already finished would overwrite the
-            # new generation's healthy state with this old generation's failure.
-            await session.execute(
-                update(Module)
-                .where(Module.id == module_id, Module.current_hash == module_current_hash)
-                .values(state="failed", retry_count=Module.retry_count + 1, last_error=str(exc))
-            )
-            await session.commit()
-        raise
 
 
 async def scan_repository_job(ctx: dict, repo_root: str) -> None:
