@@ -82,6 +82,9 @@ class Module(Base):
     quality_findings: Mapped[list["ModuleQualityFinding"]] = relationship(
         back_populates="module", cascade="all, delete-orphan"
     )
+    composer_requirements: Mapped[list["ComposerPackageRequirement"]] = relationship(
+        back_populates="module", cascade="all, delete-orphan"
+    )
 
 
 class ModuleDependency(Base):
@@ -191,7 +194,8 @@ class ModuleQualityFinding(Base):
     __tablename__ = "module_quality_findings"
     __table_args__ = (
         CheckConstraint(
-            "check_type IN ('composer_completeness','deprecated_annotation','hardcoded_secret')",
+            "check_type IN ('composer_completeness','deprecated_annotation','hardcoded_secret',"
+            "'security_advisory','abandoned_dependency','outdated_dependency')",
             name="ck_module_quality_findings_check_type",
         ),
         CheckConstraint(
@@ -209,6 +213,40 @@ class ModuleQualityFinding(Base):
     message: Mapped[str] = mapped_column(Text)
 
     module: Mapped[Module] = relationship(back_populates="quality_findings")
+
+
+class ComposerPackageRequirement(Base):
+    """One third-party `require`/`require-dev` entry from a module's
+    composer.json (Phase 10). Separate from `ModuleDependency`, which is
+    Magento's own `module.xml` `<sequence>` concept, not a Composer package.
+    Full-replace per scan, same pattern as `ModuleQualityFinding`.
+    """
+
+    __tablename__ = "composer_package_requirements"
+    __table_args__ = (Index("ix_composer_package_requirements_module_id", "module_id"),)
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    module_id: Mapped[int] = mapped_column(ForeignKey("modules.id", ondelete="CASCADE"))
+    package_name: Mapped[str] = mapped_column(Text)
+    constraint: Mapped[str] = mapped_column(Text)
+    is_dev: Mapped[bool] = mapped_column(Boolean, default=False)
+
+    module: Mapped[Module] = relationship(back_populates="composer_requirements")
+
+
+class PackagistCache(Base):
+    """A single shared TTL cache for every Packagist-backed check (security
+    advisories, abandoned/outdated dependencies) — one table, not one per
+    scanner. TTL is enforced at read time by the caller comparing
+    `fetched_at` to now, not stored here. Mirrors v1's own `packagist_cache`
+    table, confirmed to be shared the same way (see docs/v1-port-roadmap.md).
+    """
+
+    __tablename__ = "packagist_cache"
+
+    cache_key: Mapped[str] = mapped_column(Text, primary_key=True)
+    response_json: Mapped[dict] = mapped_column(JSONB)
+    fetched_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
 
 class AnalysisCache(Base):

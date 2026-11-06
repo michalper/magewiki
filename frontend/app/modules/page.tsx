@@ -86,7 +86,12 @@ function PresenceBadge({ present, label }: { present: boolean; label: string }) 
 
 function QualityBadges({ module }: { module: ModuleSummary }) {
   const hasAny =
-    module.composer_issue_count > 0 || module.deprecated_count > 0 || module.secrets_count > 0;
+    module.composer_issue_count > 0 ||
+    module.deprecated_count > 0 ||
+    module.secrets_count > 0 ||
+    module.security_advisory_count > 0 ||
+    module.abandoned_dependency_count > 0 ||
+    module.outdated_dependency_count > 0;
   if (!hasAny) return <SeverityBadge severity="ok">clean</SeverityBadge>;
   return (
     <div className="flex flex-wrap gap-1">
@@ -95,11 +100,20 @@ function QualityBadges({ module }: { module: ModuleSummary }) {
           {module.secrets_count} secret{module.secrets_count === 1 ? "" : "s"}
         </SeverityBadge>
       )}
+      {module.security_advisory_count > 0 && (
+        <SeverityBadge severity="blocking">{module.security_advisory_count} CVE</SeverityBadge>
+      )}
       {module.composer_issue_count > 0 && (
         <SeverityBadge severity="warning">{module.composer_issue_count} composer</SeverityBadge>
       )}
       {module.deprecated_count > 0 && (
         <SeverityBadge severity="warning">{module.deprecated_count} deprecated</SeverityBadge>
+      )}
+      {module.abandoned_dependency_count > 0 && (
+        <SeverityBadge severity="warning">{module.abandoned_dependency_count} abandoned</SeverityBadge>
+      )}
+      {module.outdated_dependency_count > 0 && (
+        <SeverityBadge severity="info">{module.outdated_dependency_count} outdated</SeverityBadge>
       )}
     </div>
   );
@@ -120,6 +134,9 @@ function toCsv(modules: ModuleSummary[]): string {
     "composer_issue_count",
     "deprecated_count",
     "secrets_count",
+    "security_advisory_count",
+    "abandoned_dependency_count",
+    "outdated_dependency_count",
     "last_scanned_at",
   ];
   const escape = (v: unknown) => {
@@ -141,6 +158,9 @@ function toCsv(modules: ModuleSummary[]): string {
       m.composer_issue_count,
       m.deprecated_count,
       m.secrets_count,
+      m.security_advisory_count,
+      m.abandoned_dependency_count,
+      m.outdated_dependency_count,
       m.last_scanned_at,
     ]
       .map(escape)

@@ -6,6 +6,7 @@ from sqlalchemy import delete, select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models import (
+    ComposerPackageRequirement,
     DiPlugin,
     DiPreference,
     EventObserver,
@@ -17,6 +18,7 @@ from app.models import (
     PhpClass,
     PhpClassMethod,
 )
+from app.scanner.abandoned_dependencies import check_abandoned_outdated
 from app.scanner.composer_json import composer_completeness_findings, parse_composer_json
 from app.scanner.config_php import parse_config_php
 from app.scanner.deprecated_scanner import scan_deprecated_annotations
@@ -29,6 +31,7 @@ from app.scanner.module_xml import InvalidModuleXmlError, parse_module_xml
 from app.scanner.php_classes import catalog_module_classes
 from app.scanner.readme_check import has_readme
 from app.scanner.secrets_scanner import scan_hardcoded_secrets
+from app.scanner.security_advisories import check_security_advisories
 from app.scanner.test_presence import has_tests
 from app.tasks.queue import get_arq_pool
 
@@ -240,6 +243,9 @@ async def _persist_module(
         await session.execute(delete(EventObserver).where(EventObserver.module_id == module.id))
         await session.execute(delete(FileHash).where(FileHash.module_id == module.id))
         await session.execute(delete(ModuleQualityFinding).where(ModuleQualityFinding.module_id == module.id))
+        await session.execute(
+            delete(ComposerPackageRequirement).where(ComposerPackageRequirement.module_id == module.id)
+        )
         if diff.removed:
             await session.execute(
                 delete(FileAnalysis).where(
@@ -375,10 +381,29 @@ async def _persist_module(
                     )
                 )
 
+    requirements = pm.composer.requirements if pm.composer else {}
+    dev_requirements = pm.composer.dev_requirements if pm.composer else {}
+    all_requirements = {**requirements, **dev_requirements}
+
+    for package_name, package_constraint in requirements.items():
+        session.add(
+            ComposerPackageRequirement(
+                module_id=module.id, package_name=package_name, constraint=package_constraint, is_dev=False
+            )
+        )
+    for package_name, package_constraint in dev_requirements.items():
+        session.add(
+            ComposerPackageRequirement(
+                module_id=module.id, package_name=package_name, constraint=package_constraint, is_dev=True
+            )
+        )
+
     quality_findings = [
         *composer_completeness_findings(pm.composer),
         *scan_deprecated_annotations(pm.discovered.root),
         *scan_hardcoded_secrets(pm.discovered.root),
+        *await check_security_advisories(session, all_requirements),
+        *await check_abandoned_outdated(session, all_requirements),
     ]
     for finding in quality_findings:
         session.add(

@@ -145,7 +145,13 @@ function TopFindingsBar({ modules }: { modules: ModuleSummary[] }) {
   const data = modules
     .map((m) => ({
       name: m.name,
-      total: m.composer_issue_count + m.deprecated_count + m.secrets_count,
+      total:
+        m.composer_issue_count +
+        m.deprecated_count +
+        m.secrets_count +
+        m.security_advisory_count +
+        m.abandoned_dependency_count +
+        m.outdated_dependency_count,
     }))
     .filter((d) => d.total > 0)
     .sort((a, b) => b.total - a.total)
@@ -189,6 +195,9 @@ export default function StatsPage() {
       composerIssues: modules.reduce((sum, m) => sum + m.composer_issue_count, 0),
       deprecated: modules.reduce((sum, m) => sum + m.deprecated_count, 0),
       secrets: modules.reduce((sum, m) => sum + m.secrets_count, 0),
+      securityAdvisories: modules.reduce((sum, m) => sum + m.security_advisory_count, 0),
+      abandoned: modules.reduce((sum, m) => sum + m.abandoned_dependency_count, 0),
+      outdated: modules.reduce((sum, m) => sum + m.outdated_dependency_count, 0),
     }),
     [modules]
   );
@@ -222,6 +231,11 @@ export default function StatsPage() {
               accent={totals.secrets > 0 ? palette.status.critical : undefined}
             />
             <StatTile
+              label="Known vulnerabilities"
+              value={totals.securityAdvisories}
+              accent={totals.securityAdvisories > 0 ? palette.status.critical : undefined}
+            />
+            <StatTile
               label="Deprecated usages"
               value={totals.deprecated}
               accent={totals.deprecated > 0 ? palette.status.warning : undefined}
@@ -231,6 +245,12 @@ export default function StatsPage() {
               value={totals.composerIssues}
               accent={totals.composerIssues > 0 ? palette.status.warning : undefined}
             />
+            <StatTile
+              label="Abandoned dependencies"
+              value={totals.abandoned}
+              accent={totals.abandoned > 0 ? palette.status.warning : undefined}
+            />
+            <StatTile label="Outdated dependencies" value={totals.outdated} />
           </div>
 
           <div className="flex flex-wrap gap-4">

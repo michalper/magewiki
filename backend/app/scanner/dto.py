@@ -29,11 +29,18 @@ class ComposerResult:
     has_autoload_psr4: bool = False
     has_autoload_files: bool = False
     has_phpunit_dev_dependency: bool = False
+    # package name -> raw Composer version constraint string. Phase 10:
+    # third-party package requirements, for the CVE and abandoned/outdated
+    # dependency checks. Excludes "php" and "ext-*"/"lib-*" platform entries.
+    requirements: dict[str, str] = field(default_factory=dict)
+    dev_requirements: dict[str, str] = field(default_factory=dict)
 
 
 @dataclass
 class QualityFinding:
-    check_type: str  # "composer_completeness" | "deprecated_annotation" | "hardcoded_secret"
+    check_type: str
+    # "composer_completeness" | "deprecated_annotation" | "hardcoded_secret"
+    # | "security_advisory" | "abandoned_dependency" | "outdated_dependency"
     severity: str  # "blocking" | "warning" | "info"
     file_path: str | None
     line: int | None
