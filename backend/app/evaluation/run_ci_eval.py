@@ -5,6 +5,8 @@ Markdown block for a PR comment. NOT the real Ordo_Automation numbers from
 Phase 7's README table — see ci_dataset.py's docstring.
 
 Usage: docker compose exec api python -m app.evaluation.run_ci_eval
+
+Invoked by the `rag-eval-comment` job in .github/workflows/ci.yml on every PR.
 """
 
 import asyncio
