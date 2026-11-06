@@ -28,6 +28,7 @@ mcp = "^1.1"  # litellm's tool-calling path imports this internally; not declare
 # version coupling) entirely. Verified empirically: with _skip_mcp_handler=True, tool-calling works
 # regardless of the installed mcp version.
 pgvector = "^0.5"
+httpx = "^0.28"
 
 # --- Future phases (not installed yet, documented here per architecture scaffold) ---
 # Testing (RAG eval):        ragas
@@ -35,7 +36,6 @@ pgvector = "^0.5"
 [tool.poetry.group.dev.dependencies]
 pytest = "^8.3"
 pytest-asyncio = "^1.0"
-httpx = "^0.28"
 ruff = "^0.7"
 mypy = "^1.13"
 

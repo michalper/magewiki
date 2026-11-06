@@ -83,6 +83,9 @@ class ModuleSummary(BaseModel):
     composer_issue_count: int = 0
     deprecated_count: int = 0
     secrets_count: int = 0
+    security_advisory_count: int = 0
+    abandoned_dependency_count: int = 0
+    outdated_dependency_count: int = 0
 
 
 class MethodSummary(BaseModel):
@@ -227,6 +230,9 @@ async def list_modules(session: AsyncSession = Depends(get_session)) -> list[Mod
             composer_issue_count=counts_by_module.get(module.id, {}).get("composer_completeness", 0),
             deprecated_count=counts_by_module.get(module.id, {}).get("deprecated_annotation", 0),
             secrets_count=counts_by_module.get(module.id, {}).get("hardcoded_secret", 0),
+            security_advisory_count=counts_by_module.get(module.id, {}).get("security_advisory", 0),
+            abandoned_dependency_count=counts_by_module.get(module.id, {}).get("abandoned_dependency", 0),
+            outdated_dependency_count=counts_by_module.get(module.id, {}).get("outdated_dependency", 0),
         )
         for module, classes, plugins, observers, doc in module_rows
     ]
@@ -289,6 +295,9 @@ async def get_module(module_id: int, session: AsyncSession = Depends(get_session
         composer_issue_count=sum(1 for f in quality_findings if f.check_type == "composer_completeness"),
         deprecated_count=sum(1 for f in quality_findings if f.check_type == "deprecated_annotation"),
         secrets_count=sum(1 for f in quality_findings if f.check_type == "hardcoded_secret"),
+        security_advisory_count=sum(1 for f in quality_findings if f.check_type == "security_advisory"),
+        abandoned_dependency_count=sum(1 for f in quality_findings if f.check_type == "abandoned_dependency"),
+        outdated_dependency_count=sum(1 for f in quality_findings if f.check_type == "outdated_dependency"),
         dependencies=[d.depends_on_name for d in dependencies],
         classes=class_summaries,
         preferences=[DiPreferenceSummary(for_type=p.for_type, preference_type=p.preference_type) for p in preferences],

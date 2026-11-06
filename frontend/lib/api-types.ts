@@ -366,6 +366,21 @@ export interface components {
              * @default 0
              */
             secrets_count: number;
+            /**
+             * Security Advisory Count
+             * @default 0
+             */
+            security_advisory_count: number;
+            /**
+             * Abandoned Dependency Count
+             * @default 0
+             */
+            abandoned_dependency_count: number;
+            /**
+             * Outdated Dependency Count
+             * @default 0
+             */
+            outdated_dependency_count: number;
             /** Dependencies */
             dependencies: string[];
             /** Classes */
@@ -462,6 +477,21 @@ export interface components {
              * @default 0
              */
             secrets_count: number;
+            /**
+             * Security Advisory Count
+             * @default 0
+             */
+            security_advisory_count: number;
+            /**
+             * Abandoned Dependency Count
+             * @default 0
+             */
+            abandoned_dependency_count: number;
+            /**
+             * Outdated Dependency Count
+             * @default 0
+             */
+            outdated_dependency_count: number;
         };
         /** PhpClassSummary */
         PhpClassSummary: {

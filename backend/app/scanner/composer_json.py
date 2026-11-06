@@ -35,7 +35,21 @@ def parse_composer_json(path: Path) -> ComposerResult | None:
         has_autoload_psr4=bool(autoload.get("psr-4")),
         has_autoload_files=bool(autoload.get("files")),
         has_phpunit_dev_dependency="phpunit/phpunit" in require_dev,
+        requirements=_third_party_packages(require),
+        dev_requirements=_third_party_packages(require_dev),
     )
+
+
+def _third_party_packages(require: dict) -> dict[str, str]:
+    """Real installable packages only — excludes the "php" platform entry and
+    "ext-*"/"lib-*" platform-capability pseudo-packages, which have no
+    Packagist page and no version constraint worth checking for advisories.
+    """
+    return {
+        name: str(constraint)
+        for name, constraint in require.items()
+        if "/" in name and not name.startswith(("ext-", "lib-"))
+    }
 
 
 def composer_completeness_findings(result: ComposerResult | None) -> list[QualityFinding]:
