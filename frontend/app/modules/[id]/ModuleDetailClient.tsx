@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { useQuery } from "@tanstack/react-query";
 import { Badge } from "@/components/ui/badge";
+import { SeverityBadge, type Severity } from "@/components/severity-badge";
 import type { components } from "@/lib/api-types";
 
 type ModuleDetail = components["schemas"]["ModuleDetail"];
@@ -50,6 +51,12 @@ export default function ModuleDetailClient({ id }: { id: string }) {
                 {tag}
               </Badge>
             ))}
+            <SeverityBadge severity={moduleQuery.data.has_readme ? "ok" : "none"}>
+              {moduleQuery.data.has_readme ? "README" : "no README"}
+            </SeverityBadge>
+            <SeverityBadge severity={moduleQuery.data.has_tests ? "ok" : "none"}>
+              {moduleQuery.data.has_tests ? "tests" : "no tests"}
+            </SeverityBadge>
           </div>
           <Link href={`/modules/${id}/graph`} className="text-sm underline underline-offset-4 self-start">
             View dependency graph →
@@ -63,6 +70,29 @@ export default function ModuleDetailClient({ id }: { id: string }) {
             <div className="text-sm">
               <span className="font-medium">Depends on: </span>
               {moduleQuery.data.dependencies.join(", ")}
+            </div>
+          )}
+
+          {moduleQuery.data.quality_findings.length > 0 && (
+            <div>
+              <h2 className="text-lg font-medium mb-2">Quality findings</h2>
+              <ul className="text-sm space-y-1">
+                {moduleQuery.data.quality_findings.slice(0, 20).map((f, i) => (
+                  <li key={i} className="flex items-center gap-2">
+                    <SeverityBadge severity={f.severity as Severity}>{f.severity}</SeverityBadge>
+                    <span className="font-mono text-zinc-500">
+                      {f.file_path}
+                      {f.line ? `:${f.line}` : ""}
+                    </span>
+                    <span>{f.message}</span>
+                  </li>
+                ))}
+                {moduleQuery.data.quality_findings.length > 20 && (
+                  <li className="text-zinc-500">
+                    +{moduleQuery.data.quality_findings.length - 20} more
+                  </li>
+                )}
+              </ul>
             </div>
           )}
 
