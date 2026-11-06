@@ -45,7 +45,6 @@ jobs:
       - uses: ./.github/actions/setup-backend-env
       - run: poetry run ruff check .
       - run: poetry run mypy app
-        continue-on-error: true
       - run: poetry run pytest tests/ -v
 
   frontend:

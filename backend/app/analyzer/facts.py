@@ -54,6 +54,8 @@ class ModuleFacts:
 
 async def gather_module_facts(session: AsyncSession, module_id: int) -> ModuleFacts:
     module = await session.get(Module, module_id)
+    if module is None:
+        raise ValueError(f"no module with id {module_id}")
 
     dependencies = (
         await session.scalars(select(ModuleDependency).where(ModuleDependency.module_id == module_id))

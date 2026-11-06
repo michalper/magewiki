@@ -19,8 +19,10 @@ async def embed_text(
     vector = response.data[0]["embedding"]
     tokens_in = response.usage.prompt_tokens
 
+    cost: Decimal | None = None
     try:
-        cost = litellm.completion_cost(completion_response=response)
+        raw_cost = litellm.completion_cost(completion_response=response)
+        cost = Decimal(str(raw_cost)) if raw_cost else None
     except Exception:  # noqa: BLE001 - cost computation must never block embedding
         cost = None
     if not cost or cost <= 0:
@@ -30,7 +32,7 @@ async def embed_text(
         response_json={"embedding": vector},
         tokens_in=tokens_in,
         tokens_out=0,
-        cost_usd=Decimal(str(cost)),
+        cost_usd=cost,
     )
     return vector, result
 

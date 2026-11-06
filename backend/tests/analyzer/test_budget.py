@@ -58,6 +58,22 @@ async def test_budget_exceeded_after_crossing_threshold(db_session, monkeypatch)
 
 
 @pytest.mark.asyncio
+async def test_budget_treats_a_null_scalar_result_as_zero_spend(db_session, monkeypatch):
+    """Defensive guard: coalesce(sum(...), 0) means the real query never actually
+    returns NULL, but is_budget_exceeded() shouldn't crash (Decimal(None) raises)
+    if session.scalar() ever did return None for some other reason.
+    """
+
+    async def fake_scalar(*args, **kwargs):
+        return None
+
+    monkeypatch.setattr(db_session, "scalar", fake_scalar)
+    monkeypatch.setattr(settings, "llm_monthly_budget_usd", 1.0)
+
+    assert await is_budget_exceeded(db_session) is False
+
+
+@pytest.mark.asyncio
 async def test_budget_excludes_previous_month_spend(db_session, monkeypatch):
     baseline = await _current_month_spend(db_session)
     monkeypatch.setattr(settings, "llm_monthly_budget_usd", float(baseline) + 10.0)

@@ -35,8 +35,10 @@ def _result_from_response(response, response_json: dict, model: str) -> LlmCallR
     tokens_in = response.usage.prompt_tokens
     tokens_out = response.usage.completion_tokens
 
+    cost: Decimal | None = None
     try:
-        cost = litellm.completion_cost(completion_response=response)
+        raw_cost = litellm.completion_cost(completion_response=response)
+        cost = Decimal(str(raw_cost)) if raw_cost else None
     except Exception:  # noqa: BLE001 - cost computation must never block analysis
         cost = None
     if not cost or cost <= 0:
@@ -46,7 +48,7 @@ def _result_from_response(response, response_json: dict, model: str) -> LlmCallR
         response_json=response_json,
         tokens_in=tokens_in,
         tokens_out=tokens_out,
-        cost_usd=Decimal(str(cost)),
+        cost_usd=cost,
     )
 
 

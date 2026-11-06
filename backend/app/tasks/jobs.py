@@ -89,7 +89,7 @@ async def _lookup_cache(session, content_hash: str, model: str, prompt_version: 
 
 
 async def analyze_file(
-    ctx: dict,
+    ctx: dict | None,
     module_id: int,
     relative_path: str,
     content_hash: str,
@@ -193,7 +193,7 @@ async def analyze_file(
         raise
 
 
-async def synthesize_module(ctx: dict, module_id: int, module_current_hash: str) -> None:
+async def synthesize_module(ctx: dict | None, module_id: int, module_current_hash: str) -> None:
     """Map-reduce over a module's file summaries + parser facts into the module-level
     JSON doc, once every changed/added file has been analyzed. On success, hands off
     to embed_chunks (state="embedding") rather than finishing the module itself —
@@ -297,7 +297,7 @@ async def synthesize_module(ctx: dict, module_id: int, module_current_hash: str)
         raise
 
 
-async def embed_chunks(ctx: dict, module_id: int, module_current_hash: str) -> None:
+async def embed_chunks(ctx: dict | None, module_id: int, module_current_hash: str) -> None:
     """Build and embed the module/file/method chunks that back hybrid search, once
     synthesis has produced a module_docs row. The final step of the pipeline —
     sets the module to up_to_date. See CLAUDE.md "Multi-level index".
@@ -335,6 +335,8 @@ async def embed_chunks(ctx: dict, module_id: int, module_current_hash: str) -> N
                 )
             ).all()
             for method, php_class in method_rows:
+                if method.start_line is None or method.end_line is None:
+                    continue  # real PHP methods always have these; defensive guard for the nullable DB columns
                 file_path = Path(module.repo_root) / module.path / php_class.file_path
                 try:
                     lines = file_path.read_text(encoding="utf-8", errors="replace").splitlines()
