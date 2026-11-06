@@ -99,6 +99,34 @@ async def test_webhook_scan_returns_503_when_not_configured(demo_store_path, mon
 
 
 @pytest.mark.asyncio
+async def test_webhook_scan_rejects_a_real_directory_outside_every_configured_scan_root(
+    tmp_path, monkeypatch
+):
+    """Same access-control fix as POST /scan — a valid signature over a payload
+    naming a real directory outside every configured scan root must still be
+    rejected, not just a nonexistent path.
+    """
+    outside = tmp_path / "outside-any-scan-root"
+    outside.mkdir()
+    monkeypatch.setattr("app.api.routes.webhooks.settings.magewiki_scan_root_1", str(tmp_path / "allowed-only"))
+    monkeypatch.setattr("app.api.routes.webhooks.settings.magewiki_scan_root_2", "")
+    monkeypatch.setattr("app.api.routes.webhooks.settings.magewiki_scan_root_3", "")
+
+    body = json.dumps({"path": str(outside)}).encode()
+    signature = _sign(body)
+
+    transport = ASGITransport(app=app)
+    async with AsyncClient(transport=transport, base_url="http://test") as client:
+        response = await client.post(
+            "/webhooks/scan",
+            content=body,
+            headers={"Content-Type": "application/json", "X-Signature-256": signature},
+        )
+
+    assert response.status_code == 400
+
+
+@pytest.mark.asyncio
 async def test_webhook_scan_debounces_duplicate_calls(demo_store_path):
     body = json.dumps({"path": str(demo_store_path.resolve())}).encode()
     signature = _sign(body)

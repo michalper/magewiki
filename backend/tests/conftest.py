@@ -1,5 +1,6 @@
 import os
 import subprocess
+import tempfile
 import urllib.request
 from pathlib import Path
 
@@ -41,6 +42,18 @@ os.environ["DATABASE_URL"] = _TEST_DATABASE_URL
 _REAL_REDIS_URL = os.environ.get("REDIS_URL", "redis://redis:6379/0")
 _TEST_REDIS_URL = _REAL_REDIS_URL.rsplit("/", 1)[0] + "/15"
 os.environ["REDIS_URL"] = _TEST_REDIS_URL
+
+# POST /scan[/stream] (and the webhook equivalent) now enforce that `path` is under a
+# configured scan root — a real access-control fix (see CLAUDE.md's security-review
+# decision note), fixing a gap where that confinement was previously only UI text, never
+# actually enforced. Tests that scan through the real HTTP endpoint use the repo's own
+# tests/fixtures/ dir and pytest's tmp_path fixture (which lives under the system temp
+# dir) — neither is a real deployment's configured MAGEWIKI_SCAN_ROOT_*, so explicitly
+# widen scan roots for the test session to cover both, overriding whatever a
+# developer's own .env happens to have set (tests must be deterministic regardless).
+os.environ["MAGEWIKI_SCAN_ROOT_1"] = str(Path(__file__).parent.resolve())
+os.environ["MAGEWIKI_SCAN_ROOT_2"] = tempfile.gettempdir()
+os.environ["MAGEWIKI_SCAN_ROOT_3"] = ""
 
 from app.config import settings
 from app.db import async_session_factory

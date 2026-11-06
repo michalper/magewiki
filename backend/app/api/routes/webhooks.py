@@ -40,7 +40,9 @@ async def webhook_scan(request: Request) -> WebhookScanResponse:
         raise HTTPException(status_code=400, detail="invalid JSON body") from exc
 
     path = payload.get("path")
-    if not path or not os.path.isdir(path):
+    # Same real access-control gate as POST /scan[/stream] — settings.scan_roots was
+    # previously only surfaced as UI text, never actually enforced here either.
+    if not path or not os.path.isdir(path) or not settings.is_within_scan_roots(path):
         raise HTTPException(status_code=400, detail=f"not a directory: {path}")
 
     pool = await get_arq_pool()

@@ -265,6 +265,34 @@ switching has always silently left old embeddings in a stale vector space); clos
 is materially bigger scope than what was needed to unblock the eval and is deferred,
 not forgotten.
 
+**Security review findings fixed (recorded 2026-11-06):** a full-project `/security-review`
+(initial scan + independent verification sub-agents) found two real, confirmed HIGH
+findings (9/10 and 8/10 confidence), both fixed:
+1. `POST /scan`/`POST /scan/stream`/`POST /webhooks/scan` only checked
+   `os.path.isdir(path)` — `settings.scan_roots` (`MAGEWIKI_SCAN_ROOT_1/2/3`) was
+   previously only used for the `GET /scan-roots` UI hint and error-message text,
+   never actually enforced as the access-control boundary this file already
+   documented it as. Any reachable caller could scan arbitrary host paths the
+   container could see (confirmed concretely: the default `/tmp` fixture mount, the
+   app's own source tree, the base image's filesystem all qualify). Fixed with
+   `Settings.is_within_scan_roots()` (`app/config.py`) — fails closed (no configured
+   roots means nothing is scannable) — called from all three handlers. Tests needed
+   their own scan roots widened (`tests/conftest.py` now sets
+   `MAGEWIKI_SCAN_ROOT_1/2` to the repo's `tests/` dir and the system temp dir for the
+   test session) since `demo_store_path`/`tmp_path`-based fixtures aren't under any
+   real deployment's configured roots.
+2. `PATCH /settings/llm` let `llm_api_base`/`embedding_api_base` change independently
+   of `llm_api_key`/`embedding_api_key` — since every LLM/embedding call sends the
+   stored key to whatever `api_base` is configured (the same mechanism the legitimate
+   Ollama/custom-proxy BYOK path relies on), an unauthenticated caller could redirect
+   an already-provisioned secret's destination without ever needing to know its
+   value. Fixed: changing `*_api_base` when a key is already stored now requires
+   providing `*_api_key` again in the same request. Deliberately not fixed by adding
+   a full authentication system — this is a single-user local tool by design, and a
+   blanket auth layer is a much bigger architectural decision than a security-bugfix
+   pass should make unilaterally; this closes the specific secret-redirection
+   primitive without expanding scope into a general access-control redesign.
+
 ## Test data
 
 Always **public code** (e.g. a local clone of `magento/magento2`, or other publicly available modules), **never confidential client code**. The repo is public from day one — no secrets and no NDA-covered client code ever enter the commit history.
