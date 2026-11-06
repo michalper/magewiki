@@ -186,3 +186,85 @@ async def test_identifier_signal_module_name_hit_does_not_flood_out_a_class_name
 
     await db_session.execute(delete(Module).where(Module.id.in_([flood_module.id, target_module.id])))
     await db_session.commit()
+
+
+@pytest.mark.asyncio
+async def test_identifier_signal_does_not_double_count_two_classes_in_the_same_file(db_session, monkeypatch):
+    """Regression test: two PhpClass rows in the same file both join to that one
+    file-level chunk. Before the DISTINCT ON (ch.id) fix, that chunk got two
+    separate rnk values in the identifiers CTE, both summed into its fused RRF
+    score — letting a chunk with two individually WEAKER matches outrank a chunk
+    with one genuinely STRONGER match, purely from double-counting.
+
+    Similarity scores verified empirically against this exact Postgres/pg_trgm
+    version: similarity('ZyzxDoubleTargetSingle', 'ZyzxDoubleTarget') ≈ 0.667 is
+    higher than EITHER of 'ZyzxDoubleAlpha'/'ZyzxDoubleBeta' (≈0.435/≈0.524)
+    individually, but summing the latter two's RRF contributions (the bug)
+    exceeds the single stronger match's contribution; deduped (the fix), it
+    doesn't.
+    """
+    suffix = uuid.uuid4().hex[:8]
+    query = f"ZyzxDoubleTarget{suffix}"
+
+    double_module = await _make_module(db_session, f"double-{suffix}")
+    db_session.add_all(
+        [
+            PhpClass(
+                module_id=double_module.id, fqcn=f"ZyzxDoubleAlpha{suffix}", namespace=None,
+                class_name=f"ZyzxDoubleAlpha{suffix}", kind="class", extends=[], implements=[],
+                file_path="Shared.php",
+            ),
+            PhpClass(
+                module_id=double_module.id, fqcn=f"ZyzxDoubleBeta{suffix}", namespace=None,
+                class_name=f"ZyzxDoubleBeta{suffix}", kind="class", extends=[], implements=[],
+                file_path="Shared.php",
+            ),
+        ]
+    )
+    # A zero embedding has an undefined (NaN) cosine distance, which Postgres sorts
+    # by tie-break rules that aren't guaranteed stable — in a near-empty table (just
+    # these two chunks) that made the semantic signal's contribution to each chunk
+    # depend on an arbitrary tie-break rather than a real distance, occasionally
+    # large enough to flip this test's tight identifier-signal margin. Instead,
+    # single_chunk's embedding exactly matches the query (cosine distance 0) and
+    # double_chunk's points in a different direction (distance ≈0.29) — both
+    # well-defined and deterministic, and the semantic signal now reinforces (never
+    # contradicts) the same winner the identifier-signal fix is being tested for.
+    double_chunk = Chunk(
+        module_id=double_module.id, chunk_type="file", relative_path="Shared.php",
+        content_hash=f"double-{suffix}", text="Irrelevant content, no keyword/vector signal.",
+        embedding=_vector({42: 0.5, 43: 0.5}),
+    )
+    db_session.add(double_chunk)
+
+    single_module = await _make_module(db_session, f"single-{suffix}")
+    db_session.add(
+        PhpClass(
+            module_id=single_module.id, fqcn=f"ZyzxDoubleTargetSingle{suffix}", namespace=None,
+            class_name=f"ZyzxDoubleTargetSingle{suffix}", kind="class", extends=[], implements=[],
+            file_path="Single.php",
+        )
+    )
+    single_chunk = Chunk(
+        module_id=single_module.id, chunk_type="file", relative_path="Single.php",
+        content_hash=f"single-{suffix}", text="Irrelevant content, no keyword/vector signal.",
+        embedding=_vector({42: 1.0}),
+    )
+    db_session.add(single_chunk)
+    await db_session.commit()
+
+    async def _fake_embed(q, **kwargs):
+        return _vector({42: 1.0})  # exact match to single_chunk's embedding
+
+    monkeypatch.setattr("app.search.hybrid.embed_query_text", _fake_embed)
+
+    results = await hybrid_search(db_session, query, limit=50, topk=50, trgm_threshold=0.3)
+    my_ids = {double_chunk.id, single_chunk.id}
+    ordered = [r.chunk_id for r in results if r.chunk_id in my_ids]
+
+    # The single stronger match must outrank the double-weaker-match chunk — the
+    # bug would have reversed this via double-counted RRF contributions.
+    assert ordered == [single_chunk.id, double_chunk.id]
+
+    await db_session.execute(delete(Module).where(Module.id.in_([double_module.id, single_module.id])))
+    await db_session.commit()

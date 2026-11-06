@@ -45,15 +45,24 @@ identifiers AS (
     -- across all of a module's chunks at the same similarity score,
     -- flooding the :topk rank budget and starving a more specific
     -- class-name hit elsewhere of a rank slot entirely.
-    SELECT ch.id AS chunk_id,
-           row_number() OVER (ORDER BY ih.sim DESC) AS rnk
-    FROM identifier_hits ih
-    JOIN chunks ch ON ch.module_id = ih.module_id
-        AND (
-            (ih.relative_path IS NULL AND ch.chunk_type = 'module')
-            OR ch.relative_path = ih.relative_path
-        )
-    ORDER BY ih.sim DESC
+    --
+    -- Two classes declared in the same file both join to that one file-level
+    -- chunk, which previously gave that chunk two distinct rnk values here —
+    -- both summed into its fused RRF score below, double-counting one signal's
+    -- contribution. DISTINCT ON (ch.id) keeps only the best-similarity match
+    -- per chunk before ranking, so each chunk contributes at most once.
+    SELECT chunk_id, row_number() OVER (ORDER BY sim DESC) AS rnk
+    FROM (
+        SELECT DISTINCT ON (ch.id) ch.id AS chunk_id, ih.sim AS sim
+        FROM identifier_hits ih
+        JOIN chunks ch ON ch.module_id = ih.module_id
+            AND (
+                (ih.relative_path IS NULL AND ch.chunk_type = 'module')
+                OR ch.relative_path = ih.relative_path
+            )
+        ORDER BY ch.id, ih.sim DESC
+    ) deduped
+    ORDER BY sim DESC
     LIMIT :topk
 ),
 fused AS (
