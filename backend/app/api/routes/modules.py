@@ -3,6 +3,7 @@ import os
 import time
 from collections.abc import AsyncIterator
 from datetime import datetime
+from typing import cast
 
 from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import PlainTextResponse, StreamingResponse
@@ -283,43 +284,54 @@ async def list_modules(session: AsyncSession = Depends(get_session)) -> list[Mod
     for module_id, check_type, count in finding_count_rows:
         counts_by_module.setdefault(module_id, {})[check_type] = count
 
-    return [
-        ModuleSummary(
-            id=module.id,
-            name=module.name,
-            composer_name=module.composer_name,
-            source_type=module.source_type,
-            path=module.path,
-            repo_root=module.repo_root,
-            enabled=module.enabled,
-            state=module.state,
-            class_count=classes,
-            plugin_count=plugins,
-            observer_count=observers,
-            last_scanned_at=module.last_scanned_at,
-            tags=_extract_tags(doc),
-            has_readme=module.has_readme,
-            has_tests=module.has_tests,
-            has_module_doc=doc is not None,
-            composer_issue_count=counts_by_module.get(module.id, {}).get("composer_completeness", 0),
-            deprecated_count=counts_by_module.get(module.id, {}).get("deprecated_annotation", 0),
-            secrets_count=counts_by_module.get(module.id, {}).get("hardcoded_secret", 0),
-            security_advisory_count=counts_by_module.get(module.id, {}).get("security_advisory", 0),
-            abandoned_dependency_count=counts_by_module.get(module.id, {}).get("abandoned_dependency", 0),
-            outdated_dependency_count=counts_by_module.get(module.id, {}).get("outdated_dependency", 0),
-            phpstan_error_count=counts_by_module.get(module.id, {}).get("phpstan_error", 0),
-            phpmd_issue_count=counts_by_module.get(module.id, {}).get("phpmd_issue", 0),
-            phpcs_violation_count=counts_by_module.get(module.id, {}).get("phpcs_violation", 0),
-            php_compat_issue_count=counts_by_module.get(module.id, {}).get("php_compat_issue", 0),
-            magento_php_incompatible_count=counts_by_module.get(module.id, {}).get(
-                "magento_php_incompatible", 0
-            ),
-            magento_version_blocker_count=counts_by_module.get(module.id, {}).get(
-                "magento_version_blocker", 0
-            ),
+    summaries = []
+    for row in module_rows:
+        # SQLAlchemy's Select[] typing degenerates to `object` per element when
+        # mixing an ORM entity with scalar_subquery()/joined columns like this —
+        # confirmed via reveal_type, not stub incompleteness. cast() is the
+        # type-level fix; zero runtime effect.
+        module = cast(Module, row[0])
+        classes = cast(int, row[1])
+        plugins = cast(int, row[2])
+        observers = cast(int, row[3])
+        doc = cast(dict | None, row[4])
+        summaries.append(
+            ModuleSummary(
+                id=module.id,
+                name=module.name,
+                composer_name=module.composer_name,
+                source_type=module.source_type,
+                path=module.path,
+                repo_root=module.repo_root,
+                enabled=module.enabled,
+                state=module.state,
+                class_count=classes,
+                plugin_count=plugins,
+                observer_count=observers,
+                last_scanned_at=module.last_scanned_at,
+                tags=_extract_tags(doc),
+                has_readme=module.has_readme,
+                has_tests=module.has_tests,
+                has_module_doc=doc is not None,
+                composer_issue_count=counts_by_module.get(module.id, {}).get("composer_completeness", 0),
+                deprecated_count=counts_by_module.get(module.id, {}).get("deprecated_annotation", 0),
+                secrets_count=counts_by_module.get(module.id, {}).get("hardcoded_secret", 0),
+                security_advisory_count=counts_by_module.get(module.id, {}).get("security_advisory", 0),
+                abandoned_dependency_count=counts_by_module.get(module.id, {}).get("abandoned_dependency", 0),
+                outdated_dependency_count=counts_by_module.get(module.id, {}).get("outdated_dependency", 0),
+                phpstan_error_count=counts_by_module.get(module.id, {}).get("phpstan_error", 0),
+                phpmd_issue_count=counts_by_module.get(module.id, {}).get("phpmd_issue", 0),
+                phpcs_violation_count=counts_by_module.get(module.id, {}).get("phpcs_violation", 0),
+                php_compat_issue_count=counts_by_module.get(module.id, {}).get("php_compat_issue", 0),
+                magento_php_incompatible_count=counts_by_module.get(module.id, {}).get(
+                    "magento_php_incompatible", 0
+                ),
+                magento_version_blocker_count=counts_by_module.get(module.id, {}).get(
+                    "magento_version_blocker", 0
+                ),
+            )
         )
-        for module, classes, plugins, observers, doc in module_rows
-    ]
+    return summaries
 
 
 class RepoSummary(BaseModel):

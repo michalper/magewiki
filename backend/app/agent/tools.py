@@ -1,3 +1,6 @@
+from collections.abc import Awaitable, Callable
+from typing import cast
+
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -216,8 +219,12 @@ async def list_modules(
     rows = (await session.execute(query.order_by(Module.name))).all()
 
     filtered = []
-    for module, doc in rows:
-        doc = doc or {}
+    for row in rows:
+        # select(Module, ModuleDocument.doc)'s Row degenerates each element to
+        # `object` under mypy (confirmed via reveal_type) — cast() is the
+        # type-level fix, zero runtime effect.
+        module = cast(Module, row[0])
+        doc = cast(dict | None, row[1]) or {}
         if tags:
             doc_tags = {t.get("name") for t in doc.get("tags", [])}
             if not set(tags) & doc_tags:
@@ -245,7 +252,7 @@ async def list_modules(
     }
 
 
-TOOL_FUNCTIONS = {
+TOOL_FUNCTIONS: dict[str, Callable[..., Awaitable[dict]]] = {
     "search_modules": search_modules,
     "get_module": get_module,
     "get_dependencies": get_dependencies,

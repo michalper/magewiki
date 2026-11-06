@@ -27,7 +27,14 @@ from app.scanner.config_php import parse_config_php
 from app.scanner.deprecated_scanner import scan_deprecated_annotations
 from app.scanner.di_xml import parse_di_xml
 from app.scanner.discovery import find_modules
-from app.scanner.dto import DiscoveredModule, PendingAnalysisJob
+from app.scanner.dto import (
+    ComposerResult,
+    DiscoveredModule,
+    DiXmlResult,
+    EventObserverEntry,
+    ModuleXmlResult,
+    PendingAnalysisJob,
+)
 from app.scanner.events_xml import parse_events_xml
 from app.scanner.hashing import aggregate_hash, compute_module_file_hashes, diff_file_hashes
 from app.scanner.magento_upgrade import check_magento_upgrade_readiness
@@ -83,10 +90,10 @@ class ScanResult:
 @dataclass
 class _ParsedModule:
     discovered: DiscoveredModule
-    module_xml: object
-    composer: object
-    di: object
-    events: list
+    module_xml: ModuleXmlResult
+    composer: ComposerResult | None
+    di: DiXmlResult
+    events: list[EventObserverEntry]
 
 
 async def scan_repository(repo_root: str, session: AsyncSession) -> ScanResult:
