@@ -6,6 +6,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import type { Audience, ChatEvent, Source } from "@/lib/chat-types";
+import { streamSse } from "@/lib/sse";
 
 const apiUrl = () => process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000";
 
@@ -16,47 +17,12 @@ type DisplayMessage = {
   error?: string;
 };
 
-function parseSseBlock(block: string): ChatEvent | null {
-  const lines = block.split("\n");
-  const eventLine = lines.find((l) => l.startsWith("event: "));
-  const dataLine = lines.find((l) => l.startsWith("data: "));
-  if (!eventLine || !dataLine) return null;
-  const event = eventLine.slice("event: ".length);
-  const data = JSON.parse(dataLine.slice("data: ".length));
-  return { event, ...data } as ChatEvent;
-}
-
 async function streamChat(
   messages: { role: string; content: string }[],
   audience: Audience,
   onEvent: (event: ChatEvent) => void,
 ): Promise<void> {
-  const res = await fetch(`${apiUrl()}/chat`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ messages, audience }),
-  });
-  if (!res.ok || !res.body) {
-    throw new Error(`API responded with ${res.status}`);
-  }
-
-  const reader = res.body.getReader();
-  const decoder = new TextDecoder();
-  let buffer = "";
-
-  while (true) {
-    const { done, value } = await reader.read();
-    if (done) break;
-    buffer += decoder.decode(value, { stream: true });
-
-    let separatorIndex: number;
-    while ((separatorIndex = buffer.indexOf("\n\n")) !== -1) {
-      const block = buffer.slice(0, separatorIndex);
-      buffer = buffer.slice(separatorIndex + 2);
-      const event = parseSseBlock(block);
-      if (event) onEvent(event);
-    }
-  }
+  await streamSse<ChatEvent>(`${apiUrl()}/chat`, { messages, audience }, onEvent);
 }
 
 function SourceChips({ sources }: { sources: Source[] }) {
