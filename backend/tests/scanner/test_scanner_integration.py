@@ -2,7 +2,7 @@ import shutil
 from pathlib import Path
 
 import pytest
-from sqlalchemy import delete, select, update
+from sqlalchemy import select, update
 
 from app.models import (
     DiPlugin,
@@ -15,19 +15,13 @@ from app.models import (
     PhpClass,
 )
 from app.scanner.orchestrator import scan_repository
-
-
-async def _delete_module_if_present(session, repo_root: str, name: str) -> None:
-    existing = await session.scalar(select(Module).where(Module.repo_root == repo_root, Module.name == name))
-    if existing is not None:
-        await session.execute(delete(Module).where(Module.id == existing.id))
-        await session.commit()
+from tests.conftest import delete_module_if_present
 
 
 @pytest.mark.asyncio
 async def test_scan_repository_is_idempotent(demo_store_path: Path, db_session):
     repo_root = str(demo_store_path.resolve())
-    await _delete_module_if_present(db_session, repo_root, "Vendor_Module")
+    await delete_module_if_present(db_session, repo_root, "Vendor_Module")
 
     first = await scan_repository(repo_root, db_session)
     assert first.modules_found == 1
@@ -105,7 +99,7 @@ async def test_scan_repository_detects_a_single_changed_file(demo_store_path: Pa
     repo_copy = tmp_path / "demo-store"
     shutil.copytree(demo_store_path, repo_copy)
     repo_root = str(repo_copy.resolve())
-    await _delete_module_if_present(db_session, repo_root, "Vendor_Module")
+    await delete_module_if_present(db_session, repo_root, "Vendor_Module")
 
     first = await scan_repository(repo_root, db_session)
     assert first.tasks_enqueued == 7
@@ -133,7 +127,7 @@ async def test_scan_repository_preserves_unanalyzed_status_on_a_no_op_rescan(
     repo_copy = tmp_path / "demo-store"
     shutil.copytree(demo_store_path, repo_copy)
     repo_root = str(repo_copy.resolve())
-    await _delete_module_if_present(db_session, repo_root, "Vendor_Module")
+    await delete_module_if_present(db_session, repo_root, "Vendor_Module")
 
     await scan_repository(repo_root, db_session)
     module = await db_session.scalar(
@@ -188,7 +182,7 @@ async def test_scan_repository_records_quality_findings_and_replaces_them_on_res
     demo_store_path: Path, db_session
 ):
     repo_root = str(demo_store_path.resolve())
-    await _delete_module_if_present(db_session, repo_root, "Vendor_Module")
+    await delete_module_if_present(db_session, repo_root, "Vendor_Module")
 
     await scan_repository(repo_root, db_session)
 

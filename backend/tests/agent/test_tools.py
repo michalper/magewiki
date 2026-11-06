@@ -4,7 +4,7 @@ from decimal import Decimal
 from pathlib import Path
 
 import pytest
-from sqlalchemy import delete, select
+from sqlalchemy import delete
 
 from app.agent.tools import (
     find_by_class,
@@ -17,21 +17,7 @@ from app.agent.tools import (
 )
 from app.analyzer.prompts import MODULE_SYNTHESIS_PROMPT_VERSION
 from app.models import AnalysisCache, Chunk, Module, ModuleDocument
-from app.scanner.orchestrator import scan_repository
-
-
-async def _delete_module_if_present(session, repo_root: str, name: str) -> None:
-    existing = await session.scalar(select(Module).where(Module.repo_root == repo_root, Module.name == name))
-    if existing is not None:
-        await session.execute(delete(Module).where(Module.id == existing.id))
-        await session.commit()
-
-
-async def _scan_demo_store(demo_store_path: Path, session) -> Module:
-    repo_root = str(demo_store_path.resolve())
-    await _delete_module_if_present(session, repo_root, "Vendor_Module")
-    await scan_repository(repo_root, session)
-    return await session.scalar(select(Module).where(Module.repo_root == repo_root, Module.name == "Vendor_Module"))
+from tests.conftest import scan_demo_store
 
 
 def _vector(active: dict[int, float]) -> list[float]:
@@ -93,7 +79,7 @@ async def test_get_module_not_found(db_session):
 
 @pytest.mark.asyncio
 async def test_get_module_unanalyzed_reports_status_and_dependencies(demo_store_path: Path, db_session):
-    module = await _scan_demo_store(demo_store_path, db_session)
+    module = await scan_demo_store(demo_store_path, db_session)
 
     result = await get_module(db_session, module_id=module.id)
 
@@ -107,7 +93,7 @@ async def test_get_module_unanalyzed_reports_status_and_dependencies(demo_store_
 
 @pytest.mark.asyncio
 async def test_get_module_analyzed_includes_doc_fields(demo_store_path: Path, db_session):
-    module = await _scan_demo_store(demo_store_path, db_session)
+    module = await scan_demo_store(demo_store_path, db_session)
 
     # This fixture's content_hash is deterministic across runs — clear any leftover
     # cache row from a previous run of this same test before inserting a fresh one.
@@ -157,7 +143,7 @@ async def test_get_module_analyzed_includes_doc_fields(demo_store_path: Path, db
 
 @pytest.mark.asyncio
 async def test_get_dependencies_forward(demo_store_path: Path, db_session):
-    module = await _scan_demo_store(demo_store_path, db_session)
+    module = await scan_demo_store(demo_store_path, db_session)
 
     result = await get_dependencies(db_session, module_id=module.id)
 
@@ -185,7 +171,7 @@ async def test_get_dependencies_used_by(db_session):
 
 @pytest.mark.asyncio
 async def test_find_by_event_matches_demo_store_observer(demo_store_path: Path, db_session):
-    module = await _scan_demo_store(demo_store_path, db_session)
+    module = await scan_demo_store(demo_store_path, db_session)
 
     result = await find_by_event(db_session, event_name="sales_order_place_after")
 
@@ -196,7 +182,7 @@ async def test_find_by_event_matches_demo_store_observer(demo_store_path: Path, 
 
 @pytest.mark.asyncio
 async def test_find_by_class_covers_preference_and_plugin(demo_store_path: Path, db_session):
-    module = await _scan_demo_store(demo_store_path, db_session)
+    module = await scan_demo_store(demo_store_path, db_session)
 
     plugin_result = await find_by_class(db_session, identifier="Address\\Total\\Collector")
     assert any(p["module_id"] == module.id for p in plugin_result["plugins_targeting_it"])
@@ -210,7 +196,7 @@ async def test_find_by_class_covers_preference_and_plugin(demo_store_path: Path,
 
 @pytest.mark.asyncio
 async def test_read_file_not_found_without_a_chunk(demo_store_path: Path, db_session):
-    module = await _scan_demo_store(demo_store_path, db_session)
+    module = await scan_demo_store(demo_store_path, db_session)
 
     result = await read_file(db_session, module_id=module.id, relative_path="etc/module.xml")
 

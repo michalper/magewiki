@@ -5,7 +5,7 @@ import pytest
 from sqlalchemy import delete, select, update
 
 from app.analyzer.client import LlmCallResult
-from app.analyzer.schemas import FileSummary, ModuleDoc
+from app.analyzer.schemas import ModuleDoc
 from app.models import (
     AnalysisCache,
     Chunk,
@@ -15,33 +15,8 @@ from app.models import (
     PhpClass,
     PhpClassMethod,
 )
-from app.scanner.orchestrator import scan_repository
 from app.tasks.jobs import analyze_file, embed_chunks, synthesize_module
-
-
-async def _delete_module_if_present(session, repo_root: str, name: str) -> None:
-    existing = await session.scalar(select(Module).where(Module.repo_root == repo_root, Module.name == name))
-    if existing is not None:
-        await session.execute(delete(Module).where(Module.id == existing.id))
-        await session.commit()
-
-
-async def _scan_demo_store(demo_store_path: Path, session) -> Module:
-    repo_root = str(demo_store_path.resolve())
-    await _delete_module_if_present(session, repo_root, "Vendor_Module")
-    await scan_repository(repo_root, session)
-    return await session.scalar(select(Module).where(Module.repo_root == repo_root, Module.name == "Vendor_Module"))
-
-
-def _fake_summarize_file():
-    async def _fake(relative_path: str, content: str, **kwargs):
-        summary = FileSummary(file_summary=f"Summary of {relative_path}", notable_behavior=None)
-        result = LlmCallResult(
-            response_json=summary.model_dump(), tokens_in=100, tokens_out=20, cost_usd=Decimal("0.001")
-        )
-        return summary, result
-
-    return _fake
+from tests.conftest import fake_summarize_file, scan_demo_store
 
 
 def _fake_doc() -> ModuleDoc:
@@ -73,7 +48,7 @@ def _fake_embed_text(call_log: list[str]):
 
 
 async def _reach_embedding_state(demo_store_path: Path, session, monkeypatch) -> Module:
-    module = await _scan_demo_store(demo_store_path, session)
+    module = await scan_demo_store(demo_store_path, session)
 
     # These tests fake out the LLM entirely and must not depend on the real,
     # cumulative monthly spend tracked in analysis_cache — only the dedicated
@@ -82,7 +57,7 @@ async def _reach_embedding_state(demo_store_path: Path, session, monkeypatch) ->
         return False
 
     monkeypatch.setattr("app.tasks.jobs.is_budget_exceeded", _never_exceeded)
-    monkeypatch.setattr("app.tasks.jobs.summarize_file", _fake_summarize_file())
+    monkeypatch.setattr("app.tasks.jobs.summarize_file", fake_summarize_file())
     file_hashes = (await session.scalars(select(FileHash).where(FileHash.module_id == module.id))).all()
     for fh in file_hashes:
         await session.execute(delete(AnalysisCache).where(AnalysisCache.content_hash == fh.content_hash))
@@ -288,7 +263,7 @@ async def test_embed_chunks_noop_on_stale_scan_generation(demo_store_path: Path,
 
 @pytest.mark.asyncio
 async def test_embed_chunks_noop_when_module_doc_missing(demo_store_path: Path, db_session, monkeypatch):
-    module = await _scan_demo_store(demo_store_path, db_session)
+    module = await scan_demo_store(demo_store_path, db_session)
 
     doc_row = await db_session.scalar(select(ModuleDocument).where(ModuleDocument.module_id == module.id))
     assert doc_row is None
