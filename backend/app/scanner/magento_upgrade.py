@@ -1,3 +1,5 @@
+import asyncio
+
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.scanner.dto import QualityFinding
@@ -32,7 +34,20 @@ async def check_magento_upgrade_readiness(
 
     findings: list[QualityFinding] = []
 
-    target_php_constraint = await fetch_release_php_constraint(session, tag)
+    magento_requirements = {
+        name: constraint for name, constraint in requirements.items() if name.startswith("magento/")
+    }
+    # Both calls depend only on `tag`, not on each other — fetch concurrently
+    # instead of serializing two independent GitHub round trips per module.
+    if magento_requirements:
+        target_php_constraint, component_versions = await asyncio.gather(
+            fetch_release_php_constraint(session, tag),
+            fetch_release_component_versions(session, tag),
+        )
+    else:
+        target_php_constraint = await fetch_release_php_constraint(session, tag)
+        component_versions = {}
+
     if (
         php_constraint
         and target_php_constraint
@@ -51,11 +66,7 @@ async def check_magento_upgrade_readiness(
             )
         )
 
-    magento_requirements = {
-        name: constraint for name, constraint in requirements.items() if name.startswith("magento/")
-    }
     if magento_requirements:
-        component_versions = await fetch_release_component_versions(session, tag)
         for package_name, declared_constraint in magento_requirements.items():
             locked_version = component_versions.get(package_name)
             if locked_version and not constraints_overlap(declared_constraint, locked_version):

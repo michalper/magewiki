@@ -545,16 +545,29 @@ async def _persist_module(
             )
         )
 
+    async def _session_based_checks() -> list:
+        # These three all read/write the same packagist_cache table through the
+        # one shared `session` — AsyncSession doesn't support concurrent use
+        # from multiple coroutines, so they must stay sequential relative to
+        # each other (unlike check_php_static_analysis below, which never
+        # touches `session` and is genuinely independent).
+        return [
+            *await check_security_advisories(session, all_requirements),
+            *await check_abandoned_outdated(session, all_requirements),
+            *await check_magento_upgrade_readiness(
+                session, pm.composer.php_constraint if pm.composer else None, all_requirements
+            ),
+        ]
+
+    session_findings, php_static_findings = await asyncio.gather(
+        _session_based_checks(), check_php_static_analysis(pm.discovered.root)
+    )
     quality_findings = [
         *composer_completeness_findings(pm.composer),
         *scan_deprecated_annotations(pm.discovered.root),
         *scan_hardcoded_secrets(pm.discovered.root),
-        *await check_security_advisories(session, all_requirements),
-        *await check_abandoned_outdated(session, all_requirements),
-        *await check_php_static_analysis(pm.discovered.root),
-        *await check_magento_upgrade_readiness(
-            session, pm.composer.php_constraint if pm.composer else None, all_requirements
-        ),
+        *session_findings,
+        *php_static_findings,
     ]
     for finding in quality_findings:
         session.add(
