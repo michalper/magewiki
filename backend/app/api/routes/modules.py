@@ -71,6 +71,7 @@ class ModuleSummary(BaseModel):
     composer_name: str | None
     source_type: str
     path: str
+    repo_root: str
     enabled: bool | None
     state: str
     class_count: int
@@ -218,6 +219,7 @@ async def list_modules(session: AsyncSession = Depends(get_session)) -> list[Mod
             composer_name=module.composer_name,
             source_type=module.source_type,
             path=module.path,
+            repo_root=module.repo_root,
             enabled=module.enabled,
             state=module.state,
             class_count=classes,
@@ -236,6 +238,88 @@ async def list_modules(session: AsyncSession = Depends(get_session)) -> list[Mod
         )
         for module, classes, plugins, observers, doc in module_rows
     ]
+
+
+class RepoSummary(BaseModel):
+    """Phase 11: aggregate health across every repo MageWiki has scanned.
+    `Module.repo_root` already lets multiple repos coexist in one DB — this
+    is purely an aggregation over existing data, no multi-tenancy/"client"
+    concept, per docs/v1-port-roadmap.md's scoped-down Phase 11 design.
+    """
+
+    repo_root: str
+    module_count: int
+    enabled_count: int
+    has_readme_count: int
+    has_tests_count: int
+    composer_issue_count: int
+    deprecated_count: int
+    secrets_count: int
+    security_advisory_count: int
+    abandoned_dependency_count: int
+    outdated_dependency_count: int
+    last_scanned_at: datetime
+
+
+@router.get("/repos", response_model=list[RepoSummary])
+async def list_repos(session: AsyncSession = Depends(get_session)) -> list[RepoSummary]:
+    module_rows = (
+        await session.execute(
+            select(
+                Module.repo_root,
+                Module.id,
+                Module.enabled,
+                Module.has_readme,
+                Module.has_tests,
+                Module.last_scanned_at,
+            )
+        )
+    ).all()
+
+    finding_count_rows = await session.execute(
+        select(ModuleQualityFinding.module_id, ModuleQualityFinding.check_type, func.count(ModuleQualityFinding.id))
+        .group_by(ModuleQualityFinding.module_id, ModuleQualityFinding.check_type)
+    )
+    counts_by_module: dict[int, dict[str, int]] = {}
+    for module_id, check_type, count in finding_count_rows:
+        counts_by_module.setdefault(module_id, {})[check_type] = count
+
+    repos: dict[str, dict] = {}
+    for repo_root, module_id, enabled, has_readme, has_tests, last_scanned_at in module_rows:
+        repo = repos.setdefault(
+            repo_root,
+            {
+                "module_count": 0,
+                "enabled_count": 0,
+                "has_readme_count": 0,
+                "has_tests_count": 0,
+                "composer_issue_count": 0,
+                "deprecated_count": 0,
+                "secrets_count": 0,
+                "security_advisory_count": 0,
+                "abandoned_dependency_count": 0,
+                "outdated_dependency_count": 0,
+                "last_scanned_at": last_scanned_at,
+            },
+        )
+        repo["module_count"] += 1
+        if enabled:
+            repo["enabled_count"] += 1
+        if has_readme:
+            repo["has_readme_count"] += 1
+        if has_tests:
+            repo["has_tests_count"] += 1
+        counts = counts_by_module.get(module_id, {})
+        repo["composer_issue_count"] += counts.get("composer_completeness", 0)
+        repo["deprecated_count"] += counts.get("deprecated_annotation", 0)
+        repo["secrets_count"] += counts.get("hardcoded_secret", 0)
+        repo["security_advisory_count"] += counts.get("security_advisory", 0)
+        repo["abandoned_dependency_count"] += counts.get("abandoned_dependency", 0)
+        repo["outdated_dependency_count"] += counts.get("outdated_dependency", 0)
+        if last_scanned_at > repo["last_scanned_at"]:
+            repo["last_scanned_at"] = last_scanned_at
+
+    return [RepoSummary(repo_root=repo_root, **data) for repo_root, data in sorted(repos.items())]
 
 
 @router.get("/modules/{module_id}", response_model=ModuleDetail)
@@ -283,6 +367,7 @@ async def get_module(module_id: int, session: AsyncSession = Depends(get_session
         composer_name=module.composer_name,
         source_type=module.source_type,
         path=module.path,
+        repo_root=module.repo_root,
         enabled=module.enabled,
         state=module.state,
         class_count=len(classes),
