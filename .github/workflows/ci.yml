@@ -46,7 +46,7 @@ jobs:
       - run: poetry run ruff check .
       - run: poetry run mypy app
       - run: poetry run pytest tests/ -v --cov=app --cov-report=xml
-      - uses: codecov/codecov-action@v4
+      - uses: codecov/codecov-action@v7
         with:
           token: ${{ secrets.CODECOV_TOKEN }}
           files: backend/coverage.xml
