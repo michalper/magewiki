@@ -15,6 +15,12 @@ never contain confidential client code.
 repos and filing *their* Jira tickets. Several of its features are Cognize-internal plumbing with
 no open-source equivalent and are excluded outright below, not just deferred.
 
+**Review depth.** The first pass (three parallel agents: docs, scanner source, UI) covered the
+core quality-scanner architecture and dashboard thoroughly, but left `src/Testing`, `src/Api`,
+`src/Maintenance`, `src/Usage`, the full changelog, and the deployment/ops files only partially
+read. A second follow-up pass (three more agents) closed those gaps; findings are folded into the
+table and the new "Additional findings" section below.
+
 ## Feature inventory and verdicts
 
 | v1 feature | Verdict | Why |
@@ -25,10 +31,14 @@ no open-source equivalent and are excluded outright below, not just deferred.
 | Hardcoded-secrets regex scanner | **Port — Phase 9** | Pure regex over source text, zero subprocess, zero new dependency. Blocking severity by default in v1. |
 | Test-presence detection | **Port — Phase 9** | Directory/filename heuristic (`Test(s)/`, `*Test.php`, `phpunit.xml`), no execution. |
 | Badge/pill severity system, KPI donut-ring stat tiles, dense sortable/filterable table, accordion detail rows | **Port — Phase 9 (UI)** | Proven, scannable dashboard patterns; reimplemented with shadcn/Tailwind, not copied Bootstrap/Tabler markup. |
+| CSV export of a module/client report | **Port — Phase 9 (UI)** | Cheap, generic "export current table view as CSV" button — no Cognize-specific data needed, directly useful for a solo user sharing a report. |
 | CVE / security-advisory check | **Port — Phase 10** | Designed in full below. High-value, proven in production. |
 | Abandoned/outdated-dependency check | **Port — Phase 10** | Shares the Packagist client + cache table the CVE check needs anyway; non-blocking by default. |
-| Cross-repo "fleet" stats/health view | **Port — Phase 11** | `Module.repo_root` already makes multiple repos coexist in one DB today — this is mostly a new aggregation query + a repos-list page, not a schema change. Scoped down: no GitLab-API project discovery, no Jira, no "client" concept — just the repos the user has pointed MageWiki at. |
-| PHPStan / PHPMD / phpcs (`magento/magento-coding-standard`) / PhpMetrics / Rector (PHP-compat + rule sets) | **Own future phase — Phase 12, needs explicit sign-off** | All proven, but every one shells out to real PHP tooling. MageWiki's backend is deliberately Python-only (CLAUDE.md chose tree-sitter-php specifically to avoid needing a PHP runtime); adding these means a PHP+Composer toolchain in the image or a sidecar — a real architecture change, not a drive-by addition. |
+| Cross-repo "fleet" stats/health view | **Port — Phase 11** | `Module.repo_root` already makes multiple repos coexist in one DB today — this is mostly a new aggregation query + a repos-list page, not a schema change. Scoped down: no GitLab-API project discovery, no Jira, no "client" concept — just the repos the user has pointed MageWiki at. If a "used in N repos" count is added, dedupe by repo — v1's own equivalent badge counts raw usage rows (which can double-count a repo scanned on more than one branch) rather than distinct repos, a known subtlety worth not repeating. |
+| PHPStan / PHPMD / phpcs (`magento/magento-coding-standard`) / PhpMetrics / Rector (PHP-compat + rule sets) | **Own future phase — Phase 12, needs explicit sign-off** | All proven, but every one shells out to real PHP tooling. MageWiki's backend is deliberately Python-only (CLAUDE.md chose tree-sitter-php specifically to avoid needing a PHP runtime); adding these means a PHP+Composer toolchain in the image or a sidecar — a real architecture change, not a drive-by addition. **Crucially, none of these execute the scanned module's own code** — they only parse/analyze it statically, same risk class as today's tree-sitter scanning. |
+| Real PHPUnit test execution (clone → `composer install` → `phpunit`, with a PHP-version-fallback sidecar for old modules) | **Deferred — needs its own explicit decision, not bundled into Phase 12** | A materially different risk class from every other scanner above: this *runs* the scanned module's own code (and its dependencies'), not just parses it. v1's own isolation is weak — a temp dir + timeouts + memory caps, no container/sandbox per run — and CLAUDE.md's "scanned code is never modified" principle has never had to consider "scanned code is executed" before. If this is ever wanted, it needs a real sandbox (e.g. a disposable per-run container) designed deliberately, not v1's isolation copied as-is. See details below. |
+| Google-OAuth login restricted to a company email domain, with an explicit `AUTH_DISABLED`/`AUTH_DISABLED_ACK` kill-switch | **Skip for now, revisit at Phase 13** | Cognize's domain-restricted login has no open-source analog, but MageWiki has no auth at all today, which is fine for a local/demo tool — except Phase 13's public cloud demo will let anyone burn the `LLM_MONTHLY_BUDGET_USD` budget on chat queries. Worth a lightweight access gate (not full OAuth) when Phase 13 actually starts. |
+| Tokenized external read API (`/api/stats`, `/api/clients`, `/api/usage.json`) for a third-party consumer | **Skip** | Built for one specific internal consumer app at Cognize; MageWiki has no analogous third-party consumer today. The underlying pattern (bearer-token-gated JSON API reusing the same aggregation function behind the HTML view) isn't novel for a FastAPI app anyway — that's just how FastAPI route handlers normally work. |
 | Jira ticket-creation deep link | **Skip** | Cognize-internal tool choice; no open-source audience. |
 | Dashboard API (client environments, VPN) | **Skip** | Entirely Cognize-internal infrastructure. |
 | Satis internal composer mirror sync | **Skip** | Cognize-internal. |
@@ -88,6 +98,58 @@ markup or CSS:
   navigating to a separate detail page for every drill-down.
 - **Dark/light theme toggle**, persisted client-side — straightforward with `next-themes`, which
   the shadcn ecosystem already expects.
+
+## Real test execution — why it's deferred, not just another scanner
+
+v1's test runner is genuinely more than "detect whether tests exist": it clones each module,
+runs `composer install --no-scripts --no-plugins` (scripts/plugins disabled specifically so a
+malicious `composer.json` can't execute arbitrary code during install), then runs
+`vendor/bin/phpunit --log-junit=...`, each step under a hard timeout and memory cap, in a
+throwaway temp directory that's always cleaned up. Modules pinned below PHP 8.4 are retried
+against a secondary sidecar container running an older PHP interpreter. All of this is real and
+it works in production — but the isolation is intentionally minimal (ephemeral dir + timeouts,
+not a container/VM/seccomp boundary around the test run itself), and even v1's own result capture
+is thinner than its docs suggest: only overall `status` + a tail-truncated, secret-redacted output
+blob is persisted — no per-test failure names or durations, even though the JUnit parse computes
+them and then discards them.
+
+**Why this isn't just folded into Phase 12**: Phase 12's scanners (PHPStan, PHPMD, phpcs,
+PhpMetrics, Rector) only ever *read and analyze* PHP source — same risk class as today's
+tree-sitter-php parsing. Actually running `composer install` + `phpunit` *executes* the scanned
+module's code and its dependencies' code. That's a materially different, higher-risk capability
+that MageWiki has never needed before (CLAUDE.md's "scanned code is never modified" principle
+never had to answer "is scanned code ever *run*?"). If this is wanted eventually, it deserves its
+own explicit phase with a deliberately-designed sandbox (e.g. a disposable per-run container with
+no network access, rather than v1's timeout-and-temp-dir approach) — not a drive-by addition
+riding on Phase 12's PHP-toolchain work.
+
+## Operational lessons worth carrying over
+
+A few non-feature, infrastructure-level lessons from v1's production history are worth applying
+proactively rather than rediscovering the hard way:
+
+- **One shared TTL cache, not one per scanner.** v1's `SqliteCache` is a single class/table
+  (package-keyed, 24h TTL, upsert-on-write) reused by every external-API-backed check (Packagist
+  metadata, security advisories, GitHub release lookups) via different cache keys — confirms the
+  Phase 10 design above is right to share one cache table across the CVE and abandoned/outdated
+  checks rather than building one per scanner.
+- **Age-based retention pruning, excluding whatever a "latest" pointer still needs.** v1 grew an
+  insert-only history table unbounded (a real production incident: SQLite file went from 3.7GB to
+  822MB after a manual cleanup) until a daily pruning job was added — one that deletes rows older
+  than N days *except* whichever row a denormalized "current state" column still points to. Once
+  Phase 9/10 start accumulating per-scan history in Postgres, add the equivalent job up front
+  rather than waiting for the same bloat to happen here.
+- **Run subprocess-based scanners under a real init process.** v1 hit ~7000 zombie processes on
+  staging because `php -S` as PID 1 never reaps children, and timed-out/crashed scanner
+  subprocesses (PHPStan, Rector, phpcs) piled up — fixed with `tini`. Directly relevant to Phase
+  12, which introduces the first subprocess-spawning scanners MageWiki will have; make sure
+  whatever runs them (container entrypoint) reaps children properly from the start.
+- **MageWiki's locking is already sound here.** v1 shipped two real concurrency bugs in
+  production — a cron lock that silently failed to lock (the file handle was GC'd too early) and
+  a non-atomic "check then add column" migration race — both now fixed. CLAUDE.md's existing
+  design (a Postgres advisory lock for the whole scan, per the "Scan, cron, and cost control"
+  section) already avoids the first bug class by construction; no action needed, just confirms the
+  existing design choice was the right one.
 
 ## New phases to append to CLAUDE.md's phase plan
 
