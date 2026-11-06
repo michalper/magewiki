@@ -271,6 +271,24 @@ Always **public code** (e.g. a local clone of `magento/magento2`, or other publi
 
 The `Ordo_Automation` module (at `/Users/michalper/Projects/magento-ordo-test/vendor-src-sync` on the author's machine) is the author's own **public product**, not confidential client code — it is allowed as scanner test/fixture data from Phase 1 onward (referenced by path/env var, not copied into this repo).
 
+**Test infrastructure must never share live state with the dev containers (recorded
+2026-11-06):** `tests/conftest.py` already redirected `DATABASE_URL` to an isolated
+`magewiki_test` database (dropped/recreated fresh every pytest session) after a real
+external user's running webapp broke from pytest sharing his dev DB — but Redis was
+never given the same treatment, and it caused a genuinely long-lived flake:
+`test_queue_integration.py`'s `queued_jobs()` assertions raced against the actual
+`worker` container, which is always running in dev and actively consumes from the
+same `redis://.../0` ARQ queue tests enqueue into — real job IDs from a live user scan
+(e.g. `analyze:664:...`, later `analyze:857:...`, `analyze:977:...`) showed up in
+failure output repeatedly across this session, misdiagnosed more than once as
+"resource contention" before the actual shared-Redis root cause was confirmed. Fixed
+the same way as the database: `conftest.py` now also redirects `REDIS_URL` to logical
+database index 15 (Redis supports 16 independent logical DBs on one server at zero
+extra infrastructure cost) before any `app.*` import, flushed fresh once per pytest
+session alongside the DB drop/recreate. Verified: the two previously-flaky tests
+passed 3/3 consecutive runs after the fix, and the full suite went from an
+intermittent 1-2 failures to 203/203 passing.
+
 ## Phase plan
 
 MVP = Phases 0–5. Each phase is done separately: first a plan for approval, then code with tests, then a small commit. Don't skip phases.

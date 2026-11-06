@@ -126,11 +126,13 @@ docker compose exec api pytest tests/ -v
 ```
 
 Tests run against their own `magewiki_test` database, dropped and recreated
-fresh every run — never the one the running `api`/`worker` containers use, so
+fresh every run, and their own Redis logical database (index 15) flushed fresh
+every run — never the ones the running `api`/`worker` containers use, so
 running tests never affects an environment you're also actively scanning
-with. This is set up automatically (`tests/conftest.py` redirects
-`DATABASE_URL`); no separate migration or setup step is needed just for
-tests.
+with, and a real queued job never races against a test's own ARQ queue
+assertions. This is set up automatically (`tests/conftest.py` redirects
+`DATABASE_URL`/`REDIS_URL`); no separate migration or setup step is needed
+just for tests.
 
 ## Kubernetes (local)
 
