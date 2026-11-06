@@ -42,12 +42,7 @@ jobs:
         working-directory: backend
     steps:
       - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
-        with:
-          python-version: "3.11"
-      - run: pip install "poetry==1.8.3"
-      - run: poetry install --no-root
-      - run: poetry run alembic upgrade head
+      - uses: ./.github/actions/setup-backend-env
       - run: poetry run ruff check .
       - run: poetry run mypy app
         continue-on-error: true
@@ -95,12 +90,7 @@ jobs:
         working-directory: backend
     steps:
       - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
-        with:
-          python-version: "3.11"
-      - run: pip install "poetry==1.8.3"
-      - run: poetry install --no-root
-      - run: poetry run alembic upgrade head
+      - uses: ./.github/actions/setup-backend-env
       - run: poetry run python -m app.evaluation.run_ci_eval
       - uses: marocchino/sticky-pull-request-comment@v2
         with:

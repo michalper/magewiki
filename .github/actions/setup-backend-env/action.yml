@@ -1,0 +1,21 @@
+name: Set up backend environment
+description: Python/Poetry setup plus Postgres migrations, shared by any job that needs a ready backend + DB schema.
+inputs:
+  working-directory:
+    description: Directory containing pyproject.toml/alembic.ini
+    required: false
+    default: backend
+runs:
+  using: composite
+  steps:
+    - uses: actions/setup-python@v5
+      with:
+        python-version: "3.11"
+    - run: pip install "poetry==1.8.3"
+      shell: bash
+    - run: poetry install --no-root
+      shell: bash
+      working-directory: ${{ inputs.working-directory }}
+    - run: poetry run alembic upgrade head
+      shell: bash
+      working-directory: ${{ inputs.working-directory }}
