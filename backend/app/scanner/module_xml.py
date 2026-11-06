@@ -16,17 +16,18 @@ def parse_module_xml(path: Path) -> ModuleXmlResult:
         raise InvalidModuleXmlError(f"malformed module.xml: {exc}") from exc
 
     module_el = tree.getroot().find("module")
-    if module_el is None or not module_el.get("name"):
+    name = module_el.get("name") if module_el is not None else None
+    if module_el is None or not name:
         raise InvalidModuleXmlError("module.xml has no <module name=...>")
 
     sequence = [
-        el.get("name")
+        seq_name
         for el in module_el.findall("sequence/module")
-        if el.get("name")
+        if (seq_name := el.get("name"))
     ]
 
     return ModuleXmlResult(
-        name=module_el.get("name"),
+        name=name,
         setup_version=module_el.get("setup_version"),
         sequence=sequence,
     )

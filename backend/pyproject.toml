@@ -38,6 +38,7 @@ pytest = "^8.3"
 pytest-asyncio = "^1.0"
 ruff = "^0.7"
 mypy = "^1.13"
+lxml-stubs = "^0.5"
 
 [tool.ruff]
 target-version = "py311"
