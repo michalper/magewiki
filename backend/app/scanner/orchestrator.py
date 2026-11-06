@@ -44,6 +44,9 @@ class ModuleScanOutcome:
     files_changed: int = 0
     files_removed: int = 0
     warnings: list[str] = field(default_factory=list)
+    module_id: int | None = None
+    module_current_hash: str | None = None
+    pending_file_count: int = 0
 
 
 @dataclass
@@ -135,6 +138,18 @@ async def scan_repository(repo_root: str, session: AsyncSession) -> ScanResult:
         result.observers_total += outcome.observers
         result.modules.append(outcome)
 
+    # A removal-only diff (files deleted, nothing added/changed) leaves
+    # pending_file_count at 0 with no analyze_file job to ever decrement it to
+    # 0 and trigger synthesize_module — enqueue synthesize_module directly for
+    # these so the module doc gets regenerated and stale chunks for the
+    # deleted files get purged (embed_chunks rebuilds a module's chunks from
+    # scratch every run) instead of the module staying stuck in "pending" forever.
+    synthesize_only = [
+        outcome
+        for outcome in result.modules
+        if outcome.status != "error" and outcome.state == "pending" and outcome.pending_file_count == 0
+    ]
+
     await session.commit()
 
     # Only enqueue jobs after the scan's commit has succeeded — a job must never
@@ -150,6 +165,15 @@ async def scan_repository(repo_root: str, session: AsyncSession) -> ScanResult:
                 job.content_hash,
                 job.module_current_hash,
                 _job_id=job_id,
+            )
+    if synthesize_only:
+        pool = await get_arq_pool()
+        for outcome in synthesize_only:
+            await pool.enqueue_job(
+                "synthesize_module",
+                outcome.module_id,
+                outcome.module_current_hash,
+                _job_id=f"synthesize:{outcome.module_id}:{outcome.module_current_hash}",
             )
     result.tasks_enqueued = len(pending_jobs)
 
@@ -174,8 +198,10 @@ async def _persist_module(
     if existing is not None:
         old_hash_rows = (await session.scalars(select(FileHash).where(FileHash.module_id == existing.id))).all()
         old_hashes = {fh.relative_path: fh.content_hash for fh in old_hash_rows}
+        old_analyzed = {fh.relative_path: fh.analyzed for fh in old_hash_rows}
     else:
         old_hashes = {}
+        old_analyzed = {}
 
     new_hashes = compute_module_file_hashes(pm.discovered.root)
     diff = diff_file_hashes(old_hashes, new_hashes)
@@ -230,15 +256,26 @@ async def _persist_module(
     outcome.state = module.state
 
     await session.flush()  # assign module.id for new rows
+    outcome.module_id = module.id
+    outcome.module_current_hash = new_current_hash
+    outcome.pending_file_count = module.pending_file_count or 0
 
     added_or_changed = set(diff.added) | set(diff.changed)
     for relative_path, content_hash in new_hashes.items():
+        # An added/changed file always starts unanalyzed. An unchanged file
+        # carries forward whatever its *actual* previous analyzed status was
+        # — it may still be False if a prior analyze_file job was paused on
+        # budget and never completed; assuming True just because the content
+        # didn't change this scan would drop it from budget-resume requeueing
+        # forever (see cli.py's _run_resume_budget, which only requeues
+        # FileHash.analyzed.is_(False)).
+        analyzed = False if relative_path in added_or_changed else old_analyzed.get(relative_path, False)
         session.add(
             FileHash(
                 module_id=module.id,
                 relative_path=relative_path,
                 content_hash=content_hash,
-                analyzed=relative_path not in added_or_changed,
+                analyzed=analyzed,
             )
         )
 

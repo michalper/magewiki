@@ -4,7 +4,7 @@ from datetime import UTC, datetime
 import pytest
 from sqlalchemy import delete
 
-from app.models import Chunk, Module
+from app.models import Chunk, Module, PhpClass
 from app.search.hybrid import hybrid_search
 
 
@@ -130,4 +130,59 @@ async def test_identifier_signal_matches_module_name(db_session, monkeypatch):
     assert module_chunk.id in result_ids
 
     await db_session.execute(delete(Module).where(Module.id == module.id))
+    await db_session.commit()
+
+
+@pytest.mark.asyncio
+async def test_identifier_signal_module_name_hit_does_not_flood_out_a_class_name_hit(db_session, monkeypatch):
+    """A module-name trgm match must map to that module's own module-level
+    chunk only — not every chunk the module owns — or one module-name hit can
+    consume the entire :topk rank budget for the identifier signal and starve
+    a more specific class-name hit in a different module of any rank slot at
+    all (verified empirically: similarity('ZyzzyvaFloodModuleXyz456',
+    'ZyzzyvaFloodModuleAbc123') ≈ 0.56, comfortably above the 0.3 threshold).
+    """
+    suffix = uuid.uuid4().hex[:8]
+    flood_name = f"ZyzzyvaFloodModuleAbc123{suffix}"
+    target_class_name = f"ZyzzyvaFloodModuleXyz456{suffix}"
+
+    flood_module = await _make_module(db_session, f"flood-{suffix}", name=flood_name)
+    # Many chunks on the flooding module — more than :topk below — so an
+    # unfixed join would consume the whole identifier rank budget on this
+    # one module-name hit alone.
+    for i in range(5):
+        db_session.add(
+            Chunk(
+                module_id=flood_module.id, chunk_type="file", relative_path=f"File{i}.php",
+                content_hash=f"flood-{suffix}-{i}", text="Irrelevant content, no keyword/vector signal.",
+                embedding=_vector({}),
+            )
+        )
+
+    target_module = await _make_module(db_session, f"target-{suffix}")
+    db_session.add(
+        PhpClass(
+            module_id=target_module.id, fqcn=target_class_name, namespace=None, class_name=target_class_name,
+            kind="class", extends=[], implements=[], file_path="Target.php",
+        )
+    )
+    target_chunk = Chunk(
+        module_id=target_module.id, chunk_type="file", relative_path="Target.php",
+        content_hash=f"target-{suffix}", text="Irrelevant content, no keyword/vector signal.",
+        embedding=_vector({}),
+    )
+    db_session.add(target_chunk)
+    await db_session.commit()
+
+    async def _fake_embed(q, **kwargs):
+        return _vector({})
+
+    monkeypatch.setattr("app.search.hybrid.embed_query_text", _fake_embed)
+
+    results = await hybrid_search(db_session, flood_name, limit=50, topk=3, trgm_threshold=0.3)
+    result_ids = {r.chunk_id for r in results}
+
+    assert target_chunk.id in result_ids
+
+    await db_session.execute(delete(Module).where(Module.id.in_([flood_module.id, target_module.id])))
     await db_session.commit()

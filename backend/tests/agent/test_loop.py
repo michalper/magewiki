@@ -177,6 +177,58 @@ async def test_run_agent_persists_chat_cost(db_session, monkeypatch):
 
 
 @pytest.mark.asyncio
+async def test_run_agent_forces_a_retry_when_first_turn_skips_tools(db_session, monkeypatch):
+    """An unconditional direct answer on round 1 (no tool call, so nothing is
+    grounded in retrieved data) must not be accepted as-is — the loop should
+    nudge the model to actually use a tool before giving up.
+    """
+    suffix = uuid.uuid4().hex[:8]
+    module = await _make_module(db_session, suffix)
+
+    async def _never_exceeded(session):
+        return False
+
+    monkeypatch.setattr(loop_module, "is_budget_exceeded", _never_exceeded)
+
+    async def fake_list_modules(session, **kwargs):
+        return {"total": 1, "modules": [{"module_id": module.id, "name": module.name}]}
+
+    monkeypatch.setitem(loop_module.TOOL_FUNCTIONS, "list_modules", fake_list_modules)
+
+    calls = []
+
+    async def fake_acompletion(**kwargs):
+        calls.append(kwargs)
+        if kwargs.get("stream"):
+            return _fake_stream(["ok"])
+        non_stream_calls = [c for c in calls if not c.get("stream")]
+        n = len(non_stream_calls)
+        if n == 1:
+            return _direct_answer_response()  # skips tools entirely
+        if n == 2:
+            return _tool_call_response("list_modules", {})  # corrects after the nudge
+        return _direct_answer_response()  # done — sources are populated now
+
+    monkeypatch.setattr(loop_module.litellm, "acompletion", fake_acompletion)
+
+    events = [e async for e in run_agent(db_session, [{"role": "user", "content": "list modules"}], "dev")]
+
+    non_stream_calls = [c for c in calls if not c.get("stream")]
+    assert len(non_stream_calls) == 3
+
+    last_messages = non_stream_calls[-1]["messages"]
+    assert any(
+        isinstance(m.get("content"), str) and "without calling any tools" in m["content"] for m in last_messages
+    )
+
+    sources_event = next(e for e in events if e["event"] == "sources")
+    assert sources_event["sources"] == [{"module_id": module.id, "module_name": module.name, "relative_path": None}]
+
+    await db_session.execute(delete(Module).where(Module.id == module.id))
+    await db_session.commit()
+
+
+@pytest.mark.asyncio
 async def test_run_agent_stops_after_max_tool_rounds(db_session, monkeypatch):
     async def _never_exceeded(session):
         return False
@@ -223,5 +275,8 @@ async def test_run_agent_errors_on_budget_exceeded(db_session, monkeypatch):
 
     events = [e async for e in run_agent(db_session, [{"role": "user", "content": "hi"}], "dev")]
 
-    assert events == [{"event": "error", "detail": "Monthly LLM budget exceeded — cannot answer right now."}]
+    assert events == [
+        {"event": "error", "detail": "Monthly LLM budget exceeded — cannot answer right now."},
+        {"event": "done", "tokens_in": 0, "tokens_out": 0, "cost_usd": "0"},
+    ]
     assert called is False

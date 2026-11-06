@@ -27,11 +27,16 @@ def test_filter_tags_drops_out_of_vocabulary_ai_tags():
     assert rejected == ["totally-made-up"]
 
 
-def test_filter_tags_always_keeps_parser_tags():
-    tags = [Tag(name="not-in-vocab-but-parser-sourced", source="parser", confidence=1.0)]
+def test_filter_tags_does_not_trust_a_self_claimed_parser_source():
+    # filter_tags only ever receives doc.tags (raw, untrusted LLM output) —
+    # genuine parser tags come from derive_parser_tags() and are merged in
+    # separately, so an out-of-vocabulary tag claiming source="parser" here
+    # must still be rejected, or the model could bypass ALLOWED_TAGS just by
+    # setting that field itself.
+    tags = [Tag(name="not-in-vocab-but-claims-parser-sourced", source="parser", confidence=1.0)]
     kept, rejected = filter_tags(tags)
-    assert kept == tags
-    assert rejected == []
+    assert kept == []
+    assert rejected == ["not-in-vocab-but-claims-parser-sourced"]
 
 
 def test_merge_tags_dedupes_by_name_preferring_parser_source():
