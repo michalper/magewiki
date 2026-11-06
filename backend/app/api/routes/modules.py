@@ -19,6 +19,7 @@ from app.models import (
     Module,
     ModuleDependency,
     ModuleDocument,
+    ModuleQualityFinding,
     PhpClass,
     PhpClassMethod,
 )
@@ -77,6 +78,11 @@ class ModuleSummary(BaseModel):
     observer_count: int
     last_scanned_at: datetime
     tags: list[str] = []
+    has_readme: bool = False
+    has_tests: bool = False
+    composer_issue_count: int = 0
+    deprecated_count: int = 0
+    secrets_count: int = 0
 
 
 class MethodSummary(BaseModel):
@@ -115,12 +121,21 @@ class EventObserverSummary(BaseModel):
     disabled: bool
 
 
+class QualityFindingResponse(BaseModel):
+    check_type: str
+    severity: str
+    file_path: str | None
+    line: int | None
+    message: str
+
+
 class ModuleDetail(ModuleSummary):
     dependencies: list[str]
     classes: list[PhpClassSummary]
     preferences: list[DiPreferenceSummary]
     plugins: list[DiPluginSummary]
     observers: list[EventObserverSummary]
+    quality_findings: list[QualityFindingResponse] = []
 
 
 @router.post("/scan", response_model=ScanResponse)
@@ -183,6 +198,15 @@ async def list_modules(session: AsyncSession = Depends(get_session)) -> list[Mod
         .outerjoin(ModuleDocument, ModuleDocument.module_id == Module.id)
         .order_by(Module.name)
     )
+    module_rows = rows.all()
+
+    finding_count_rows = await session.execute(
+        select(ModuleQualityFinding.module_id, ModuleQualityFinding.check_type, func.count(ModuleQualityFinding.id))
+        .group_by(ModuleQualityFinding.module_id, ModuleQualityFinding.check_type)
+    )
+    counts_by_module: dict[int, dict[str, int]] = {}
+    for module_id, check_type, count in finding_count_rows:
+        counts_by_module.setdefault(module_id, {})[check_type] = count
 
     return [
         ModuleSummary(
@@ -198,8 +222,13 @@ async def list_modules(session: AsyncSession = Depends(get_session)) -> list[Mod
             observer_count=observers,
             last_scanned_at=module.last_scanned_at,
             tags=_extract_tags(doc),
+            has_readme=module.has_readme,
+            has_tests=module.has_tests,
+            composer_issue_count=counts_by_module.get(module.id, {}).get("composer_completeness", 0),
+            deprecated_count=counts_by_module.get(module.id, {}).get("deprecated_annotation", 0),
+            secrets_count=counts_by_module.get(module.id, {}).get("hardcoded_secret", 0),
         )
-        for module, classes, plugins, observers, doc in rows
+        for module, classes, plugins, observers, doc in module_rows
     ]
 
 
@@ -223,6 +252,9 @@ async def get_module(module_id: int, session: AsyncSession = Depends(get_session
     ).all()
     observers = (
         await session.scalars(select(EventObserver).where(EventObserver.module_id == module_id))
+    ).all()
+    quality_findings = (
+        await session.scalars(select(ModuleQualityFinding).where(ModuleQualityFinding.module_id == module_id))
     ).all()
     doc_row = await session.scalar(select(ModuleDocument.doc).where(ModuleDocument.module_id == module_id))
 
@@ -252,6 +284,11 @@ async def get_module(module_id: int, session: AsyncSession = Depends(get_session
         observer_count=sum(1 for c in classes if c.is_observer),
         last_scanned_at=module.last_scanned_at,
         tags=_extract_tags(doc_row),
+        has_readme=module.has_readme,
+        has_tests=module.has_tests,
+        composer_issue_count=sum(1 for f in quality_findings if f.check_type == "composer_completeness"),
+        deprecated_count=sum(1 for f in quality_findings if f.check_type == "deprecated_annotation"),
+        secrets_count=sum(1 for f in quality_findings if f.check_type == "hardcoded_secret"),
         dependencies=[d.depends_on_name for d in dependencies],
         classes=class_summaries,
         preferences=[DiPreferenceSummary(for_type=p.for_type, preference_type=p.preference_type) for p in preferences],
@@ -268,6 +305,12 @@ async def get_module(module_id: int, session: AsyncSession = Depends(get_session
                 disabled=o.disabled,
             )
             for o in observers
+        ],
+        quality_findings=[
+            QualityFindingResponse(
+                check_type=f.check_type, severity=f.severity, file_path=f.file_path, line=f.line, message=f.message
+            )
+            for f in quality_findings
         ],
     )
 

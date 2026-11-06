@@ -23,6 +23,21 @@ class ComposerResult:
     name: str | None
     type: str | None
     license: list[str] | None
+    description: str | None = None
+    has_php_requirement: bool = False
+    has_magento_dependency: bool = False
+    has_autoload_psr4: bool = False
+    has_autoload_files: bool = False
+    has_phpunit_dev_dependency: bool = False
+
+
+@dataclass
+class QualityFinding:
+    check_type: str  # "composer_completeness" | "deprecated_annotation" | "hardcoded_secret"
+    severity: str  # "blocking" | "warning" | "info"
+    file_path: str | None
+    line: int | None
+    message: str
 
 
 @dataclass

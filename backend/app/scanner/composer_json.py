@@ -1,7 +1,7 @@
 import json
 from pathlib import Path
 
-from app.scanner.dto import ComposerResult
+from app.scanner.dto import ComposerResult, QualityFinding
 
 
 def parse_composer_json(path: Path) -> ComposerResult | None:
@@ -21,8 +21,53 @@ def parse_composer_json(path: Path) -> ComposerResult | None:
     else:
         license_list = None
 
+    require = raw.get("require") if isinstance(raw.get("require"), dict) else {}
+    require_dev = raw.get("require-dev") if isinstance(raw.get("require-dev"), dict) else {}
+    autoload = raw.get("autoload") if isinstance(raw.get("autoload"), dict) else {}
+
     return ComposerResult(
         name=raw.get("name"),
         type=raw.get("type"),
         license=license_list,
+        description=raw.get("description"),
+        has_php_requirement=bool(require.get("php")),
+        has_magento_dependency=any(k.startswith("magento/") for k in require),
+        has_autoload_psr4=bool(autoload.get("psr-4")),
+        has_autoload_files=bool(autoload.get("files")),
+        has_phpunit_dev_dependency="phpunit/phpunit" in require_dev,
     )
+
+
+def composer_completeness_findings(result: ComposerResult | None) -> list[QualityFinding]:
+    """Missing-field heuristic over an already-parsed composer.json. A module
+    with no composer.json at all produces no findings here — that's a
+    different, more fundamental problem than an incomplete one.
+    """
+    if result is None:
+        return []
+
+    findings: list[QualityFinding] = []
+
+    def _check(present: bool, field: str) -> None:
+        if not present:
+            findings.append(
+                QualityFinding(
+                    check_type="composer_completeness",
+                    severity="warning",
+                    file_path="composer.json",
+                    line=None,
+                    message=f"composer.json is missing {field}",
+                )
+            )
+
+    _check(bool(result.name), "name")
+    _check(bool(result.description), "description")
+    _check(bool(result.type), "type")
+    _check(bool(result.license), "license")
+    _check(result.has_php_requirement, "require.php")
+    _check(result.has_magento_dependency, "a magento/* dependency in require")
+    _check(result.has_autoload_psr4, "autoload.psr-4")
+    _check(result.has_autoload_files, "autoload.files")
+    _check(result.has_phpunit_dev_dependency, "require-dev phpunit/phpunit")
+
+    return findings

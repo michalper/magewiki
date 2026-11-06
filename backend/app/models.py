@@ -54,6 +54,10 @@ class Module(Base):
     last_error: Mapped[str | None] = mapped_column(Text)
     pending_file_count: Mapped[int] = mapped_column(Integer, server_default="0")
 
+    # Phase 9: parser-only quality checks
+    has_readme: Mapped[bool] = mapped_column(Boolean, server_default="false")
+    has_tests: Mapped[bool] = mapped_column(Boolean, server_default="false")
+
     dependencies: Mapped[list["ModuleDependency"]] = relationship(
         back_populates="module", cascade="all, delete-orphan"
     )
@@ -73,6 +77,9 @@ class Module(Base):
         back_populates="module", cascade="all, delete-orphan"
     )
     chunks: Mapped[list["Chunk"]] = relationship(
+        back_populates="module", cascade="all, delete-orphan"
+    )
+    quality_findings: Mapped[list["ModuleQualityFinding"]] = relationship(
         back_populates="module", cascade="all, delete-orphan"
     )
 
@@ -173,6 +180,35 @@ class FileHash(Base):
     analyzed: Mapped[bool] = mapped_column(Boolean, default=False)
 
     module: Mapped[Module] = relationship(back_populates="file_hashes")
+
+
+class ModuleQualityFinding(Base):
+    """One parser-only quality-check finding (Phase 9). Facts come from
+    parsers, never AI — see CLAUDE.md anti-hallucination rules. Full-replace
+    per scan, same as PhpClass/DiPlugin/EventObserver.
+    """
+
+    __tablename__ = "module_quality_findings"
+    __table_args__ = (
+        CheckConstraint(
+            "check_type IN ('composer_completeness','deprecated_annotation','hardcoded_secret')",
+            name="ck_module_quality_findings_check_type",
+        ),
+        CheckConstraint(
+            "severity IN ('blocking','warning','info')", name="ck_module_quality_findings_severity"
+        ),
+        Index("ix_module_quality_findings_module_id", "module_id"),
+    )
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    module_id: Mapped[int] = mapped_column(ForeignKey("modules.id", ondelete="CASCADE"))
+    check_type: Mapped[str] = mapped_column(Text)
+    severity: Mapped[str] = mapped_column(Text)
+    file_path: Mapped[str | None] = mapped_column(Text)
+    line: Mapped[int | None] = mapped_column(Integer)
+    message: Mapped[str] = mapped_column(Text)
+
+    module: Mapped[Module] = relationship(back_populates="quality_findings")
 
 
 class AnalysisCache(Base):
