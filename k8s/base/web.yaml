@@ -1,0 +1,35 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: web
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: web
+  template:
+    metadata:
+      labels:
+        app: web
+    spec:
+      containers:
+        - name: web
+          image: magewiki-frontend:dev
+          imagePullPolicy: IfNotPresent
+          command: ["npm", "run", "dev"]
+          ports:
+            - containerPort: 3000
+          envFrom:
+            - configMapRef:
+                name: magewiki-config
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: web
+spec:
+  selector:
+    app: web
+  ports:
+    - port: 3000
+      targetPort: 3000
