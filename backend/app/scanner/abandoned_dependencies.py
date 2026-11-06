@@ -1,3 +1,5 @@
+import re
+
 import httpx
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -6,6 +8,13 @@ from app.scanner.packagist_cache import get_cached, set_cached
 from app.scanner.semver import constraints_overlap
 
 _P2_URL_TEMPLATE = "https://repo.packagist.org/p2/{package}.json"
+
+# Composer's own stability vocabulary (minimum-stability: dev < alpha < beta < RC <
+# stable). Packagist's P2 API lists versions newest-first but does NOT filter by
+# stability — confirmed live: symfony/console's P2 response lists "v8.2.0-BETA1"
+# ahead of the true latest stable "v8.1.11". Taking versions[0] unfiltered produces a
+# false outdated_dependency finding for a module already on the newest stable release.
+_PRERELEASE_RE = re.compile(r"-(dev|alpha|beta|rc)", re.IGNORECASE)
 
 
 async def _fetch_package_info(session: AsyncSession, package_name: str) -> dict | None:
@@ -30,6 +39,12 @@ async def _fetch_package_info(session: AsyncSession, package_name: str) -> dict 
 
 def _latest_version_entry(package_name: str, data: dict) -> dict | None:
     versions = data.get("packages", {}).get(package_name) or []
+    for entry in versions:
+        version = entry.get("version", "")
+        if not _PRERELEASE_RE.search(version):
+            return entry
+    # Every listed version is a pre-release (e.g. a package with no stable release
+    # yet) — fall back to the newest one rather than reporting nothing.
     return versions[0] if versions else None
 
 
