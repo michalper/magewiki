@@ -4,17 +4,14 @@ import { useMemo } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { useQuery } from "@tanstack/react-query";
+import { apiFetch } from "@/lib/api";
 import type { components } from "@/lib/api-types";
 
 type DependencyGraphResponse = components["schemas"]["DependencyGraphResponse"];
 type GraphNode = components["schemas"]["GraphNode"];
 
-const apiUrl = () => process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000";
-
 async function fetchGraph(id: string): Promise<DependencyGraphResponse> {
-  const res = await fetch(`${apiUrl()}/modules/${id}/graph`);
-  if (!res.ok) throw new Error(`API responded with ${res.status}`);
-  return res.json();
+  return apiFetch(`/modules/${id}/graph`);
 }
 
 const RELATION_COLORS: Record<string, string> = {

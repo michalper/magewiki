@@ -6,6 +6,7 @@ import { useQuery } from "@tanstack/react-query";
 import { cn } from "cn";
 import { MageWikiIcon } from "@/components/mage-wiki-icon";
 import { ThemeToggle } from "@/components/theme-toggle";
+import { apiFetch } from "@/lib/api";
 
 const NAV_LINKS = [
   { href: "/modules", label: "Modules" },
@@ -15,12 +16,8 @@ const NAV_LINKS = [
   { href: "/settings", label: "Settings" },
 ];
 
-const apiUrl = () => process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000";
-
 async function fetchHealth(): Promise<{ status: string }> {
-  const res = await fetch(`${apiUrl()}/health`);
-  if (!res.ok) throw new Error(`API responded with ${res.status}`);
-  return res.json();
+  return apiFetch("/health");
 }
 
 export function SiteHeader() {

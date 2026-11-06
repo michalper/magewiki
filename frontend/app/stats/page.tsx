@@ -17,6 +17,7 @@ import {
   YAxis,
 } from "recharts";
 import { useChartPalette } from "@/components/chart-palette";
+import { apiFetch } from "@/lib/api";
 import type { paths } from "@/lib/api-types";
 import { useDocumentTitle } from "@/lib/use-document-title";
 
@@ -36,12 +37,8 @@ const STATE_ORDER = [
   "failed",
 ];
 
-const apiUrl = () => process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000";
-
 async function fetchModules(): Promise<ModuleSummary[]> {
-  const res = await fetch(`${apiUrl()}/modules`);
-  if (!res.ok) throw new Error(`API responded with ${res.status}`);
-  return res.json();
+  return apiFetch("/modules");
 }
 
 function StatTile({

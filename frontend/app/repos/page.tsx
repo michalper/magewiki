@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { useQuery } from "@tanstack/react-query";
 import { SeverityBadge } from "@/components/severity-badge";
+import { apiFetch } from "@/lib/api";
 import type { paths } from "@/lib/api-types";
 import { useDocumentTitle } from "@/lib/use-document-title";
 
@@ -10,18 +11,12 @@ type RepoSummary = paths["/repos"]["get"]["responses"][200]["content"]["applicat
 type ModuleOverlapEntry =
   paths["/modules/overlap"]["get"]["responses"][200]["content"]["application/json"][number];
 
-const apiUrl = () => process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000";
-
 async function fetchRepos(): Promise<RepoSummary[]> {
-  const res = await fetch(`${apiUrl()}/repos`);
-  if (!res.ok) throw new Error(`API responded with ${res.status}`);
-  return res.json();
+  return apiFetch("/repos");
 }
 
 async function fetchModuleOverlap(): Promise<ModuleOverlapEntry[]> {
-  const res = await fetch(`${apiUrl()}/modules/overlap`);
-  if (!res.ok) throw new Error(`API responded with ${res.status}`);
-  return res.json();
+  return apiFetch("/modules/overlap");
 }
 
 function totalFindings(r: RepoSummary): number {

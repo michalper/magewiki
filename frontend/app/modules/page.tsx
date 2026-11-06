@@ -11,6 +11,7 @@ import { Badge } from "@/components/ui/badge";
 import { EnabledBadge } from "@/components/enabled-badge";
 import { SeverityBadge, SEVERITY_ORDER, type Severity } from "@/components/severity-badge";
 import { StateBadge } from "@/components/state-badge";
+import { apiFetch, apiUrl } from "@/lib/api";
 import { useDocumentTitle } from "@/lib/use-document-title";
 import { notifyQueryParamChange, useQueryParam } from "@/lib/use-query-param";
 import {
@@ -37,24 +38,16 @@ type ScanStreamEvent =
   | { event: "error"; detail: string };
 type SortKey = "name" | "class_count" | "plugin_count" | "observer_count" | "last_scanned_at";
 
-const apiUrl = () => process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000";
-
 async function fetchModules(): Promise<ModuleSummary[]> {
-  const res = await fetch(`${apiUrl()}/modules`);
-  if (!res.ok) throw new Error(`API responded with ${res.status}`);
-  return res.json();
+  return apiFetch("/modules");
 }
 
 async function fetchModuleDetail(id: number): Promise<ModuleDetail> {
-  const res = await fetch(`${apiUrl()}/modules/${id}`);
-  if (!res.ok) throw new Error(`API responded with ${res.status}`);
-  return res.json();
+  return apiFetch(`/modules/${id}`);
 }
 
 async function fetchScanRoots(): Promise<ScanRootsResponse> {
-  const res = await fetch(`${apiUrl()}/scan-roots`);
-  if (!res.ok) throw new Error(`API responded with ${res.status}`);
-  return res.json();
+  return apiFetch("/scan-roots");
 }
 
 async function streamScan(
