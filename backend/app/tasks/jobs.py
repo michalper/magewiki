@@ -373,16 +373,22 @@ async def embed_chunks(ctx: dict | None, module_id: int, module_current_hash: st
 
             misses = [s for s in hashed_specs if s[4] not in embedding_by_hash]
             if misses:
-                if await is_budget_exceeded(session):
-                    await session.execute(
-                        update(Module)
-                        .where(Module.id == module_id, Module.current_hash == module_current_hash)
-                        .values(state="paused_budget")
-                    )
-                    await session.commit()
-                    return
-
+                # Rechecked on every iteration, not just once before the loop — a
+                # module with many cache misses makes many real, billed calls here,
+                # and the budget can cross its limit partway through. Aborting mid-
+                # loop (rather than only before it) still returns before the
+                # chunk-rebuild below, which otherwise would KeyError on the
+                # embeddings this abort left un-fetched in embedding_by_hash.
                 for _ct, _rp, _mid, txt, h in misses:
+                    if await is_budget_exceeded(session):
+                        await session.execute(
+                            update(Module)
+                            .where(Module.id == module_id, Module.current_hash == module_current_hash)
+                            .values(state="paused_budget")
+                        )
+                        await session.commit()
+                        return
+
                     vector, result = await embed_text(
                         txt, model=embed_config.model, api_key=embed_config.api_key, api_base=embed_config.api_base
                     )

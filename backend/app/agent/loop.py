@@ -39,6 +39,24 @@ def _turn_cost(response, model: str) -> tuple[int, int, Decimal]:
     return tokens_in, tokens_out, cost
 
 
+async def _persist_chat_cost(
+    session: AsyncSession, model: str, tokens_in: int, tokens_out: int, cost: Decimal
+) -> None:
+    session.add(
+        AnalysisCache(
+            content_hash=f"chat:{uuid.uuid4()}",
+            model=model,
+            prompt_version=CHAT_PROMPT_VERSION,
+            kind="chat",
+            response={},
+            tokens_in=tokens_in,
+            tokens_out=tokens_out,
+            cost_usd=cost,
+        )
+    )
+    await session.commit()
+
+
 def _collect_sources(tool_name: str, args: dict, result: dict, sources: dict[tuple, Source]) -> None:
     """Record (module_id, relative_path) refs a tool call actually touched, deduped."""
 
@@ -96,6 +114,19 @@ async def run_agent(session: AsyncSession, messages: list[dict], audience: str) 
 
     forced_retry_used = False
     for _round in range(MAX_TOOL_ROUNDS):
+        # Rechecked every round, not just once before the loop — up to
+        # MAX_TOOL_ROUNDS rounds each make a real, billed LLM call, and the
+        # budget can cross its limit partway through a single chat response.
+        # Persist whatever was actually spent so far before aborting — those
+        # calls already happened and must still reach the budget tracker.
+        if await is_budget_exceeded(session):
+            yield {"event": "sources", "sources": [vars(s) for s in sources.values()]}
+            yield {"event": "error", "detail": "Monthly LLM budget exceeded — cannot answer right now."}
+            await _persist_chat_cost(session, llm_config.model, tokens_in_total, tokens_out_total, cost_total)
+            yield {"event": "done", "tokens_in": tokens_in_total, "tokens_out": tokens_out_total,
+                   "cost_usd": str(cost_total)}
+            return
+
         response = await litellm.acompletion(
             model=llm_config.model,
             api_key=llm_config.api_key,
@@ -193,19 +224,7 @@ async def run_agent(session: AsyncSession, messages: list[dict], audience: str) 
                 stream_cost = compute_cost_usd(llm_config.model, usage.prompt_tokens, usage.completion_tokens)
             cost_total += stream_cost
 
-    session.add(
-        AnalysisCache(
-            content_hash=f"chat:{uuid.uuid4()}",
-            model=llm_config.model,
-            prompt_version=CHAT_PROMPT_VERSION,
-            kind="chat",
-            response={},
-            tokens_in=tokens_in_total,
-            tokens_out=tokens_out_total,
-            cost_usd=cost_total,
-        )
-    )
-    await session.commit()
+    await _persist_chat_cost(session, llm_config.model, tokens_in_total, tokens_out_total, cost_total)
 
     yield {
         "event": "done",

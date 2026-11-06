@@ -301,6 +301,62 @@ async def test_run_agent_stops_after_max_tool_rounds(db_session, monkeypatch):
 
 
 @pytest.mark.asyncio
+async def test_run_agent_rechecks_budget_mid_loop_not_just_once_before_it(db_session, monkeypatch):
+    """Regression test: up to MAX_TOOL_ROUNDS rounds each make a real, billed LLM
+    call, but the budget used to be checked only once before the loop started —
+    a budget that crossed its limit partway through a chat response let every
+    remaining round's call through uncounted. Simulate the limit being crossed
+    after the first round and confirm the loop stops there instead of running
+    all MAX_TOOL_ROUNDS, and that the streaming final-answer call never happens.
+    """
+    suffix = uuid.uuid4().hex[:8]
+    module = await _make_module(db_session, suffix)
+
+    call_count = 0
+
+    async def _exceeded_after_first_round(session):
+        return call_count >= 1
+
+    monkeypatch.setattr(loop_module, "is_budget_exceeded", _exceeded_after_first_round)
+
+    async def fake_list_modules(session, **kwargs):
+        return {"total": 1, "modules": [{"module_id": module.id, "name": module.name}]}
+
+    monkeypatch.setitem(loop_module.TOOL_FUNCTIONS, "list_modules", fake_list_modules)
+
+    calls = []
+
+    async def fake_acompletion(**kwargs):
+        nonlocal call_count
+        calls.append(kwargs)
+        if not kwargs.get("stream"):
+            call_count += 1
+        return _tool_call_response("list_modules", {})  # always asks for another tool call
+
+    monkeypatch.setattr(loop_module.litellm, "acompletion", fake_acompletion)
+
+    events = [e async for e in run_agent(db_session, [{"role": "user", "content": "loop forever"}], "dev")]
+
+    non_streaming_calls = [c for c in calls if not c.get("stream")]
+    assert len(non_streaming_calls) == 1  # stopped after round 1, not all MAX_TOOL_ROUNDS
+    assert all(not c.get("stream") for c in calls)  # the final streaming answer never ran
+
+    assert any(e["event"] == "error" for e in events)
+    done_event = next(e for e in events if e["event"] == "done")
+    # Round 1's real cost (from the tool-calling response) must still be recorded,
+    # not discarded to zero just because the overall request was aborted.
+    assert done_event["tokens_in"] > 0
+
+    # Round 1's tool call already ran and found a module — that partial result
+    # must still be surfaced, not silently dropped.
+    sources_event = next(e for e in events if e["event"] == "sources")
+    assert sources_event["sources"] == [{"module_id": module.id, "module_name": module.name, "relative_path": None}]
+
+    await db_session.execute(delete(Module).where(Module.id == module.id))
+    await db_session.commit()
+
+
+@pytest.mark.asyncio
 async def test_run_agent_errors_on_budget_exceeded(db_session, monkeypatch):
     async def _always_exceeded(session):
         return True
