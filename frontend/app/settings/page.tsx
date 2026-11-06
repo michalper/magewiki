@@ -24,7 +24,13 @@ async function patchSettings(update: LlmSettingsUpdate): Promise<LlmSettingsResp
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(update),
   });
-  if (!res.ok) throw new Error(`API responded with ${res.status}`);
+  if (!res.ok) {
+    // The backend's 400s here are actionable (e.g. "re-enter the key to change the
+    // host" from the api_base/api_key coupling security check) — surface the real
+    // message instead of a generic "failed to save".
+    const body = await res.json().catch(() => null);
+    throw new Error(body?.detail ?? `API responded with ${res.status}`);
+  }
   return res.json();
 }
 
@@ -186,7 +192,11 @@ export default function SettingsPage() {
             </div>
           </section>
 
-          {patchMutation.isError && <p className="text-destructive text-sm">Failed to save settings.</p>}
+          {patchMutation.isError && (
+            <p className="text-destructive text-sm">
+              {patchMutation.error instanceof Error ? patchMutation.error.message : "Failed to save settings."}
+            </p>
+          )}
         </>
       )}
     </div>

@@ -1,3 +1,5 @@
+from pathlib import Path
+
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -40,6 +42,22 @@ class Settings(BaseSettings):
             for root in (self.magewiki_scan_root_1, self.magewiki_scan_root_2, self.magewiki_scan_root_3)
             if root.strip()
         ]
+
+    def is_within_scan_roots(self, path: str) -> bool:
+        """The actual access-control check for POST /scan[/stream] and
+        POST /webhooks/scan — scan_roots elsewhere is just UI/error-message text.
+        Fails closed: if no scan roots are configured, nothing is scannable, rather
+        than falling back to "anything the container can see is fair game."
+        """
+        try:
+            resolved = Path(path).resolve()
+        except OSError:
+            return False
+        for root in self.scan_roots:
+            resolved_root = Path(root).resolve()
+            if resolved == resolved_root or resolved.is_relative_to(resolved_root):
+                return True
+        return False
 
 
 settings = Settings()

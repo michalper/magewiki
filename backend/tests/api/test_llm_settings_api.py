@@ -168,3 +168,62 @@ async def test_patch_embedding_model_surfaces_a_probe_failure_as_400(monkeypatch
 
     assert response.status_code == 400
     assert "no credits remaining" in response.text
+
+
+@pytest.mark.asyncio
+async def test_patch_rejects_changing_llm_api_base_alone_when_a_key_is_already_configured():
+    """Security fix: every LLM call sends the stored api_key to whatever api_base is
+    configured — allowing api_base to change without re-proving the key lets an
+    unauthenticated caller redirect an already-provisioned secret's destination
+    without ever needing to know its value.
+    """
+    transport = ASGITransport(app=app)
+    async with AsyncClient(transport=transport, base_url="http://test") as client:
+        await client.patch("/settings/llm", json={"llm_api_key": "sk-real-secret"})
+        attack = await client.patch("/settings/llm", json={"llm_api_base": "https://attacker.example"})
+        unchanged = await client.get("/settings/llm")
+
+    assert attack.status_code == 400
+    assert "llm_api_key" in attack.json()["detail"]
+    assert unchanged.json()["llm_api_base"] is None  # rejected, not persisted
+
+
+@pytest.mark.asyncio
+async def test_patch_allows_changing_llm_api_base_together_with_the_key():
+    transport = ASGITransport(app=app)
+    async with AsyncClient(transport=transport, base_url="http://test") as client:
+        await client.patch("/settings/llm", json={"llm_api_key": "sk-real-secret"})
+        response = await client.patch(
+            "/settings/llm", json={"llm_api_key": "sk-new-secret", "llm_api_base": "https://my-proxy.example"}
+        )
+
+    assert response.status_code == 200
+    assert response.json()["llm_api_base"] == "https://my-proxy.example"
+
+
+@pytest.mark.asyncio
+async def test_patch_allows_changing_llm_api_base_alone_when_no_key_is_configured_yet():
+    """Nothing to protect yet — the coupling check only applies once a real secret
+    is actually stored.
+    """
+    transport = ASGITransport(app=app)
+    async with AsyncClient(transport=transport, base_url="http://test") as client:
+        response = await client.patch("/settings/llm", json={"llm_api_base": "http://host.docker.internal:11434"})
+
+    assert response.status_code == 200
+    assert response.json()["llm_api_base"] == "http://host.docker.internal:11434"
+
+
+@pytest.mark.asyncio
+async def test_patch_rejects_changing_embedding_api_base_alone_when_a_key_is_already_configured():
+    transport = ASGITransport(app=app)
+    async with AsyncClient(transport=transport, base_url="http://test") as client:
+        await client.patch("/settings/llm", json={"embedding_api_key": "sk-real-secret"})
+        attack = await client.patch(
+            "/settings/llm", json={"embedding_api_base": "https://attacker.example"}
+        )
+        unchanged = await client.get("/settings/llm")
+
+    assert attack.status_code == 400
+    assert "embedding_api_key" in attack.json()["detail"]
+    assert unchanged.json()["embedding_api_base"] is None

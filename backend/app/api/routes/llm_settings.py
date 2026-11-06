@@ -61,6 +61,34 @@ async def update_llm_settings(
     # field explicitly sent as null resets it to the .env default. model_fields_set
     # is what distinguishes the two — update.llm_model is None in both cases.
     fields_set = update.model_fields_set
+
+    # Security fix: every LLM/embedding call sends the stored api_key to whatever
+    # api_base is currently configured (this is how the legitimate Ollama/custom-proxy
+    # BYOK path already works). Without this guard, an unauthenticated caller who sent
+    # ONLY {"llm_api_base": "https://attacker.example"} could redirect all future
+    # traffic carrying an already-provisioned real key to a host they control, without
+    # ever needing to know the key's value. Captured before any mutation below, since
+    # the check is about what was ALREADY stored, not what this request is setting.
+    had_llm_key = bool(row.llm_api_key)
+    had_embedding_key = bool(row.embedding_api_key)
+
+    if "llm_api_base" in fields_set and "llm_api_key" not in fields_set and had_llm_key:
+        raise HTTPException(
+            status_code=400,
+            detail="changing llm_api_base for a model with an already-configured key "
+            "requires providing llm_api_key again in the same request",
+        )
+    if (
+        "embedding_api_base" in fields_set
+        and "embedding_api_key" not in fields_set
+        and had_embedding_key
+    ):
+        raise HTTPException(
+            status_code=400,
+            detail="changing embedding_api_base for a model with an already-configured key "
+            "requires providing embedding_api_key again in the same request",
+        )
+
     if "llm_model" in fields_set:
         row.llm_model = update.llm_model
     if "llm_api_key" in fields_set:

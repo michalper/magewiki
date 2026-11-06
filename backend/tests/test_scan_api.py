@@ -103,3 +103,23 @@ async def test_scan_rejects_nonexistent_path():
         response = await client.post("/scan", json={"path": "/no/such/path"})
 
     assert response.status_code == 400
+
+
+@pytest.mark.asyncio
+async def test_scan_rejects_a_real_directory_outside_every_configured_scan_root(tmp_path: Path, monkeypatch):
+    """The actual security fix: a path that exists and is a real directory, but
+    isn't under any configured scan root, must still be rejected — scan_roots was
+    previously only used for UI/error-message text, never actually enforced.
+    """
+    outside = tmp_path / "outside-any-scan-root"
+    outside.mkdir()
+    monkeypatch.setattr("app.api.routes.modules.settings.magewiki_scan_root_1", str(tmp_path / "allowed-only"))
+    monkeypatch.setattr("app.api.routes.modules.settings.magewiki_scan_root_2", "")
+    monkeypatch.setattr("app.api.routes.modules.settings.magewiki_scan_root_3", "")
+
+    transport = ASGITransport(app=app)
+    async with AsyncClient(transport=transport, base_url="http://test") as client:
+        response = await client.post("/scan", json={"path": str(outside)})
+
+    assert response.status_code == 400
+    assert "scan root" in response.json()["detail"]

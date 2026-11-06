@@ -177,6 +177,17 @@ def _not_a_directory_detail(path: str) -> str:
     return f"not a directory: {path} — {hint}"
 
 
+def _validate_scan_path(path: str) -> None:
+    """The real access-control gate — settings.scan_roots was previously only used
+    for the GET /scan-roots UI hint and this error text, never actually enforced, so
+    any caller could scan arbitrary host paths the container could see. Both checks
+    share one 400 response/message so a caller can't distinguish "not a directory"
+    from "outside the allowed roots" and use that to probe the host filesystem.
+    """
+    if not os.path.isdir(path) or not settings.is_within_scan_roots(path):
+        raise HTTPException(status_code=400, detail=_not_a_directory_detail(path))
+
+
 def _scan_response(result: ScanResult, duration_seconds: float) -> ScanResponse:
     return ScanResponse(
         repository=result.repo_root,
@@ -203,8 +214,7 @@ def _scan_response(result: ScanResult, duration_seconds: float) -> ScanResponse:
 
 @router.post("/scan", response_model=ScanResponse)
 async def scan(request: ScanRequest, session: AsyncSession = Depends(get_session)) -> ScanResponse:
-    if not os.path.isdir(request.path):
-        raise HTTPException(status_code=400, detail=_not_a_directory_detail(request.path))
+    _validate_scan_path(request.path)
 
     started = time.monotonic()
     try:
@@ -248,8 +258,7 @@ async def scan_stream(request: ScanRequest, session: AsyncSession = Depends(get_
     — scan_paths_events() expands and scans each one in turn, emitting a
     "store" event before each.
     """
-    if not os.path.isdir(request.path):
-        raise HTTPException(status_code=400, detail=_not_a_directory_detail(request.path))
+    _validate_scan_path(request.path)
     return StreamingResponse(_scan_sse_stream(request.path, session), media_type="text/event-stream")
 
 
