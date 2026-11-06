@@ -26,7 +26,7 @@ Full architecture and phase plan: see `CLAUDE.md`.
 - [x] **Phase 5** — Agent with tools, SSE chat, citations, pm/dev modes
 - [x] **Phase 6** — Cron, HMAC webhook, BYOK in the UI, Ollama, dependency graph
 - [ ] **Phase 7** — Evaluation suite (done), README updated, GIF recording still pending
-- [ ] **Phase 7b** — CI/CD (GitHub Actions)
+- [ ] **Phase 7b** — CI/CD (GitHub Actions): lint/tests/Docker build verified green on push; PR-comment RAG eval wired but not yet exercised by a real PR
 - [ ] **Phase 8** — Kubernetes
 - [ ] **Phase 9** — Cloud deployment
 
