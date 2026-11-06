@@ -28,7 +28,21 @@ _TEST_DATABASE_URL = _REAL_DATABASE_URL.rsplit("/", 1)[0] + "/" + _REAL_DATABASE
 _TEST_DB_NAME = _TEST_DATABASE_URL.rsplit("/", 1)[1]
 os.environ["DATABASE_URL"] = _TEST_DATABASE_URL
 
-from app.config import settings  # noqa: E402 - must follow the DATABASE_URL redirect above
+# Same reasoning as DATABASE_URL above, for Redis: tests and the live api/worker
+# containers sharing one ARQ queue (redis://.../0) is the confirmed cause of
+# test_queue_integration.py's long-standing flakiness — a real queued_jobs() check
+# would race against the *actual* worker, which is always running in dev and picks
+# up real jobs (including, sometimes, the exact job_id a test just enqueued) before
+# the test gets to assert on it; real job IDs from a live user scan (e.g.
+# "analyze:664:...") showed up in failure output more than once as proof. Redis
+# supports 16 independent logical databases on one server with zero extra
+# infrastructure — redirect to index 15 (last one, least likely to collide with any
+# other logical use) instead of a real worker-shared index.
+_REAL_REDIS_URL = os.environ.get("REDIS_URL", "redis://redis:6379/0")
+_TEST_REDIS_URL = _REAL_REDIS_URL.rsplit("/", 1)[0] + "/15"
+os.environ["REDIS_URL"] = _TEST_REDIS_URL
+
+from app.config import settings  # noqa: E402 - must follow the DATABASE_URL/REDIS_URL redirects above
 from app.db import async_session_factory  # noqa: E402 - ditto
 
 
@@ -101,6 +115,11 @@ async def _test_database():
         await conn.close()
 
     subprocess.run(["alembic", "upgrade", "head"], check=True, env=os.environ)
+
+    from app.tasks.queue import get_arq_pool
+
+    pool = await get_arq_pool()
+    await pool.flushdb()
 
 
 @pytest_asyncio.fixture
