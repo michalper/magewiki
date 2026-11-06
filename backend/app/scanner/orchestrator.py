@@ -1,3 +1,4 @@
+import logging
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from pathlib import Path
@@ -36,6 +37,8 @@ from app.scanner.secrets_scanner import scan_hardcoded_secrets
 from app.scanner.security_advisories import check_security_advisories
 from app.scanner.test_presence import has_tests
 from app.tasks.queue import get_arq_pool
+
+logger = logging.getLogger(__name__)
 
 
 class ScanAlreadyInProgressError(RuntimeError):
@@ -137,7 +140,17 @@ async def scan_repository(repo_root: str, session: AsyncSession) -> ScanResult:
             pending_jobs.extend(module_job_specs)
         except Exception as exc:  # noqa: BLE001 - one module's failure must not abort the scan
             outcome.status = "error"
-            outcome.warnings.append(str(exc))
+            message = f"{pm.module_xml.name}: {exc}"
+            outcome.warnings.append(message)
+            # A per-module failure was previously only visible on
+            # ModuleScanOutcome.warnings, which the UI never renders — only
+            # the scan-level ScanResult.warnings list is shown, so a scan
+            # where every module fails looked like a silent "0 created, 0
+            # updated" success instead of a clear error. Surface it at both
+            # levels, and log the full traceback server-side since str(exc)
+            # alone can be uninformative for some exception types.
+            result.warnings.append(message)
+            logger.exception("scan_repository: failed to persist module %s", pm.module_xml.name)
 
         if outcome.status == "created":
             result.modules_created += 1
