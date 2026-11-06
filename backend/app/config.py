@@ -15,10 +15,25 @@ class Settings(BaseSettings):
     webhook_hmac_secret: str = ""
     ollama_base_url: str = ""
     php_analyzer_url: str = "http://php-analyzer:8080"
+    # General-purpose scan roots (see CLAUDE.md "Scan, cron, and cost control" decision
+    # note) — distinct from MAGEWIKI_ORDO_FIXTURE_PATH/MAGEWIKI_MAGENTO_FIXTURE_PATH,
+    # which name one specific repo each for tests/eval. Numbered, not a comma list,
+    # because docker-compose.yml can't loop over a variable-length volumes section.
+    magewiki_scan_root_1: str = ""
+    magewiki_scan_root_2: str = ""
+    magewiki_scan_root_3: str = ""
 
     @property
     def cors_origin_list(self) -> list[str]:
         return [origin.strip() for origin in self.cors_origins.split(",") if origin.strip()]
+
+    @property
+    def scan_roots(self) -> list[str]:
+        return [
+            root
+            for root in (self.magewiki_scan_root_1, self.magewiki_scan_root_2, self.magewiki_scan_root_3)
+            if root.strip()
+        ]
 
 
 settings = Settings()

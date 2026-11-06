@@ -11,6 +11,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.analyzer.facts import gather_module_facts
 from app.analyzer.readme import render_readme_markdown
 from app.analyzer.schemas import ModuleDoc
+from app.config import settings
 from app.db import get_session
 from app.models import (
     DiPlugin,
@@ -149,10 +150,24 @@ class ModuleDetail(ModuleSummary):
     quality_findings: list[QualityFindingResponse] = []
 
 
+class ScanRootsResponse(BaseModel):
+    scan_roots: list[str]
+
+
+@router.get("/scan-roots", response_model=ScanRootsResponse)
+async def get_scan_roots() -> ScanRootsResponse:
+    return ScanRootsResponse(scan_roots=settings.scan_roots)
+
+
 @router.post("/scan", response_model=ScanResponse)
 async def scan(request: ScanRequest, session: AsyncSession = Depends(get_session)) -> ScanResponse:
     if not os.path.isdir(request.path):
-        raise HTTPException(status_code=400, detail=f"not a directory: {request.path}")
+        hint = (
+            f"must be under a configured scan root ({', '.join(settings.scan_roots)})"
+            if settings.scan_roots
+            else "no scan roots are configured — set MAGEWIKI_SCAN_ROOT_1 in .env and restart"
+        )
+        raise HTTPException(status_code=400, detail=f"not a directory: {request.path} — {hint}")
 
     started = time.monotonic()
     try:

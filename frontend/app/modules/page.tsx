@@ -25,6 +25,7 @@ type ModuleSummary =
 type ModuleDetail = components["schemas"]["ModuleDetail"];
 type ScanResponse =
   paths["/scan"]["post"]["responses"][200]["content"]["application/json"];
+type ScanRootsResponse = components["schemas"]["ScanRootsResponse"];
 type SortKey = "name" | "class_count" | "plugin_count" | "observer_count" | "last_scanned_at";
 
 const apiUrl = () => process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000";
@@ -37,6 +38,12 @@ async function fetchModules(): Promise<ModuleSummary[]> {
 
 async function fetchModuleDetail(id: number): Promise<ModuleDetail> {
   const res = await fetch(`${apiUrl()}/modules/${id}`);
+  if (!res.ok) throw new Error(`API responded with ${res.status}`);
+  return res.json();
+}
+
+async function fetchScanRoots(): Promise<ScanRootsResponse> {
+  const res = await fetch(`${apiUrl()}/scan-roots`);
   if (!res.ok) throw new Error(`API responded with ${res.status}`);
   return res.json();
 }
@@ -381,6 +388,7 @@ export default function ModulesPage() {
   }
 
   const modulesQuery = useQuery({ queryKey: ["modules"], queryFn: fetchModules });
+  const scanRootsQuery = useQuery({ queryKey: ["scan-roots"], queryFn: fetchScanRoots });
 
   const scanMutation = useMutation({
     mutationFn: triggerScan,
@@ -470,6 +478,18 @@ export default function ModulesPage() {
           {scanMutation.isPending ? "Scanning..." : "Scan"}
         </Button>
       </form>
+
+      {scanRootsQuery.data &&
+        (scanRootsQuery.data.scan_roots.length > 0 ? (
+          <p className="text-xs text-muted-foreground -mt-4">
+            Scannable under: <span className="font-mono">{scanRootsQuery.data.scan_roots.join(", ")}</span>
+          </p>
+        ) : (
+          <p className="text-xs text-muted-foreground -mt-4">
+            No scan roots configured — set <span className="font-mono">MAGEWIKI_SCAN_ROOT_1</span> in{" "}
+            <span className="font-mono">.env</span> and restart.
+          </p>
+        ))}
 
       {scanMutation.isError && (
         <p className="text-destructive text-sm">{(scanMutation.error as Error).message}</p>
