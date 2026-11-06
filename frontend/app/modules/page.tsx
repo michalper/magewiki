@@ -29,6 +29,7 @@ type ScanResponse =
 type ScanRootsResponse = components["schemas"]["ScanRootsResponse"];
 type ScanStreamEvent =
   | { event: "discovered"; total: number }
+  | { event: "store"; name: string; index: number; total: number }
   | { event: "module"; name: string; status: string; index: number; total: number; warning: string | null }
   | { event: "done"; result: ScanResponse }
   | { event: "error"; detail: string };
@@ -415,6 +416,12 @@ export default function ModulesPage() {
         if (event.event === "discovered") {
           setScanProgress({ index: 0, total: event.total });
           setScanLog((log) => [...log, `Found ${event.total} modules, scanning...`]);
+        } else if (event.event === "store") {
+          // A directory containing several stores side by side scans each
+          // one in turn — reset the progress bar per store and mark the
+          // boundary in the log, so it's clear which store is active.
+          setScanProgress(null);
+          setScanLog((log) => [...log, `=== Store ${event.index}/${event.total}: ${event.name} ===`]);
         } else if (event.event === "module") {
           const icon = event.status === "error" ? "✗" : "✓";
           const detail = event.warning ? `: ${event.warning}` : ` (${event.status})`;
@@ -575,6 +582,7 @@ export default function ModulesPage() {
       {scanStatus === "done" && scanResult && (
         <div className="text-sm text-muted-foreground space-y-1">
           <p>
+            {scanResult.stores_scanned > 1 && `Scanned ${scanResult.stores_scanned} stores. `}
             Found {scanResult.modules_found} modules ({scanResult.modules_created} created,{" "}
             {scanResult.modules_updated} updated) in {scanResult.duration_seconds.toFixed(2)}s.{" "}
             {scanResult.tasks_enqueued} analysis tasks queued.

@@ -160,6 +160,33 @@ alone doesn't serve. Verified end-to-end against the real store: "Unknown" narro
 modules to exactly the 53 that included every `Magento_TestModule*`/`Magento_A`/
 `Magento_B`-style fixture; "Enabled" showed the complementary 698.
 
+**Multi-store directory scan + cross-store overlap (recorded 2026-11-06):** real-world
+request — on a real server, many stores commonly live side by side under one parent
+directory (e.g. `/sites/store-a`, `/sites/store-b`, ...), and scanning N stores meant N
+separate manual `POST /scan` calls. The data model already supported this with zero
+schema change: `Module`'s unique constraint is `(repo_root, name)`, not `(name)` alone,
+so the same module name already coexists as separate rows across different `repo_root`
+values; `current_hash` is computed purely from path-relative-to-module-root + file
+bytes (`repo_root` never enters the hash), so two installs of the literally same
+version naturally hash identically. New `app/scanner/multi_store.py`'s
+`find_store_roots()` reuses `find_modules()`'s own "looks like a store/module root"
+signals to expand a container directory into its store-shaped children; new
+`scan_paths_events()`/`scan_paths()` (`app/scanner/orchestrator.py`) wrap
+`scan_repository_events()` — delegating straight through unchanged whenever `path`
+resolves to 0-1 roots (every existing single-store call site, including cron/webhook/
+CLI/evaluation, is untouched since only the interactive `POST /scan`/`POST
+/scan/stream` routes call the new functions), looping sequentially over multiple roots
+otherwise (the existing per-root advisory lock already makes this safe — no new
+locking needed). New `GET /modules/overlap` groups `Module` rows by name across
+repo_roots and flags `version_drift` when `current_hash` isn't identical across a
+group — directly answers "how many modules repeat across stores, and are they the same
+version." Verified end-to-end against real production data (not just the synthetic
+fixture): scanning a container with 2 store-shaped children correctly produced
+`stores_scanned: 2`, and `GET /modules/overlap` against the real DB (containing two
+real, previously-scanned stores) correctly surfaced 6 genuinely shared Magento core
+modules with real version drift between them, plus the synthetic fixture's identical
+module correctly flagged `version_drift: false`.
+
 ## AI analysis and the README-in-the-database model
 
 The AI returns structured JSON stored in the `module_docs` table (`jsonb` column); the README is only a view rendered from a template. Facts come from parsers; only interpretation comes from AI.

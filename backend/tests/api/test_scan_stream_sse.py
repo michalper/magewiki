@@ -25,7 +25,12 @@ async def test_scan_stream_relays_discovered_module_done_in_order(tmp_path, monk
         yield {"event": "module", "name": "Vendor_Two", "status": "created", "index": 2, "total": 2, "warning": None}
         yield {"event": "done", "result": ScanResult(repo_root=str(repo_root), modules_found=2, modules_created=2)}
 
-    monkeypatch.setattr("app.api.routes.modules.scan_repository_events", fake_scan_repository_events)
+    # tmp_path doesn't look like a store/module root, so scan_paths_events()
+    # (now what the route actually calls) delegates straight through to
+    # scan_repository_events() unchanged — patch it at its own module so the
+    # delegation picks it up, the same way it did when the route imported it
+    # directly.
+    monkeypatch.setattr("app.scanner.orchestrator.scan_repository_events", fake_scan_repository_events)
 
     transport = ASGITransport(app=app)
     async with AsyncClient(transport=transport, base_url="http://test") as client:
@@ -50,7 +55,7 @@ async def test_scan_stream_relays_already_in_progress_as_an_error_event(tmp_path
         raise ScanAlreadyInProgressError(f"a scan of {repo_root} is already in progress")
         yield  # pragma: no cover - makes this an async generator function
 
-    monkeypatch.setattr("app.api.routes.modules.scan_repository_events", fake_scan_repository_events)
+    monkeypatch.setattr("app.scanner.orchestrator.scan_repository_events", fake_scan_repository_events)
 
     transport = ASGITransport(app=app)
     async with AsyncClient(transport=transport, base_url="http://test") as client:
