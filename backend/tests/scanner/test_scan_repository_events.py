@@ -32,7 +32,11 @@ async def test_yields_discovered_then_one_module_event_each_then_done(
 
     assert events[0] == {"event": "discovered", "total": 2}
     module_events = [e for e in events if e["event"] == "module"]
-    assert [e["name"] for e in module_events] == ["Vendor_One", "Vendor_Two"]
+    # find_modules() doesn't guarantee discovery order (confirmed in CI,
+    # where filesystem iteration order differs from local) — only the
+    # sequential 1..N indexing is actually promised, not which name comes
+    # first.
+    assert {e["name"] for e in module_events} == {"Vendor_One", "Vendor_Two"}
     assert [e["index"] for e in module_events] == [1, 2]
     assert all(e["total"] == 2 and e["status"] == "created" for e in module_events)
     assert events[-1]["event"] == "done"
@@ -68,3 +72,35 @@ async def test_a_second_concurrent_scan_of_the_same_repo_is_rejected(
     # test's db_session fixture tears down.
     async for _ in first:
         pass
+
+
+@pytest.mark.asyncio
+async def test_the_lock_is_actually_released_after_a_multi_module_scan_commits_several_times(
+    tmp_path: Path, demo_module_path: Path, db_session
+):
+    """Regression test for a real bug: a session-level advisory lock is tied
+    to one specific physical connection, but AsyncSession checks out a *new*
+    connection from the pool each time it begins a transaction (autobegin
+    after every commit()) — and this generator commits once per module. The
+    lock was being acquired through `session` on one connection and "released"
+    through `session` later on a different one: pg_advisory_unlock silently
+    returned false (not actually held by the caller) and the lock leaked
+    forever onto the original connection, now idle in the pool. Confirmed in
+    production: every test after the first multi-module scan in a session
+    failed with ScanAlreadyInProgressError, and the exact same thing happened
+    in CI with zero concurrent activity to blame. A single-module scan (the
+    other tests in this file) never exercises more than one commit, so it
+    couldn't have caught this — this one needs >= 2 modules specifically.
+    """
+    repo_root = tmp_path / "repo"
+    _make_module(repo_root, demo_module_path, "One")
+    _make_module(repo_root, demo_module_path, "Two")
+
+    async for _ in scan_repository_events(str(repo_root), db_session):
+        pass
+
+    async with async_session_factory() as second_session:
+        events = [event async for event in scan_repository_events(str(repo_root), second_session)]
+
+    assert events[-1]["event"] == "done"
+    assert events[-1]["result"].modules_updated == 2

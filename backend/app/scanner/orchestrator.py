@@ -7,6 +7,7 @@ from pathlib import Path
 from sqlalchemy import delete, select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.db import engine
 from app.models import (
     ComposerPackageRequirement,
     DiPlugin,
@@ -114,17 +115,33 @@ async def scan_repository_events(repo_root: str, session: AsyncSession) -> Async
     root = Path(repo_root).resolve()
     lock_key = {"repo_root": str(root)}
 
-    lock_acquired = await session.scalar(
-        text("SELECT pg_try_advisory_lock(hashtextextended(:repo_root, 0))"), lock_key
-    )
-    if not lock_acquired:
-        raise ScanAlreadyInProgressError(f"a scan of {root} is already in progress")
+    # A session-level advisory lock is tied to one specific physical
+    # connection — but AsyncSession checks out a *new* connection from the
+    # pool for each transaction it begins (autobegin after every commit()),
+    # and this generator commits once per module. Acquiring the lock through
+    # `session` and releasing it through `session` later is therefore not
+    # reliably the same connection: pg_advisory_unlock silently returns
+    # false (lock not actually held by the caller) and the lock leaks onto
+    # whatever connection originally acquired it, now idle in the pool.
+    # Confirmed empirically (debug logging on a real failing test run) before
+    # this fix. A connection obtained directly from the engine is pinned to
+    # one physical connection for its whole scope, unlike a Session — use
+    # that, dedicated solely to the lock, independent of whatever connections
+    # `session` itself churns through for the actual scan work.
+    async with engine.connect() as lock_connection:
+        lock_acquired = await lock_connection.scalar(
+            text("SELECT pg_try_advisory_lock(hashtextextended(:repo_root, 0))"), lock_key
+        )
+        if not lock_acquired:
+            raise ScanAlreadyInProgressError(f"a scan of {root} is already in progress")
 
-    try:
-        async for event in _run_scan(root, session):
-            yield event
-    finally:
-        await session.scalar(text("SELECT pg_advisory_unlock(hashtextextended(:repo_root, 0))"), lock_key)
+        try:
+            async for event in _run_scan(root, session):
+                yield event
+        finally:
+            await lock_connection.scalar(
+                text("SELECT pg_advisory_unlock(hashtextextended(:repo_root, 0))"), lock_key
+            )
 
 
 async def _run_scan(root: Path, session: AsyncSession) -> AsyncIterator[dict]:
