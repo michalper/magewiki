@@ -379,6 +379,35 @@ worth revisiting with an explicit stable-tag filter if it turns out to matter in
 
 The author previously built a PHP tool for his employer Cognize — the predecessor MageWiki-AI (the open-source Python rewrite) succeeds, referred to here only as "v1" since it's Cognize's property. Phases 9–12 above come from a curated review of what v1 does in production; the full inventory (what's ported, what's skipped as Cognize-internal, and the detailed CVE-check design) lives in `docs/v1-port-roadmap.md`. Nothing here is copied code — concepts only, per the "no client-confidential code" rule below.
 
+**CI tooling for MageWiki's own codebase (recorded 2026-11-06):** the product runs
+extensive static analysis against *scanned Magento stores* (PHPStan/PHPMD/phpcs/
+Rector, CVE checks), but MageWiki's own CI had nothing beyond lint/type-check/tests —
+prompted by GitHub surfacing "30 vulnerabilities (7 high, 18 moderate, 5 low)" via
+Dependabot on a routine push, alerts that existed but were invisible outside the
+GitHub UI. Added four things: `gitleaks` secret scanning (new `secret-scan` job,
+every push/PR); `pip-audit`/`npm audit` dependency vulnerability scanning in the
+existing `backend`/`frontend` jobs, plus `.github/dependabot.yml` for automatic
+weekly update PRs (pip, npm, github-actions ecosystems); `pytest-cov` +
+`codecov/codecov-action` for real coverage reporting (81% today) — needs the
+Codecov GitHub App installed on the account, a manual one-time step; and a new
+`e2e-smoke` job that `docker compose up`s the real images (same ones `docker-build`
+only checks *compile*, not that they *run*) and Playwright-checks `/modules`
+actually boots and renders — proving a real deploy works, which nothing today
+verified.
+
+`pip-audit`'s step is deliberately `continue-on-error: true` for now, not silently
+ignored: of today's 3 real findings (not counting pip/poetry/setuptools/virtualenv
+noise from scanning the whole container instead of just the project's own
+`poetry.lock` — verified `poetry export | pip-audit -r` is the correctly-scoped
+command), `lxml` (directly pinned) was bumped `^5.3` → `^6.1` immediately since it
+was safe to do standalone; `starlette`/`filelock` are transitive and blocked by
+fastapi's own `<0.47.0` pin — their real fix needs a dedicated fastapi major-version
+bump (0.115 → 0.162+), a separate, nontrivial task with its own compatibility risk,
+not something to rush mid an unrelated "add a scanner" task. `npm audit
+--audit-level=high` is fully blocking already — today's 13 frontend findings are all
+moderate/low, transitive through `shadcn`'s own dev-tooling deps (not runtime code),
+so the threshold passes clean without needing the same carve-out.
+
 ## Working method
 
 - Start each phase in plan mode; propose a plan and wait for approval before writing code.
