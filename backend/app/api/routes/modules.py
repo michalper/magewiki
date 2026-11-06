@@ -1,9 +1,11 @@
+import json
 import os
 import time
+from collections.abc import AsyncIterator
 from datetime import datetime
 
 from fastapi import APIRouter, Depends, HTTPException
-from fastapi.responses import PlainTextResponse
+from fastapi.responses import PlainTextResponse, StreamingResponse
 from pydantic import BaseModel
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -24,7 +26,7 @@ from app.models import (
     PhpClass,
     PhpClassMethod,
 )
-from app.scanner.orchestrator import ScanAlreadyInProgressError, scan_repository
+from app.scanner.orchestrator import ScanAlreadyInProgressError, ScanResult, scan_repository, scan_repository_events
 
 router = APIRouter()
 
@@ -159,26 +161,19 @@ async def get_scan_roots() -> ScanRootsResponse:
     return ScanRootsResponse(scan_roots=settings.scan_roots)
 
 
-@router.post("/scan", response_model=ScanResponse)
-async def scan(request: ScanRequest, session: AsyncSession = Depends(get_session)) -> ScanResponse:
-    if not os.path.isdir(request.path):
-        hint = (
-            f"must be under a configured scan root ({', '.join(settings.scan_roots)})"
-            if settings.scan_roots
-            else "no scan roots are configured — set MAGEWIKI_SCAN_ROOT_1 in .env and restart"
-        )
-        raise HTTPException(status_code=400, detail=f"not a directory: {request.path} — {hint}")
+def _not_a_directory_detail(path: str) -> str:
+    hint = (
+        f"must be under a configured scan root ({', '.join(settings.scan_roots)})"
+        if settings.scan_roots
+        else "no scan roots are configured — set MAGEWIKI_SCAN_ROOT_1 in .env and restart"
+    )
+    return f"not a directory: {path} — {hint}"
 
-    started = time.monotonic()
-    try:
-        result = await scan_repository(request.path, session)
-    except ScanAlreadyInProgressError as exc:
-        raise HTTPException(status_code=409, detail=str(exc)) from exc
-    duration = time.monotonic() - started
 
+def _scan_response(result: ScanResult, duration_seconds: float) -> ScanResponse:
     return ScanResponse(
         repository=result.repo_root,
-        duration_seconds=duration,
+        duration_seconds=duration_seconds,
         modules_found=result.modules_found,
         modules_created=result.modules_created,
         modules_updated=result.modules_updated,
@@ -196,6 +191,55 @@ async def scan(request: ScanRequest, session: AsyncSession = Depends(get_session
             for m in result.modules
         ],
     )
+
+
+@router.post("/scan", response_model=ScanResponse)
+async def scan(request: ScanRequest, session: AsyncSession = Depends(get_session)) -> ScanResponse:
+    if not os.path.isdir(request.path):
+        raise HTTPException(status_code=400, detail=_not_a_directory_detail(request.path))
+
+    started = time.monotonic()
+    try:
+        result = await scan_repository(request.path, session)
+    except ScanAlreadyInProgressError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+    duration = time.monotonic() - started
+
+    return _scan_response(result, duration)
+
+
+def _format_sse(event: dict) -> str:
+    event_type = event["event"]
+    payload = {k: v for k, v in event.items() if k != "event"}
+    return f"event: {event_type}\ndata: {json.dumps(payload)}\n\n"
+
+
+async def _scan_sse_stream(path: str, session: AsyncSession) -> AsyncIterator[str]:
+    started = time.monotonic()
+    try:
+        async for event in scan_repository_events(path, session):
+            if event["event"] == "done":
+                duration = time.monotonic() - started
+                response = _scan_response(event["result"], duration)
+                yield _format_sse({"event": "done", "result": response.model_dump()})
+            else:
+                yield _format_sse(event)
+    except ScanAlreadyInProgressError as exc:
+        yield _format_sse({"event": "error", "detail": str(exc)})
+
+
+@router.post("/scan/stream")
+async def scan_stream(request: ScanRequest, session: AsyncSession = Depends(get_session)) -> StreamingResponse:
+    """Live progress for a scan — same scan_repository_events() generator the
+    non-streaming /scan drains silently, but piped straight to the client as
+    SSE (same pattern as /chat) so the UI can show a progress bar and a
+    terminal-style log instead of a single multi-minute blocking request with
+    no feedback. Per-module commits in the generator mean GET /modules
+    actually reflects progress mid-scan, not just at the end.
+    """
+    if not os.path.isdir(request.path):
+        raise HTTPException(status_code=400, detail=_not_a_directory_detail(request.path))
+    return StreamingResponse(_scan_sse_stream(request.path, session), media_type="text/event-stream")
 
 
 @router.get("/modules", response_model=list[ModuleSummary])

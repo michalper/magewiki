@@ -1,9 +1,10 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { ChevronDown, ChevronRight } from "lucide-react";
+import { streamSse } from "@/lib/sse";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
@@ -26,6 +27,11 @@ type ModuleDetail = components["schemas"]["ModuleDetail"];
 type ScanResponse =
   paths["/scan"]["post"]["responses"][200]["content"]["application/json"];
 type ScanRootsResponse = components["schemas"]["ScanRootsResponse"];
+type ScanStreamEvent =
+  | { event: "discovered"; total: number }
+  | { event: "module"; name: string; status: string; index: number; total: number; warning: string | null }
+  | { event: "done"; result: ScanResponse }
+  | { event: "error"; detail: string };
 type SortKey = "name" | "class_count" | "plugin_count" | "observer_count" | "last_scanned_at";
 
 const apiUrl = () => process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000";
@@ -48,17 +54,8 @@ async function fetchScanRoots(): Promise<ScanRootsResponse> {
   return res.json();
 }
 
-async function triggerScan(path: string): Promise<ScanResponse> {
-  const res = await fetch(`${apiUrl()}/scan`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ path }),
-  });
-  if (!res.ok) {
-    const body = await res.json().catch(() => null);
-    throw new Error(body?.detail ?? `API responded with ${res.status}`);
-  }
-  return res.json();
+async function streamScan(path: string, onEvent: (event: ScanStreamEvent) => void): Promise<void> {
+  await streamSse<ScanStreamEvent>(`${apiUrl()}/scan/stream`, { path }, onEvent);
 }
 
 const STATE_VARIANTS: Record<string, "default" | "secondary" | "outline" | "destructive"> = {
@@ -390,12 +387,61 @@ export default function ModulesPage() {
   const modulesQuery = useQuery({ queryKey: ["modules"], queryFn: fetchModules });
   const scanRootsQuery = useQuery({ queryKey: ["scan-roots"], queryFn: fetchScanRoots });
 
-  const scanMutation = useMutation({
-    mutationFn: triggerScan,
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["modules"] });
-    },
-  });
+  const [scanStatus, setScanStatus] = useState<"idle" | "running" | "done" | "error">("idle");
+  const [scanLog, setScanLog] = useState<string[]>([]);
+  const [scanProgress, setScanProgress] = useState<{ index: number; total: number } | null>(null);
+  const [scanResult, setScanResult] = useState<ScanResponse | null>(null);
+  const [scanError, setScanError] = useState<string | null>(null);
+  const scanLogRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    scanLogRef.current?.scrollTo({ top: scanLogRef.current.scrollHeight });
+  }, [scanLog]);
+
+  async function startScan() {
+    const trimmed = path.trim();
+    if (!trimmed || scanStatus === "running") return;
+
+    setScanStatus("running");
+    setScanLog([]);
+    setScanProgress(null);
+    setScanResult(null);
+    setScanError(null);
+
+    let eventsSinceRefresh = 0;
+    try {
+      await streamScan(trimmed, (event) => {
+        if (event.event === "discovered") {
+          setScanProgress({ index: 0, total: event.total });
+          setScanLog((log) => [...log, `Found ${event.total} modules, scanning...`]);
+        } else if (event.event === "module") {
+          const icon = event.status === "error" ? "✗" : "✓";
+          const detail = event.warning ? `: ${event.warning}` : ` (${event.status})`;
+          setScanProgress({ index: event.index, total: event.total });
+          setScanLog((log) => [...log, `${icon} ${event.name}${detail}`]);
+          // Refetching on every single module would mean hundreds of refetches
+          // for a large store — throttle to every 5th module, plus always on
+          // "done" below, so the table still fills in live without hammering
+          // the API.
+          eventsSinceRefresh += 1;
+          if (eventsSinceRefresh >= 5) {
+            eventsSinceRefresh = 0;
+            queryClient.invalidateQueries({ queryKey: ["modules"] });
+          }
+        } else if (event.event === "done") {
+          setScanStatus("done");
+          setScanResult(event.result);
+          queryClient.invalidateQueries({ queryKey: ["modules"] });
+        } else if (event.event === "error") {
+          setScanStatus("error");
+          setScanError(event.detail);
+        }
+      });
+    } catch (err) {
+      setScanStatus("error");
+      setScanError((err as Error).message);
+    }
+  }
 
   const sources = useMemo(
     () => Array.from(new Set((modulesQuery.data ?? []).map((m) => m.source_type))).sort(),
@@ -465,7 +511,7 @@ export default function ModulesPage() {
         className="flex gap-2"
         onSubmit={(e) => {
           e.preventDefault();
-          if (path.trim()) scanMutation.mutate(path.trim());
+          startScan();
         }}
       >
         <Input
@@ -474,8 +520,12 @@ export default function ModulesPage() {
           placeholder="/path/to/magento-store-or-module"
           className="font-mono"
         />
-        <Button type="submit" disabled={scanMutation.isPending || !path.trim()}>
-          {scanMutation.isPending ? "Scanning..." : "Scan"}
+        <Button type="submit" disabled={scanStatus === "running" || !path.trim()}>
+          {scanStatus === "running"
+            ? scanProgress
+              ? `Scanning... (${scanProgress.index}/${scanProgress.total})`
+              : "Scanning..."
+            : "Scan"}
         </Button>
       </form>
 
@@ -491,24 +541,40 @@ export default function ModulesPage() {
           </p>
         ))}
 
-      {scanMutation.isError && (
-        <p className="text-destructive text-sm">{(scanMutation.error as Error).message}</p>
+      {(scanStatus === "running" || scanStatus === "done") && scanProgress && (
+        <div className="h-1.5 w-full overflow-hidden rounded-full bg-muted">
+          <div
+            className="h-full rounded-full bg-primary transition-all"
+            style={{ width: `${Math.min(100, (scanProgress.index / scanProgress.total) * 100)}%` }}
+          />
+        </div>
       )}
 
-      {scanMutation.isSuccess && (
+      {scanLog.length > 0 && (
+        <div
+          ref={scanLogRef}
+          className="h-48 overflow-y-auto rounded-2xl bg-card p-3 font-mono text-xs leading-relaxed shadow-sm"
+        >
+          {scanLog.map((line, i) => (
+            <div
+              key={i}
+              className={line.startsWith("✗") ? "text-destructive" : "text-muted-foreground"}
+            >
+              {line}
+            </div>
+          ))}
+        </div>
+      )}
+
+      {scanStatus === "error" && <p className="text-destructive text-sm">{scanError}</p>}
+
+      {scanStatus === "done" && scanResult && (
         <div className="text-sm text-muted-foreground space-y-1">
           <p>
-            Found {scanMutation.data.modules_found} modules (
-            {scanMutation.data.modules_created} created,{" "}
-            {scanMutation.data.modules_updated} updated) in{" "}
-            {scanMutation.data.duration_seconds.toFixed(2)}s.{" "}
-            {scanMutation.data.tasks_enqueued} analysis tasks queued.
+            Found {scanResult.modules_found} modules ({scanResult.modules_created} created,{" "}
+            {scanResult.modules_updated} updated) in {scanResult.duration_seconds.toFixed(2)}s.{" "}
+            {scanResult.tasks_enqueued} analysis tasks queued.
           </p>
-          {scanMutation.data.warnings.map((w, i) => (
-            <p key={i} className="text-orange-600 dark:text-orange-400">
-              {w}
-            </p>
-          ))}
         </div>
       )}
 

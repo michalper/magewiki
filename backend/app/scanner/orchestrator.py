@@ -1,4 +1,5 @@
 import logging
+from collections.abc import AsyncIterator
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from pathlib import Path
@@ -86,34 +87,80 @@ class _ParsedModule:
 
 
 async def scan_repository(repo_root: str, session: AsyncSession) -> ScanResult:
+    """Non-streaming callers (cron, webhook, CLI, evaluation) — drains
+    scan_repository_events() and returns just the final result, same contract
+    as before this function grew live progress events.
+    """
+    result: ScanResult | None = None
+    async for event in scan_repository_events(repo_root, session):
+        if event["event"] == "done":
+            result = event["result"]
+    assert result is not None  # "done" is always the generator's last event
+    return result
+
+
+async def scan_repository_events(repo_root: str, session: AsyncSession) -> AsyncIterator[dict]:
+    """The actual scan — a generator so a streaming caller (POST /scan/stream)
+    can show live progress. Commits per module rather than once at the end
+    specifically so that progress is real: a module is only visible to any
+    other query (including the UI's own) once its own commit lands, not when
+    the whole scan finishes. That rules out the transaction-scoped advisory
+    lock this used before (pg_try_advisory_xact_lock releases at the first
+    commit) — pg_try_advisory_lock/pg_advisory_unlock is session-scoped
+    instead, held for the generator's whole lifetime regardless of how many
+    commits happen in between, and auto-released by Postgres if the
+    connection terminates uncleanly.
+    """
     root = Path(repo_root).resolve()
+    lock_key = {"repo_root": str(root)}
 
     lock_acquired = await session.scalar(
-        text("SELECT pg_try_advisory_xact_lock(hashtextextended(:repo_root, 0))"),
-        {"repo_root": str(root)},
+        text("SELECT pg_try_advisory_lock(hashtextextended(:repo_root, 0))"), lock_key
     )
     if not lock_acquired:
         raise ScanAlreadyInProgressError(f"a scan of {root} is already in progress")
 
+    try:
+        async for event in _run_scan(root, session):
+            yield event
+    finally:
+        await session.scalar(text("SELECT pg_advisory_unlock(hashtextextended(:repo_root, 0))"), lock_key)
+
+
+async def _run_scan(root: Path, session: AsyncSession) -> AsyncIterator[dict]:
     result = ScanResult(repo_root=str(root))
 
     discovered = find_modules(root)
     result.modules_found = len(discovered)
+    yield {"event": "discovered", "total": len(discovered)}
 
     config_map = parse_config_php(root / "app" / "etc" / "config.php")
 
     # Phase A: parse module.xml/composer.json/di.xml/events.xml for every module,
     # and build global plugin/observer class sets — a plugin's class can live in
-    # a different module than the one declaring it in di.xml.
+    # a different module than the one declaring it in di.xml. This has to finish
+    # for every module before Phase B persists any of them, so it can't be folded
+    # into one per-module pass.
     parsed: list[_ParsedModule] = []
     all_plugin_classes: set[str] = set()
     all_observer_classes: set[str] = set()
+    processed = 0
 
     for d in discovered:
         try:
             module_xml = parse_module_xml(d.root / "etc" / "module.xml")
         except InvalidModuleXmlError as exc:
-            result.warnings.append(f"{d.relative_path}: {exc}")
+            message = f"{d.relative_path}: {exc}"
+            result.warnings.append(message)
+            processed += 1
+            yield {
+                "event": "module",
+                "name": str(d.relative_path),
+                "status": "error",
+                "index": processed,
+                "total": len(discovered),
+                "warning": message,
+            }
             continue
 
         composer = parse_composer_json(d.root / "composer.json")
@@ -125,9 +172,11 @@ async def scan_repository(repo_root: str, session: AsyncSession) -> ScanResult:
         all_observer_classes.update(e.observer_class for e in events)
 
     # Phase B: catalog PHP classes, diff file hashes, and persist each module in
-    # its own savepoint. Job specs are only merged into pending_jobs once a
-    # module's savepoint succeeds, so a rolled-back module never contributes jobs.
-    pending_jobs: list[PendingAnalysisJob] = []
+    # its own savepoint, committing immediately after — so it's visible to any
+    # other query right away, and so one module's quality-check calls (real HTTP
+    # to php-analyzer/Packagist/GitHub) don't gate visibility of every module
+    # scanned before it.
+    tasks_enqueued = 0
 
     for pm in parsed:
         outcome = ModuleScanOutcome(name=pm.module_xml.name, status="updated")
@@ -137,7 +186,7 @@ async def scan_repository(repo_root: str, session: AsyncSession) -> ScanResult:
                 await _persist_module(
                     session, root, pm, config_map, all_plugin_classes, all_observer_classes, outcome, module_job_specs
                 )
-            pending_jobs.extend(module_job_specs)
+            await session.commit()
         except Exception as exc:  # noqa: BLE001 - one module's failure must not abort the scan
             outcome.status = "error"
             message = f"{pm.module_xml.name}: {exc}"
@@ -151,6 +200,7 @@ async def scan_repository(repo_root: str, session: AsyncSession) -> ScanResult:
             # alone can be uninformative for some exception types.
             result.warnings.append(message)
             logger.exception("scan_repository: failed to persist module %s", pm.module_xml.name)
+            module_job_specs = []
 
         if outcome.status == "created":
             result.modules_created += 1
@@ -161,46 +211,47 @@ async def scan_repository(repo_root: str, session: AsyncSession) -> ScanResult:
         result.observers_total += outcome.observers
         result.modules.append(outcome)
 
-    # A removal-only diff (files deleted, nothing added/changed) leaves
-    # pending_file_count at 0 with no analyze_file job to ever decrement it to
-    # 0 and trigger synthesize_module — enqueue synthesize_module directly for
-    # these so the module doc gets regenerated and stale chunks for the
-    # deleted files get purged (embed_chunks rebuilds a module's chunks from
-    # scratch every run) instead of the module staying stuck in "pending" forever.
-    synthesize_only = [
-        outcome
-        for outcome in result.modules
-        if outcome.status != "error" and outcome.state == "pending" and outcome.pending_file_count == 0
-    ]
+        # Only enqueue jobs after this module's own commit has succeeded — a
+        # job must never reference module/file state that didn't actually
+        # get persisted.
+        if module_job_specs:
+            pool = await get_arq_pool()
+            for job in module_job_specs:
+                job_id = f"analyze:{job.module_id}:{job.relative_path}:{job.content_hash}"
+                await pool.enqueue_job(
+                    "analyze_file", job.module_id, job.relative_path, job.content_hash, job.module_current_hash,
+                    _job_id=job_id,
+                )
+            tasks_enqueued += len(module_job_specs)
 
-    await session.commit()
-
-    # Only enqueue jobs after the scan's commit has succeeded — a job must never
-    # reference module/file state that didn't actually get persisted.
-    if pending_jobs:
-        pool = await get_arq_pool()
-        for job in pending_jobs:
-            job_id = f"analyze:{job.module_id}:{job.relative_path}:{job.content_hash}"
-            await pool.enqueue_job(
-                "analyze_file",
-                job.module_id,
-                job.relative_path,
-                job.content_hash,
-                job.module_current_hash,
-                _job_id=job_id,
-            )
-    if synthesize_only:
-        pool = await get_arq_pool()
-        for outcome in synthesize_only:
+        # A removal-only diff (files deleted, nothing added/changed) leaves
+        # pending_file_count at 0 with no analyze_file job to ever decrement
+        # it to 0 and trigger synthesize_module — enqueue synthesize_module
+        # directly so the module doc gets regenerated and stale chunks for
+        # the deleted files get purged (embed_chunks rebuilds a module's
+        # chunks from scratch every run) instead of the module staying stuck
+        # in "pending" forever.
+        if outcome.status != "error" and outcome.state == "pending" and outcome.pending_file_count == 0:
+            pool = await get_arq_pool()
             await pool.enqueue_job(
                 "synthesize_module",
                 outcome.module_id,
                 outcome.module_current_hash,
                 _job_id=f"synthesize:{outcome.module_id}:{outcome.module_current_hash}",
             )
-    result.tasks_enqueued = len(pending_jobs)
 
-    return result
+        processed += 1
+        yield {
+            "event": "module",
+            "name": outcome.name,
+            "status": outcome.status,
+            "index": processed,
+            "total": len(discovered),
+            "warning": outcome.warnings[0] if outcome.warnings else None,
+        }
+
+    result.tasks_enqueued = tasks_enqueued
+    yield {"event": "done", "result": result}
 
 
 async def _persist_module(

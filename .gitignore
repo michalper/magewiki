@@ -26,6 +26,9 @@ k8s/base/.env.k8s
 # OS
 .DS_Store
 
+# IDE
+.idea/
+
 # Internal planning docs (not for the public repo)
 MageWiki_AI_Dokumentacja_Koncepcyjna.pdf
 

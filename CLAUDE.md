@@ -64,6 +64,30 @@ fixture-specific vars are unchanged — they serve a different, narrower purpose
 (tests/eval need one named repo, not "any repo under a general area") and keep working
 exactly as before.
 
+**Live scan progress decision (recorded 2026-11-06):** a real scan of a large store
+(hundreds of modules, each incurring real HTTP calls to php-analyzer and
+Packagist/GitHub) can take many minutes, and `POST /scan` was one blocking request —
+the UI showed a static "Scanning..." button with zero feedback until it finished. The
+real blocker wasn't the frontend: `scan_repository()` did all its work in one Postgres
+transaction, committing once at the very end, so no other query (including a polling
+`GET /modules`) could see any progress no matter how the UI was built — deliberate,
+since the whole-scan mutual-exclusion lock (`pg_try_advisory_xact_lock`) was
+transaction-scoped. Fixed by committing per module instead of once at the end (each
+module's ARQ jobs are now enqueued right after its own commit too, so workers can start
+on module 1 while module 500 is still scanning), which forced the lock off the
+transaction's lifetime onto `pg_try_advisory_lock`/`pg_advisory_unlock`
+(session-scoped, held for the whole scan regardless of how many commits happen inside
+it, and auto-released by Postgres if the connection terminates uncleanly — verified
+directly: killing the client mid-scan released the lock within one connection cycle).
+`scan_repository()` became a thin wrapper around a new `scan_repository_events()`
+generator so every existing non-streaming caller (cron, webhook, CLI, evaluation)
+keeps working unchanged; a new `POST /scan/stream` (SSE, same pattern as `/chat`) feeds
+the same generator's events to the Modules page as a progress bar plus a scrollable,
+terminal-style log, and the frontend's SSE parsing got extracted to a shared
+`lib/sse.ts` now that there are two real call sites. Verified end-to-end against a real
+224-module checkout (`magento/magento2`): `GET /modules` genuinely filled in
+progressively during the scan, not just at the end.
+
 ## AI analysis and the README-in-the-database model
 
 The AI returns structured JSON stored in the `module_docs` table (`jsonb` column); the README is only a view rendered from a template. Facts come from parsers; only interpretation comes from AI.
