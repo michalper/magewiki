@@ -42,8 +42,8 @@ _REAL_REDIS_URL = os.environ.get("REDIS_URL", "redis://redis:6379/0")
 _TEST_REDIS_URL = _REAL_REDIS_URL.rsplit("/", 1)[0] + "/15"
 os.environ["REDIS_URL"] = _TEST_REDIS_URL
 
-from app.config import settings  # noqa: E402 - must follow the DATABASE_URL/REDIS_URL redirects above
-from app.db import async_session_factory  # noqa: E402 - ditto
+from app.config import settings
+from app.db import async_session_factory
 
 
 def _ollama_reachable() -> bool:
