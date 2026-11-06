@@ -1,3 +1,4 @@
+import asyncio
 import logging
 from collections.abc import AsyncIterator
 from dataclasses import dataclass, field
@@ -352,7 +353,12 @@ async def _persist_module(
         old_hashes = {}
         old_analyzed = {}
 
-    new_hashes = compute_module_file_hashes(pm.discovered.root)
+    # Reads and SHA256-hashes every file in the module — genuinely blocking disk
+    # I/O and CPU work. Calling it directly here would block the whole event loop
+    # for the duration, stalling every other concurrent coroutine (other modules'
+    # DB work, SSE progress streaming) for as long as this one module's files take
+    # to hash, defeating the per-module-commit live-progress design.
+    new_hashes = await asyncio.to_thread(compute_module_file_hashes, pm.discovered.root)
     diff = diff_file_hashes(old_hashes, new_hashes)
     new_current_hash = aggregate_hash(new_hashes)
 
