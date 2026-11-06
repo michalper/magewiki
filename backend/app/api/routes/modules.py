@@ -523,11 +523,18 @@ async def get_module(module_id: int, session: AsyncSession = Depends(get_session
     ).all()
     doc_row = await session.scalar(select(ModuleDocument.doc).where(ModuleDocument.module_id == module_id))
 
+    all_methods = (
+        await session.scalars(
+            select(PhpClassMethod).where(PhpClassMethod.class_id.in_([c.id for c in classes]))
+        )
+    ).all()
+    methods_by_class_id: dict[int, list[PhpClassMethod]] = {}
+    for m in all_methods:
+        methods_by_class_id.setdefault(m.class_id, []).append(m)
+
     class_summaries = []
     for c in classes:
-        methods = (
-            await session.scalars(select(PhpClassMethod).where(PhpClassMethod.class_id == c.id))
-        ).all()
+        methods = methods_by_class_id.get(c.id, [])
         class_summaries.append(
             PhpClassSummary(
                 fqcn=c.fqcn, kind=c.kind, file_path=c.file_path, is_plugin=c.is_plugin,
@@ -689,8 +696,15 @@ async def get_module_dependency_graph(
     dependencies = (
         await session.scalars(select(ModuleDependency).where(ModuleDependency.module_id == module_id))
     ).all()
+    # Batched instead of one SELECT per dependency — a module with many
+    # composer requirements otherwise issues one query per row here.
+    dependency_names = [dep.depends_on_name for dep in dependencies]
+    modules_by_name = {
+        m.name: m
+        for m in (await session.scalars(select(Module).where(Module.name.in_(dependency_names)))).all()
+    }
     for dep in dependencies:
-        target_module = await session.scalar(select(Module).where(Module.name == dep.depends_on_name))
+        target_module = modules_by_name.get(dep.depends_on_name)
         target_id = add_module_node(target_module) if target_module else add_external_node(dep.depends_on_name)
         add_edge(center_id, target_id, "depends_on")
 
@@ -705,12 +719,19 @@ async def get_module_dependency_graph(
         add_edge(add_module_node(source_module), center_id, "depends_on")
 
     preferences = (await session.scalars(select(DiPreference).where(DiPreference.module_id == module_id))).all()
-    for pref in preferences:
-        owner = (
+    # Batched instead of one SELECT per preference.
+    pref_owner_by_fqcn = {
+        fqcn: owner
+        for owner, fqcn in (
             await session.execute(
-                select(Module).join(PhpClass, PhpClass.module_id == Module.id).where(PhpClass.fqcn == pref.for_type)
+                select(Module, PhpClass.fqcn)
+                .join(PhpClass, PhpClass.module_id == Module.id)
+                .where(PhpClass.fqcn.in_([pref.for_type for pref in preferences]))
             )
-        ).scalars().first()
+        ).all()
+    }
+    for pref in preferences:
+        owner = pref_owner_by_fqcn.get(pref.for_type)
         target_id = add_module_node(owner) if owner else add_external_node(pref.for_type)
         add_edge(center_id, target_id, "overrides")
 
@@ -726,14 +747,19 @@ async def get_module_dependency_graph(
             add_edge(add_module_node(source_module), center_id, "overrides")
 
     plugins = (await session.scalars(select(DiPlugin).where(DiPlugin.module_id == module_id))).all()
-    for plugin in plugins:
-        owner = (
+    # Batched instead of one SELECT per plugin.
+    plugin_owner_by_fqcn = {
+        fqcn: owner
+        for owner, fqcn in (
             await session.execute(
-                select(Module)
+                select(Module, PhpClass.fqcn)
                 .join(PhpClass, PhpClass.module_id == Module.id)
-                .where(PhpClass.fqcn == plugin.intercepted_type)
+                .where(PhpClass.fqcn.in_([plugin.intercepted_type for plugin in plugins]))
             )
-        ).scalars().first()
+        ).all()
+    }
+    for plugin in plugins:
+        owner = plugin_owner_by_fqcn.get(plugin.intercepted_type)
         target_id = add_module_node(owner) if owner else add_external_node(plugin.intercepted_type)
         add_edge(center_id, target_id, "plugins")
 

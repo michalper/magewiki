@@ -1,3 +1,4 @@
+import asyncio
 from pathlib import Path
 
 import httpx
@@ -53,8 +54,13 @@ async def check_php_static_analysis(module_root: Path) -> list[QualityFinding]:
     meaningful as a hard blocker the way v1 treats it.
     """
     findings: list[QualityFinding] = []
-    for tool, check_type in _TOOL_CHECK_TYPES.items():
-        for item in await _call_tool(tool, str(module_root)):
+    tools = list(_TOOL_CHECK_TYPES.items())
+    # Four independent HTTP calls to the sidecar, none depending on another's
+    # result — run concurrently instead of serializing up to 4x60s of timeout
+    # budget per module.
+    results = await asyncio.gather(*(_call_tool(tool, str(module_root)) for tool, _check_type in tools))
+    for (_tool, check_type), items in zip(tools, results, strict=True):
+        for item in items:
             findings.append(
                 QualityFinding(
                     check_type=check_type,
