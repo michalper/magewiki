@@ -13,11 +13,13 @@ from app.models import (
     FileHash,
     Module,
     ModuleDependency,
+    ModuleQualityFinding,
     PhpClass,
     PhpClassMethod,
 )
-from app.scanner.composer_json import parse_composer_json
+from app.scanner.composer_json import composer_completeness_findings, parse_composer_json
 from app.scanner.config_php import parse_config_php
+from app.scanner.deprecated_scanner import scan_deprecated_annotations
 from app.scanner.di_xml import parse_di_xml
 from app.scanner.discovery import find_modules
 from app.scanner.dto import DiscoveredModule, PendingAnalysisJob
@@ -25,6 +27,9 @@ from app.scanner.events_xml import parse_events_xml
 from app.scanner.hashing import aggregate_hash, compute_module_file_hashes, diff_file_hashes
 from app.scanner.module_xml import InvalidModuleXmlError, parse_module_xml
 from app.scanner.php_classes import catalog_module_classes
+from app.scanner.readme_check import has_readme
+from app.scanner.secrets_scanner import scan_hardcoded_secrets
+from app.scanner.test_presence import has_tests
 from app.tasks.queue import get_arq_pool
 
 
@@ -234,6 +239,7 @@ async def _persist_module(
         await session.execute(delete(DiPlugin).where(DiPlugin.module_id == module.id))
         await session.execute(delete(EventObserver).where(EventObserver.module_id == module.id))
         await session.execute(delete(FileHash).where(FileHash.module_id == module.id))
+        await session.execute(delete(ModuleQualityFinding).where(ModuleQualityFinding.module_id == module.id))
         if diff.removed:
             await session.execute(
                 delete(FileAnalysis).where(
@@ -245,6 +251,8 @@ async def _persist_module(
     module.composer_name = pm.composer.name if pm.composer else None
     module.composer_type = pm.composer.type if pm.composer else None
     module.license = pm.composer.license if pm.composer else None
+    module.has_readme = has_readme(pm.discovered.root)
+    module.has_tests = has_tests(pm.discovered.root)
     module.enabled = enabled
     module.last_scanned_at = now
     module.scan_warnings = list(outcome.warnings)
@@ -366,3 +374,20 @@ async def _persist_module(
                         class_id=php_class.id, name=m.name, start_line=m.start_line, end_line=m.end_line
                     )
                 )
+
+    quality_findings = [
+        *composer_completeness_findings(pm.composer),
+        *scan_deprecated_annotations(pm.discovered.root),
+        *scan_hardcoded_secrets(pm.discovered.root),
+    ]
+    for finding in quality_findings:
+        session.add(
+            ModuleQualityFinding(
+                module_id=module.id,
+                check_type=finding.check_type,
+                severity=finding.severity,
+                file_path=finding.file_path,
+                line=finding.line,
+                message=finding.message,
+            )
+        )

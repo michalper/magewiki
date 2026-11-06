@@ -4,7 +4,16 @@ from pathlib import Path
 import pytest
 from sqlalchemy import delete, select, update
 
-from app.models import DiPlugin, DiPreference, EventObserver, FileHash, Module, ModuleDependency, PhpClass
+from app.models import (
+    DiPlugin,
+    DiPreference,
+    EventObserver,
+    FileHash,
+    Module,
+    ModuleDependency,
+    ModuleQualityFinding,
+    PhpClass,
+)
 from app.scanner.orchestrator import scan_repository
 
 
@@ -172,3 +181,36 @@ async def test_scan_repository_flags_plugin_and_observer_classes(demo_store_path
     assert observer.is_observer is True
     assert "directory_convention" in observer.role_signals
     assert "events_xml_observer" in observer.role_signals
+
+
+@pytest.mark.asyncio
+async def test_scan_repository_records_quality_findings_and_replaces_them_on_rescan(
+    demo_store_path: Path, db_session
+):
+    repo_root = str(demo_store_path.resolve())
+    await _delete_module_if_present(db_session, repo_root, "Vendor_Module")
+
+    await scan_repository(repo_root, db_session)
+
+    module = await db_session.scalar(
+        select(Module).where(Module.repo_root == repo_root, Module.name == "Vendor_Module")
+    )
+    # The demo-store fixture has no README and no tests dir, but its
+    # composer.json is otherwise complete except for require-dev phpunit.
+    assert module.has_readme is False
+    assert module.has_tests is False
+
+    findings = (
+        await db_session.scalars(select(ModuleQualityFinding).where(ModuleQualityFinding.module_id == module.id))
+    ).all()
+    assert len(findings) == 1
+    assert findings[0].check_type == "composer_completeness"
+    assert "require-dev phpunit/phpunit" in findings[0].message
+
+    # Re-scan with no changes: the full-replace delete-then-reinsert must not
+    # duplicate rows.
+    await scan_repository(repo_root, db_session)
+    findings_after_rescan = (
+        await db_session.scalars(select(ModuleQualityFinding).where(ModuleQualityFinding.module_id == module.id))
+    ).all()
+    assert len(findings_after_rescan) == 1
