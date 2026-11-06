@@ -88,6 +88,36 @@ terminal-style log, and the frontend's SSE parsing got extracted to a shared
 224-module checkout (`magento/magento2`): `GET /modules` genuinely filled in
 progressively during the scan, not just at the end.
 
+**Advisory-lock connection-pinning fix (recorded 2026-11-06):** the per-module-commit
+design above introduced a real bug, caught by CI (no concurrent activity to blame,
+unlike local dev where a live scan masked it at first as "resource contention"): a
+session-level advisory lock is tied to one specific physical connection, but
+`AsyncSession` checks out a *new* connection from the pool each time it begins a
+transaction (autobegin after every `commit()`) — and the scan commits once per module,
+by design. The lock was acquired through `session` on one connection and "released"
+through `session` later on a different one: `pg_advisory_unlock` silently returned
+`false` (not actually held by the caller), leaking the lock forever onto the original,
+now-idle-in-the-pool connection. Fixed by acquiring the lock through a `Connection`
+obtained directly from `app.db.engine` instead of through `session` — pinned to one
+physical connection for its whole scope, unlike a `Session`, so acquire and release are
+now guaranteed to happen on the same connection regardless of how many commits the
+scan's own session churns through.
+
+**LLM structured-output validation retry (recorded 2026-11-06):** forced tool-use
+(Anthropic/OpenAI-style function calling) heavily biases a model toward the declared
+JSON Schema but does not *guarantee* every required field is present — confirmed in
+production at real scale (a 751-module store): `ModuleDoc`'s `pm_text`/`dev_text`/
+`description` were occasionally omitted even though the schema marks them required,
+and the resulting Pydantic `ValidationError` propagated straight out uncaught, failing
+the whole module (`state=failed`) instead of retrying the way a malformed-JSON response
+already did. `app/analyzer/client.py`'s `_call_tool_use`/`_call_plain_json` now both
+validate each attempt (not just check it parses as JSON) and retry once with the
+validation error appended to the prompt before giving up — same corrective-reprompt
+shape already used for JSON-parse failures, just extended to schema validation too.
+Verified against the real, previously-failing production case (not just mocks):
+manually re-triggered synthesis for a module that had failed with exactly this error,
+confirmed it now persists a complete, real `ModuleDoc`.
+
 ## AI analysis and the README-in-the-database model
 
 The AI returns structured JSON stored in the `module_docs` table (`jsonb` column); the README is only a view rendered from a template. Facts come from parsers; only interpretation comes from AI.
