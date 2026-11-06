@@ -1,7 +1,6 @@
 "use client";
 
 import { useMemo } from "react";
-import Link from "next/link";
 import { useQuery } from "@tanstack/react-query";
 import {
   Bar,
@@ -16,7 +15,6 @@ import {
   XAxis,
   YAxis,
 } from "recharts";
-import { ThemeToggle } from "@/components/theme-toggle";
 import { useChartPalette } from "@/components/chart-palette";
 import type { paths } from "@/lib/api-types";
 
@@ -55,7 +53,7 @@ function StatTile({
 }) {
   return (
     <div
-      className="flex flex-col gap-1 rounded-lg border p-4"
+      className="flex flex-col gap-1 rounded-2xl bg-card p-5 shadow-sm"
       style={accent ? { borderLeftColor: accent, borderLeftWidth: 3 } : undefined}
     >
       <span className="text-xs uppercase tracking-wide text-zinc-500">{label}</span>
@@ -83,7 +81,7 @@ function ProgressRing({
   ];
 
   return (
-    <div className="flex flex-col items-center gap-2 rounded-lg border p-4">
+    <div className="flex flex-col items-center gap-2 rounded-2xl bg-card p-5 shadow-sm">
       <div className="relative h-24 w-24">
         <ResponsiveContainer width="100%" height="100%">
           <PieChart>
@@ -123,7 +121,7 @@ function StateDonut({ modules }: { modules: ModuleSummary[] }) {
   if (counts.length === 0) return null;
 
   return (
-    <div className="rounded-lg border p-4">
+    <div className="rounded-2xl bg-card p-5 shadow-sm">
       <h3 className="text-sm font-medium mb-2 text-zinc-500">Module state</h3>
       <ResponsiveContainer width="100%" height={220}>
         <PieChart>
@@ -163,7 +161,7 @@ function TopFindingsBar({ modules }: { modules: ModuleSummary[] }) {
 
   if (data.length === 0) {
     return (
-      <div className="rounded-lg border p-4">
+      <div className="rounded-2xl bg-card p-5 shadow-sm">
         <h3 className="text-sm font-medium mb-2 text-zinc-500">Top modules by quality findings</h3>
         <p className="text-sm text-zinc-500">No quality findings across any scanned module.</p>
       </div>
@@ -171,7 +169,7 @@ function TopFindingsBar({ modules }: { modules: ModuleSummary[] }) {
   }
 
   return (
-    <div className="rounded-lg border p-4">
+    <div className="rounded-2xl bg-card p-5 shadow-sm">
       <h3 className="text-sm font-medium mb-2 text-zinc-500">Top modules by quality findings</h3>
       <ResponsiveContainer width="100%" height={Math.max(200, data.length * 32)}>
         <BarChart data={data} layout="vertical" margin={{ left: 24 }}>
@@ -212,15 +210,7 @@ export default function StatsPage() {
 
   return (
     <div className="flex flex-col flex-1 gap-6 p-8 max-w-5xl mx-auto w-full">
-      <div className="flex items-center justify-between">
-        <div className="flex items-center gap-4">
-          <h1 className="text-2xl font-semibold tracking-tight">Stats</h1>
-          <Link href="/modules" className="text-sm underline underline-offset-4">
-            ← All modules
-          </Link>
-        </div>
-        <ThemeToggle />
-      </div>
+      <h1 className="text-2xl font-semibold tracking-tight">Stats</h1>
 
       {modulesQuery.isLoading && <p>Loading...</p>}
       {modulesQuery.isError && <p className="text-red-600">Failed to load modules.</p>}

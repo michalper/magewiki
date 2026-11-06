@@ -2,7 +2,6 @@
 
 import Link from "next/link";
 import { useQuery } from "@tanstack/react-query";
-import { ThemeToggle } from "@/components/theme-toggle";
 import { SeverityBadge } from "@/components/severity-badge";
 import type { paths } from "@/lib/api-types";
 
@@ -36,15 +35,7 @@ export default function ReposPage() {
 
   return (
     <div className="flex flex-col flex-1 gap-6 p-8 max-w-5xl mx-auto w-full">
-      <div className="flex items-center justify-between">
-        <div className="flex items-center gap-4">
-          <h1 className="text-2xl font-semibold tracking-tight">Repos</h1>
-          <Link href="/modules" className="text-sm underline underline-offset-4">
-            All modules →
-          </Link>
-        </div>
-        <ThemeToggle />
-      </div>
+      <h1 className="text-2xl font-semibold tracking-tight">Repos</h1>
 
       {reposQuery.isLoading && <p>Loading...</p>}
       {reposQuery.isError && <p className="text-red-600">Failed to load repos.</p>}
@@ -54,12 +45,12 @@ export default function ReposPage() {
       )}
 
       {reposQuery.data && reposQuery.data.length > 0 && (
-        <div className="divide-y rounded-lg border">
+        <div className="flex flex-col gap-3">
           {reposQuery.data.map((repo) => (
             <Link
               key={repo.repo_root}
               href={`/modules?repo=${encodeURIComponent(repo.repo_root)}`}
-              className="flex flex-col gap-2 p-4 hover:bg-muted/50"
+              className="flex flex-col gap-2 rounded-2xl bg-card p-5 shadow-sm transition-colors hover:bg-accent/40"
             >
               <div className="flex items-center justify-between">
                 <span className="font-mono text-sm">{repo.repo_root}</span>

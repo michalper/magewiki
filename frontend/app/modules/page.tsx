@@ -8,7 +8,6 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { SeverityBadge, type Severity } from "@/components/severity-badge";
-import { ThemeToggle } from "@/components/theme-toggle";
 import { notifyQueryParamChange, useQueryParam } from "@/lib/use-query-param";
 import {
   Table,
@@ -420,15 +419,7 @@ export default function ModulesPage() {
 
   return (
     <div className="flex flex-col flex-1 gap-6 p-8 max-w-7xl mx-auto w-full">
-      <div className="flex items-center justify-between">
-        <div className="flex items-center gap-4">
-          <h1 className="text-2xl font-semibold tracking-tight">Modules</h1>
-          <Link href="/repos" className="text-sm underline underline-offset-4">
-            Repos →
-          </Link>
-        </div>
-        <ThemeToggle />
-      </div>
+      <h1 className="text-2xl font-semibold tracking-tight">Modules</h1>
 
       {repoFilter && (
         <div className="flex items-center gap-2 text-sm">
@@ -527,6 +518,7 @@ export default function ModulesPage() {
             </span>
           </div>
 
+          <div className="rounded-2xl bg-card p-2 shadow-sm">
           <Table>
             <TableHeader>
               <TableRow>
@@ -589,6 +581,7 @@ export default function ModulesPage() {
               ))}
             </TableBody>
           </Table>
+          </div>
         </>
       )}
     </div>
