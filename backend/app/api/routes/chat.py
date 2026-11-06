@@ -1,4 +1,3 @@
-import json
 from collections.abc import AsyncIterator
 
 from fastapi import APIRouter, Depends
@@ -8,6 +7,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.agent.loop import run_agent
 from app.agent.prompt import AUDIENCE_DEV, AUDIENCE_PM
+from app.api.sse import format_sse
 from app.db import get_session
 
 router = APIRouter()
@@ -23,15 +23,9 @@ class ChatRequest(BaseModel):
     audience: str = AUDIENCE_DEV
 
 
-def _format_sse(event: dict) -> str:
-    event_type = event["event"]
-    payload = {k: v for k, v in event.items() if k != "event"}
-    return f"event: {event_type}\ndata: {json.dumps(payload)}\n\n"
-
-
 async def _sse_stream(session: AsyncSession, messages: list[dict], audience: str) -> AsyncIterator[str]:
     async for event in run_agent(session, messages, audience):
-        yield _format_sse(event)
+        yield format_sse(event)
 
 
 @router.post("/chat")
