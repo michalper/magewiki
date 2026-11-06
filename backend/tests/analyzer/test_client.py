@@ -1,4 +1,5 @@
 import json
+from decimal import Decimal
 from types import SimpleNamespace
 
 import pytest
@@ -58,7 +59,13 @@ async def test_summarize_file_retries_tool_use_when_a_required_field_is_missing(
     )
 
     assert summary.file_summary == "Handles checkout totals."
-    assert result.tokens_in == 100
+    # The discarded first attempt still made a real, billed LLM call — its cost
+    # must still reach the budget tracker, not just the attempt that ultimately
+    # succeeded. Both attempts cost 100/50 tokens and $0.001 (per the mocks
+    # above), so the returned total must reflect both, not just the second.
+    assert result.tokens_in == 200
+    assert result.tokens_out == 100
+    assert result.cost_usd == Decimal("0.002")
 
 
 @pytest.mark.asyncio
@@ -92,11 +99,18 @@ async def test_call_plain_json_retries_when_a_required_field_is_missing(monkeypa
     monkeypatch.setattr("app.analyzer.client.litellm.acompletion", fake_acompletion)
     monkeypatch.setattr("app.analyzer.client.litellm.completion_cost", lambda **k: 0.001)
 
-    summary, _ = await summarize_file(
+    summary, result = await summarize_file(
         "Model/Total.php", "<?php class Total {}", model="some/other-model", api_key="test-key"
     )
 
     assert summary.file_summary == "Handles checkout totals."
+    # Same cost-accounting fix within the plain-JSON fallback's own 2 attempts
+    # (the first, tool-use-unsupported attempt's cost is a separate, documented,
+    # out-of-scope gap — see client.py's comment on _call_tool_use's early
+    # "return None" paths).
+    assert result.tokens_in == 200
+    assert result.tokens_out == 100
+    assert result.cost_usd == Decimal("0.002")
 
 
 @pytest.mark.asyncio
