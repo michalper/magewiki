@@ -120,19 +120,17 @@ MVP = Phases 0–5. Each phase is done separately: first a plan for approval, th
 | 7 | Evaluation suite (recall@k, MRR, negative/enumeration questions), README, GIF | Results in the README, vector vs. FTS vs. hybrid chart |
 | 7b | CI/CD: GitHub Actions (lint, tests, Docker build, RAG eval on PR) | recall@k posted as a PR comment |
 | 8 | Kubernetes: Helm or Kustomize, scan CronJob, tested on `kind` | Full stack runs on a local cluster |
-| 9 | One cloud (GCP or Azure) via Terraform, managed Postgres + pgvector | Public demo deployment |
+| 9 | Parser-only quality checks (composer completeness, README presence, `@deprecated`, hardcoded secrets, test presence) + badge/KPI-ring UI foundation | New checks show up as badges on the module list and a stats page with KPI rings |
+| 10 | Dependency intelligence: CVE/security-advisory check + abandoned/outdated check | A module with a known-vulnerable dependency shows a blocking CVE badge citing the advisory |
+| 11 | Multi-repo fleet view | A repos-list page aggregates health across every repo MageWiki has scanned |
+| 12 | PHP static-analysis toolchain (PHPStan/PHPMD/phpcs/PhpMetrics/Rector) — optional/stretch, needs explicit sign-off before starting given the PHP-toolchain architecture change | Equivalent scanners run against a module and their findings show up as badges |
+| 13 | One cloud (GCP or Azure) via Terraform, managed Postgres + pgvector | Public demo deployment |
 
 Version 1.0 ships before Phases 7b–9: a finished project with six technologies beats an unfinished one with ten.
 
-### Backlog ideas for Phase 8+ (inspired by Modularz)
+### Backlog: porting ideas from v1
 
-Modularz is the author's own prior, unrelated internal project (not public, not MageWiki code) — a multi-repo/multi-client Magento module quality portal. It's the conceptual predecessor to MageWiki-AI. Reviewed for feature/UX ideas worth considering for a future phase; nothing here is scheduled or committed, and none of it is copied code — concepts only:
-
-- **UI**: a badge-list cell summarizing N scanner findings (color-coded by severity, clickable → filters) as an alternative to plain counts in the module table; a stats page with small donut/KPI tiles per boolean signal (README present, tests present, deprecated, etc.), each segment clickable to filter the module list.
-- **Parser-only checks** (fit "facts from parsers, not AI", in scope for a single repo): composer.json completeness heuristic, README-presence check, `@deprecated` annotation scan.
-- **Needs discussion before adding** (new external dependency/network call, not yet justified): abandoned/outdated Packagist dependency check, CVE/security-advisory check — would need their own cache/TTL table.
-- **Candidate for its own new phase, not a drive-by addition**: PHP-compatibility scanning via a Rector dry-run + an "upgrade readiness" score — Modularz's headline feature, but a genuinely new, heavyweight capability (shelling out to Rector).
-- **Explicitly out of scope for MageWiki** (inherently multi-repo/multi-client SaaS concepts MageWiki doesn't have): dead-branch detection, a cross-repo/client usage index, a test-runner queue. MageWiki is single-repo, read-only, no "client" concept.
+The author previously built a PHP tool for his employer Cognize — the predecessor MageWiki-AI (the open-source Python rewrite) succeeds, referred to here only as "v1" since it's Cognize's property. Phases 9–12 above come from a curated review of what v1 does in production; the full inventory (what's ported, what's skipped as Cognize-internal, and the detailed CVE-check design) lives in `docs/v1-port-roadmap.md`. Nothing here is copied code — concepts only, per the "no client-confidential code" rule below.
 
 ## Working method
 
