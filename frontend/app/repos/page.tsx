@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { useQuery } from "@tanstack/react-query";
+import { QualityBadges } from "@/components/quality-badges";
 import { SeverityBadge } from "@/components/severity-badge";
 import { apiFetch } from "@/lib/api";
 import type { paths } from "@/lib/api-types";
@@ -17,23 +18,6 @@ async function fetchRepos(): Promise<RepoSummary[]> {
 
 async function fetchModuleOverlap(): Promise<ModuleOverlapEntry[]> {
   return apiFetch("/modules/overlap");
-}
-
-function totalFindings(r: RepoSummary): number {
-  return (
-    r.composer_issue_count +
-    r.deprecated_count +
-    r.secrets_count +
-    r.security_advisory_count +
-    r.abandoned_dependency_count +
-    r.outdated_dependency_count +
-    r.phpstan_error_count +
-    r.phpmd_issue_count +
-    r.phpcs_violation_count +
-    r.php_compat_issue_count +
-    r.magento_php_incompatible_count +
-    r.magento_version_blocker_count
-  );
 }
 
 export default function ReposPage() {
@@ -78,58 +62,7 @@ export default function ReposPage() {
                 </span>
                 <span>Last scanned {new Date(repo.last_scanned_at).toLocaleString()}</span>
               </div>
-              <div className="flex flex-wrap gap-1">
-                {totalFindings(repo) === 0 ? (
-                  <SeverityBadge severity="ok">clean</SeverityBadge>
-                ) : (
-                  <>
-                    {repo.secrets_count > 0 && (
-                      <SeverityBadge severity="blocking">{repo.secrets_count} secrets</SeverityBadge>
-                    )}
-                    {repo.security_advisory_count > 0 && (
-                      <SeverityBadge severity="blocking">{repo.security_advisory_count} CVE</SeverityBadge>
-                    )}
-                    {repo.composer_issue_count > 0 && (
-                      <SeverityBadge severity="warning">{repo.composer_issue_count} composer</SeverityBadge>
-                    )}
-                    {repo.deprecated_count > 0 && (
-                      <SeverityBadge severity="warning">{repo.deprecated_count} deprecated</SeverityBadge>
-                    )}
-                    {repo.abandoned_dependency_count > 0 && (
-                      <SeverityBadge severity="warning">
-                        {repo.abandoned_dependency_count} abandoned
-                      </SeverityBadge>
-                    )}
-                    {repo.outdated_dependency_count > 0 && (
-                      <SeverityBadge severity="info">{repo.outdated_dependency_count} outdated</SeverityBadge>
-                    )}
-                    {repo.phpstan_error_count > 0 && (
-                      <SeverityBadge severity="warning">{repo.phpstan_error_count} phpstan</SeverityBadge>
-                    )}
-                    {repo.phpmd_issue_count > 0 && (
-                      <SeverityBadge severity="warning">{repo.phpmd_issue_count} phpmd</SeverityBadge>
-                    )}
-                    {repo.phpcs_violation_count > 0 && (
-                      <SeverityBadge severity="warning">{repo.phpcs_violation_count} phpcs</SeverityBadge>
-                    )}
-                    {repo.php_compat_issue_count > 0 && (
-                      <SeverityBadge severity="warning">
-                        {repo.php_compat_issue_count} php-compat
-                      </SeverityBadge>
-                    )}
-                    {repo.magento_php_incompatible_count > 0 && (
-                      <SeverityBadge severity="blocking">
-                        {repo.magento_php_incompatible_count} magento-php
-                      </SeverityBadge>
-                    )}
-                    {repo.magento_version_blocker_count > 0 && (
-                      <SeverityBadge severity="blocking">
-                        {repo.magento_version_blocker_count} magento-upgrade
-                      </SeverityBadge>
-                    )}
-                  </>
-                )}
-              </div>
+              <QualityBadges findingCounts={repo.finding_counts} />
             </Link>
           ))}
         </div>

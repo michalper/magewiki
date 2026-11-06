@@ -1,5 +1,6 @@
 import os
 import time
+from collections import Counter
 from collections.abc import AsyncIterator
 from datetime import datetime
 from typing import cast
@@ -92,18 +93,14 @@ class ModuleSummary(BaseModel):
     has_readme: bool = False
     has_tests: bool = False
     has_module_doc: bool = False
-    composer_issue_count: int = 0
-    deprecated_count: int = 0
-    secrets_count: int = 0
-    security_advisory_count: int = 0
-    abandoned_dependency_count: int = 0
-    outdated_dependency_count: int = 0
-    phpstan_error_count: int = 0
-    phpmd_issue_count: int = 0
-    phpcs_violation_count: int = 0
-    php_compat_issue_count: int = 0
-    magento_php_incompatible_count: int = 0
-    magento_version_blocker_count: int = 0
+    # check_type -> count, e.g. {"phpstan_error": 3, "hardcoded_secret": 1}. A
+    # generic dict instead of one flat field per check_type (there were 12,
+    # added incrementally across Phases 9/10/12 — CLAUDE.md's own Phase 12
+    # note already flagged the flat-field shape as outgrowing "leave it
+    # alone", confirmed by every one of those additions touching this model,
+    # list_modules/list_repos's count-building code, and 3-4 frontend files
+    # each). A new check_type now needs zero changes here.
+    finding_counts: dict[str, int] = {}
 
 
 class MethodSummary(BaseModel):
@@ -256,6 +253,21 @@ async def scan_stream(request: ScanRequest, session: AsyncSession = Depends(get_
     return StreamingResponse(_scan_sse_stream(request.path, session), media_type="text/event-stream")
 
 
+async def _quality_finding_counts_by_module(session: AsyncSession) -> dict[int, dict[str, int]]:
+    """check_type counts grouped by module_id, for every module — shared by
+    list_modules/list_repos, previously the exact same query copy-pasted in
+    both.
+    """
+    rows = await session.execute(
+        select(ModuleQualityFinding.module_id, ModuleQualityFinding.check_type, func.count(ModuleQualityFinding.id))
+        .group_by(ModuleQualityFinding.module_id, ModuleQualityFinding.check_type)
+    )
+    counts_by_module: dict[int, dict[str, int]] = {}
+    for module_id, check_type, count in rows:
+        counts_by_module.setdefault(module_id, {})[check_type] = count
+    return counts_by_module
+
+
 @router.get("/modules", response_model=list[ModuleSummary])
 async def list_modules(session: AsyncSession = Depends(get_session)) -> list[ModuleSummary]:
     class_count = (
@@ -283,14 +295,7 @@ async def list_modules(session: AsyncSession = Depends(get_session)) -> list[Mod
         .order_by(Module.name)
     )
     module_rows = rows.all()
-
-    finding_count_rows = await session.execute(
-        select(ModuleQualityFinding.module_id, ModuleQualityFinding.check_type, func.count(ModuleQualityFinding.id))
-        .group_by(ModuleQualityFinding.module_id, ModuleQualityFinding.check_type)
-    )
-    counts_by_module: dict[int, dict[str, int]] = {}
-    for module_id, check_type, count in finding_count_rows:
-        counts_by_module.setdefault(module_id, {})[check_type] = count
+    counts_by_module = await _quality_finding_counts_by_module(session)
 
     summaries = []
     for row in module_rows:
@@ -321,22 +326,7 @@ async def list_modules(session: AsyncSession = Depends(get_session)) -> list[Mod
                 has_readme=module.has_readme,
                 has_tests=module.has_tests,
                 has_module_doc=doc is not None,
-                composer_issue_count=counts_by_module.get(module.id, {}).get("composer_completeness", 0),
-                deprecated_count=counts_by_module.get(module.id, {}).get("deprecated_annotation", 0),
-                secrets_count=counts_by_module.get(module.id, {}).get("hardcoded_secret", 0),
-                security_advisory_count=counts_by_module.get(module.id, {}).get("security_advisory", 0),
-                abandoned_dependency_count=counts_by_module.get(module.id, {}).get("abandoned_dependency", 0),
-                outdated_dependency_count=counts_by_module.get(module.id, {}).get("outdated_dependency", 0),
-                phpstan_error_count=counts_by_module.get(module.id, {}).get("phpstan_error", 0),
-                phpmd_issue_count=counts_by_module.get(module.id, {}).get("phpmd_issue", 0),
-                phpcs_violation_count=counts_by_module.get(module.id, {}).get("phpcs_violation", 0),
-                php_compat_issue_count=counts_by_module.get(module.id, {}).get("php_compat_issue", 0),
-                magento_php_incompatible_count=counts_by_module.get(module.id, {}).get(
-                    "magento_php_incompatible", 0
-                ),
-                magento_version_blocker_count=counts_by_module.get(module.id, {}).get(
-                    "magento_version_blocker", 0
-                ),
+                finding_counts=counts_by_module.get(module.id, {}),
             )
         )
     return summaries
@@ -354,18 +344,7 @@ class RepoSummary(BaseModel):
     enabled_count: int
     has_readme_count: int
     has_tests_count: int
-    composer_issue_count: int
-    deprecated_count: int
-    secrets_count: int
-    security_advisory_count: int
-    abandoned_dependency_count: int
-    outdated_dependency_count: int
-    phpstan_error_count: int
-    phpmd_issue_count: int
-    phpcs_violation_count: int
-    php_compat_issue_count: int
-    magento_php_incompatible_count: int
-    magento_version_blocker_count: int
+    finding_counts: dict[str, int] = {}
     last_scanned_at: datetime
 
 
@@ -384,13 +363,7 @@ async def list_repos(session: AsyncSession = Depends(get_session)) -> list[RepoS
         )
     ).all()
 
-    finding_count_rows = await session.execute(
-        select(ModuleQualityFinding.module_id, ModuleQualityFinding.check_type, func.count(ModuleQualityFinding.id))
-        .group_by(ModuleQualityFinding.module_id, ModuleQualityFinding.check_type)
-    )
-    counts_by_module: dict[int, dict[str, int]] = {}
-    for module_id, check_type, count in finding_count_rows:
-        counts_by_module.setdefault(module_id, {})[check_type] = count
+    counts_by_module = await _quality_finding_counts_by_module(session)
 
     repos: dict[str, dict] = {}
     for repo_root, module_id, enabled, has_readme, has_tests, last_scanned_at in module_rows:
@@ -401,18 +374,7 @@ async def list_repos(session: AsyncSession = Depends(get_session)) -> list[RepoS
                 "enabled_count": 0,
                 "has_readme_count": 0,
                 "has_tests_count": 0,
-                "composer_issue_count": 0,
-                "deprecated_count": 0,
-                "secrets_count": 0,
-                "security_advisory_count": 0,
-                "abandoned_dependency_count": 0,
-                "outdated_dependency_count": 0,
-                "phpstan_error_count": 0,
-                "phpmd_issue_count": 0,
-                "phpcs_violation_count": 0,
-                "php_compat_issue_count": 0,
-                "magento_php_incompatible_count": 0,
-                "magento_version_blocker_count": 0,
+                "finding_counts": {},
                 "last_scanned_at": last_scanned_at,
             },
         )
@@ -423,19 +385,8 @@ async def list_repos(session: AsyncSession = Depends(get_session)) -> list[RepoS
             repo["has_readme_count"] += 1
         if has_tests:
             repo["has_tests_count"] += 1
-        counts = counts_by_module.get(module_id, {})
-        repo["composer_issue_count"] += counts.get("composer_completeness", 0)
-        repo["deprecated_count"] += counts.get("deprecated_annotation", 0)
-        repo["secrets_count"] += counts.get("hardcoded_secret", 0)
-        repo["security_advisory_count"] += counts.get("security_advisory", 0)
-        repo["abandoned_dependency_count"] += counts.get("abandoned_dependency", 0)
-        repo["outdated_dependency_count"] += counts.get("outdated_dependency", 0)
-        repo["phpstan_error_count"] += counts.get("phpstan_error", 0)
-        repo["phpmd_issue_count"] += counts.get("phpmd_issue", 0)
-        repo["phpcs_violation_count"] += counts.get("phpcs_violation", 0)
-        repo["php_compat_issue_count"] += counts.get("php_compat_issue", 0)
-        repo["magento_php_incompatible_count"] += counts.get("magento_php_incompatible", 0)
-        repo["magento_version_blocker_count"] += counts.get("magento_version_blocker", 0)
+        for check_type, count in counts_by_module.get(module_id, {}).items():
+            repo["finding_counts"][check_type] = repo["finding_counts"].get(check_type, 0) + count
         repo["last_scanned_at"] = max(repo["last_scanned_at"], last_scanned_at)
 
     return [RepoSummary(repo_root=repo_root, **data) for repo_root, data in sorted(repos.items())]
@@ -560,22 +511,7 @@ async def get_module(module_id: int, session: AsyncSession = Depends(get_session
         has_readme=module.has_readme,
         has_tests=module.has_tests,
         has_module_doc=doc_row is not None,
-        composer_issue_count=sum(1 for f in quality_findings if f.check_type == "composer_completeness"),
-        deprecated_count=sum(1 for f in quality_findings if f.check_type == "deprecated_annotation"),
-        secrets_count=sum(1 for f in quality_findings if f.check_type == "hardcoded_secret"),
-        security_advisory_count=sum(1 for f in quality_findings if f.check_type == "security_advisory"),
-        abandoned_dependency_count=sum(1 for f in quality_findings if f.check_type == "abandoned_dependency"),
-        outdated_dependency_count=sum(1 for f in quality_findings if f.check_type == "outdated_dependency"),
-        phpstan_error_count=sum(1 for f in quality_findings if f.check_type == "phpstan_error"),
-        phpmd_issue_count=sum(1 for f in quality_findings if f.check_type == "phpmd_issue"),
-        phpcs_violation_count=sum(1 for f in quality_findings if f.check_type == "phpcs_violation"),
-        php_compat_issue_count=sum(1 for f in quality_findings if f.check_type == "php_compat_issue"),
-        magento_php_incompatible_count=sum(
-            1 for f in quality_findings if f.check_type == "magento_php_incompatible"
-        ),
-        magento_version_blocker_count=sum(
-            1 for f in quality_findings if f.check_type == "magento_version_blocker"
-        ),
+        finding_counts=dict(Counter(f.check_type for f in quality_findings)),
         dependencies=[d.depends_on_name for d in dependencies],
         classes=class_summaries,
         preferences=[DiPreferenceSummary(for_type=p.for_type, preference_type=p.preference_type) for p in preferences],

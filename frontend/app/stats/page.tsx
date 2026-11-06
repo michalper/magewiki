@@ -17,12 +17,17 @@ import {
   YAxis,
 } from "recharts";
 import { useChartPalette } from "@/components/chart-palette";
+import { sumFindingCounts } from "@/components/quality-badges";
 import { apiFetch } from "@/lib/api";
 import type { paths } from "@/lib/api-types";
 import { useDocumentTitle } from "@/lib/use-document-title";
 
 type ModuleSummary =
   paths["/modules"]["get"]["responses"][200]["content"]["application/json"][number];
+
+function sumByCheckType(modules: ModuleSummary[], checkType: string): number {
+  return modules.reduce((sum, m) => sum + (m.finding_counts[checkType] ?? 0), 0);
+}
 
 // Fixed order, never derived from the data being rendered — see CLAUDE.md's
 // module state machine and the dataviz skill's "assign categorical hues in
@@ -142,19 +147,7 @@ function TopFindingsBar({ modules }: { modules: ModuleSummary[] }) {
   const data = modules
     .map((m) => ({
       name: m.name,
-      total:
-        m.composer_issue_count +
-        m.deprecated_count +
-        m.secrets_count +
-        m.security_advisory_count +
-        m.abandoned_dependency_count +
-        m.outdated_dependency_count +
-        m.phpstan_error_count +
-        m.phpmd_issue_count +
-        m.phpcs_violation_count +
-        m.php_compat_issue_count +
-        m.magento_php_incompatible_count +
-        m.magento_version_blocker_count,
+      total: sumFindingCounts(m.finding_counts),
     }))
     .filter((d) => d.total > 0)
     .sort((a, b) => b.total - a.total)
@@ -206,20 +199,18 @@ export default function StatsPage() {
       total: modules.length,
       withReadme: modules.filter((m) => m.has_readme).length,
       withTests: modules.filter((m) => m.has_tests).length,
-      composerIssues: modules.reduce((sum, m) => sum + m.composer_issue_count, 0),
-      deprecated: modules.reduce((sum, m) => sum + m.deprecated_count, 0),
-      secrets: modules.reduce((sum, m) => sum + m.secrets_count, 0),
-      securityAdvisories: modules.reduce((sum, m) => sum + m.security_advisory_count, 0),
-      abandoned: modules.reduce((sum, m) => sum + m.abandoned_dependency_count, 0),
-      outdated: modules.reduce((sum, m) => sum + m.outdated_dependency_count, 0),
-      phpstanErrors: modules.reduce((sum, m) => sum + m.phpstan_error_count, 0),
-      phpmdIssues: modules.reduce((sum, m) => sum + m.phpmd_issue_count, 0),
-      phpcsViolations: modules.reduce((sum, m) => sum + m.phpcs_violation_count, 0),
-      phpCompatIssues: modules.reduce((sum, m) => sum + m.php_compat_issue_count, 0),
-      magentoUpgradeBlockers: modules.reduce(
-        (sum, m) => sum + m.magento_php_incompatible_count + m.magento_version_blocker_count,
-        0
-      ),
+      composerIssues: sumByCheckType(modules, "composer_completeness"),
+      deprecated: sumByCheckType(modules, "deprecated_annotation"),
+      secrets: sumByCheckType(modules, "hardcoded_secret"),
+      securityAdvisories: sumByCheckType(modules, "security_advisory"),
+      abandoned: sumByCheckType(modules, "abandoned_dependency"),
+      outdated: sumByCheckType(modules, "outdated_dependency"),
+      phpstanErrors: sumByCheckType(modules, "phpstan_error"),
+      phpmdIssues: sumByCheckType(modules, "phpmd_issue"),
+      phpcsViolations: sumByCheckType(modules, "phpcs_violation"),
+      phpCompatIssues: sumByCheckType(modules, "php_compat_issue"),
+      magentoUpgradeBlockers:
+        sumByCheckType(modules, "magento_php_incompatible") + sumByCheckType(modules, "magento_version_blocker"),
     }),
     [modules]
   );

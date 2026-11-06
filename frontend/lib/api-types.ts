@@ -446,65 +446,12 @@ export interface components {
              */
             has_module_doc: boolean;
             /**
-             * Composer Issue Count
-             * @default 0
+             * Finding Counts
+             * @default {}
              */
-            composer_issue_count: number;
-            /**
-             * Deprecated Count
-             * @default 0
-             */
-            deprecated_count: number;
-            /**
-             * Secrets Count
-             * @default 0
-             */
-            secrets_count: number;
-            /**
-             * Security Advisory Count
-             * @default 0
-             */
-            security_advisory_count: number;
-            /**
-             * Abandoned Dependency Count
-             * @default 0
-             */
-            abandoned_dependency_count: number;
-            /**
-             * Outdated Dependency Count
-             * @default 0
-             */
-            outdated_dependency_count: number;
-            /**
-             * Phpstan Error Count
-             * @default 0
-             */
-            phpstan_error_count: number;
-            /**
-             * Phpmd Issue Count
-             * @default 0
-             */
-            phpmd_issue_count: number;
-            /**
-             * Phpcs Violation Count
-             * @default 0
-             */
-            phpcs_violation_count: number;
-            /**
-             * Php Compat Issue Count
-             * @default 0
-             */
-            php_compat_issue_count: number;
-            /**
-             * Magento Php Incompatible Count
-             * @default 0
-             */
-            magento_php_incompatible_count: number;
-            /**
-             * Magento Version Blocker Count
-             * @default 0
-             */
-            magento_version_blocker_count: number;
+            finding_counts: {
+                [key: string]: number;
+            };
             /** Dependencies */
             dependencies: string[];
             /** Classes */
@@ -607,65 +554,12 @@ export interface components {
              */
             has_module_doc: boolean;
             /**
-             * Composer Issue Count
-             * @default 0
+             * Finding Counts
+             * @default {}
              */
-            composer_issue_count: number;
-            /**
-             * Deprecated Count
-             * @default 0
-             */
-            deprecated_count: number;
-            /**
-             * Secrets Count
-             * @default 0
-             */
-            secrets_count: number;
-            /**
-             * Security Advisory Count
-             * @default 0
-             */
-            security_advisory_count: number;
-            /**
-             * Abandoned Dependency Count
-             * @default 0
-             */
-            abandoned_dependency_count: number;
-            /**
-             * Outdated Dependency Count
-             * @default 0
-             */
-            outdated_dependency_count: number;
-            /**
-             * Phpstan Error Count
-             * @default 0
-             */
-            phpstan_error_count: number;
-            /**
-             * Phpmd Issue Count
-             * @default 0
-             */
-            phpmd_issue_count: number;
-            /**
-             * Phpcs Violation Count
-             * @default 0
-             */
-            phpcs_violation_count: number;
-            /**
-             * Php Compat Issue Count
-             * @default 0
-             */
-            php_compat_issue_count: number;
-            /**
-             * Magento Php Incompatible Count
-             * @default 0
-             */
-            magento_php_incompatible_count: number;
-            /**
-             * Magento Version Blocker Count
-             * @default 0
-             */
-            magento_version_blocker_count: number;
+            finding_counts: {
+                [key: string]: number;
+            };
         };
         /** OverlapStoreEntry */
         OverlapStoreEntry: {
@@ -724,30 +618,13 @@ export interface components {
             has_readme_count: number;
             /** Has Tests Count */
             has_tests_count: number;
-            /** Composer Issue Count */
-            composer_issue_count: number;
-            /** Deprecated Count */
-            deprecated_count: number;
-            /** Secrets Count */
-            secrets_count: number;
-            /** Security Advisory Count */
-            security_advisory_count: number;
-            /** Abandoned Dependency Count */
-            abandoned_dependency_count: number;
-            /** Outdated Dependency Count */
-            outdated_dependency_count: number;
-            /** Phpstan Error Count */
-            phpstan_error_count: number;
-            /** Phpmd Issue Count */
-            phpmd_issue_count: number;
-            /** Phpcs Violation Count */
-            phpcs_violation_count: number;
-            /** Php Compat Issue Count */
-            php_compat_issue_count: number;
-            /** Magento Php Incompatible Count */
-            magento_php_incompatible_count: number;
-            /** Magento Version Blocker Count */
-            magento_version_blocker_count: number;
+            /**
+             * Finding Counts
+             * @default {}
+             */
+            finding_counts: {
+                [key: string]: number;
+            };
             /**
              * Last Scanned At
              * Format: date-time

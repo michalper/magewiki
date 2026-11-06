@@ -104,8 +104,8 @@ async def test_list_repos_aggregates_health_per_repo(repos_fixture):
     assert a["enabled_count"] == 1
     assert a["has_readme_count"] == 1
     assert a["has_tests_count"] == 0
-    assert a["secrets_count"] == 1
-    assert a["composer_issue_count"] == 1
+    assert a["finding_counts"]["hardcoded_secret"] == 1
+    assert a["finding_counts"]["composer_completeness"] == 1
     assert a["last_scanned_at"].startswith("2026-01-02")
 
     b = by_repo[repo_b]
@@ -113,4 +113,4 @@ async def test_list_repos_aggregates_health_per_repo(repos_fixture):
     assert b["enabled_count"] == 1
     assert b["has_readme_count"] == 1
     assert b["has_tests_count"] == 1
-    assert b["secrets_count"] == 0
+    assert b["finding_counts"] == {}
