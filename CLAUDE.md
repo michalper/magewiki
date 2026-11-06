@@ -123,10 +123,42 @@ MVP = Phases 0–5. Each phase is done separately: first a plan for approval, th
 | 9 | Parser-only quality checks (composer completeness, README presence, `@deprecated`, hardcoded secrets, test presence) + badge/KPI-ring UI foundation | New checks show up as badges on the module list and a stats page with KPI rings |
 | 10 | Dependency intelligence: CVE/security-advisory check + abandoned/outdated check | A module with a known-vulnerable dependency shows a blocking CVE badge citing the advisory |
 | 11 | Multi-repo fleet view | A repos-list page aggregates health across every repo MageWiki has scanned |
-| 12 | PHP static-analysis toolchain (PHPStan/PHPMD/phpcs/PhpMetrics/Rector) — optional/stretch, needs explicit sign-off before starting given the PHP-toolchain architecture change | Equivalent scanners run against a module and their findings show up as badges |
+| 12 | PHP static-analysis toolchain (PHPStan/PHPMD/phpcs/Rector) | Equivalent scanners run against a module and their findings show up as badges |
 | 13 | One cloud (GCP or Azure) via Terraform, managed Postgres + pgvector | Public demo deployment |
 
 Version 1.0 ships before Phases 7b–9: a finished project with six technologies beats an unfinished one with ten.
+
+**Phase 9 decision (recorded 2026-11-06):** a single generic `module_quality_findings` table
+(`check_type`, `severity`, `file_path`, `line`, `message`) backs every parser-only quality check,
+rather than one table per check. v1 hit exactly this gap — it shipped per-scanner columns first
+and had to do a late, painful migration to a generic `module_scans`/`issues_json` table once more
+scanners arrived — so MageWiki built the generic shape from the start, reused unchanged by Phases
+10 and 12 below.
+
+**Phase 10 decision (recorded 2026-11-06):** `app/scanner/semver.py` is a from-scratch Composer-
+constraint interval-overlap checker — no installed Python library matches Composer's constraint
+grammar closely enough to trust for the CVE check. Verified against live Packagist data, not just
+mocks, which caught two real response-shape bugs: `advisories` is `[]` (not `{}`) when a package
+has none, and `affectedVersions` uses a single `|` as its OR separator, not `||`.
+
+**Phase 11 decision (recorded 2026-11-06):** no schema change — `Module.repo_root` already let
+multiple repos coexist in one DB, so `GET /repos` is purely a read-only aggregation over existing
+data, not a new multi-tenancy/"client" concept.
+
+**Phase 12 decision (recorded 2026-11-06):** a new `php-analyzer` sidecar (plain PHP, no
+framework, `php:8.3-cli-alpine`, reachable only over the internal docker network) runs the real
+PHP tooling the Python-only backend never could. **Scope note: only 4 of the originally-listed 5
+tools were actually built — PhpMetrics was dropped during scoping** (the roadmap table above now
+reflects this; no replacement or follow-up is scheduled for it). All four new check types
+(`phpstan_error`, `phpmd_issue`, `phpcs_violation`, `php_compat_issue`) default to severity
+`"warning"` — informational, not blocking, since there's no "upgrade readiness" gate concept yet
+to make a PHP-compat finding a hard blocker the way v1 treats it. Explicit user decision: accept
+full-rescan-every-time for now rather than building a hash-skip-if-unchanged optimization, since
+nothing today is large enough to prove that's actually needed. Also worth flagging: `ModuleSummary`
+now carries 10 flat per-check-type count fields (3 added in Phase 9, 3 more in Phase 10, 4 more
+here) — a generic `dict[check_type, count]` would scale better, but wasn't worth refactoring three
+times' worth of already-shipped, working frontend code for a cleanliness win nobody asked for.
+Worth doing if an even 5th wave of check types ever shows up.
 
 ### Backlog: porting ideas from v1
 

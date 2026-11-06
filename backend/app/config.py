@@ -14,6 +14,7 @@ class Settings(BaseSettings):
     openai_api_key: str = ""
     webhook_hmac_secret: str = ""
     ollama_base_url: str = ""
+    php_analyzer_url: str = "http://php-analyzer:8080"
 
     @property
     def cors_origin_list(self) -> list[str]:

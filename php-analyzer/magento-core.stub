@@ -1,0 +1,375 @@
+<?php
+
+/**
+ * Minimal PHPStan stubs for Magento 2 core framework/module classes — not
+ * copied from anywhere, written fresh against Magento's own public,
+ * open-source class names (magento/magento2 is MIT-licensed) to stop
+ * PHPStan/PHPMD's expensive "unknown class" fallback resolution, which is
+ * what made analysing a real module take minutes instead of seconds (see
+ * CLAUDE.md's Phase 12 decision note). Declarations are intentionally
+ * shallow — just enough that the symbol resolves — not a faithful
+ * reproduction of Magento's real method signatures; this suppresses noise,
+ * it doesn't add real type-checking against Magento's own API.
+ *
+ * Scoped to what the project's own fixtures actually reference (demo-store
+ * + the real Ordo_Automation module), not every Magento class — add more
+ * here as new "unknown class" noise shows up against other real stores.
+ */
+
+namespace Magento\Framework\Event {
+    interface ObserverInterface
+    {
+    }
+
+    class Observer
+    {
+        public function __call($name, $arguments)
+        {
+        }
+    }
+
+    interface ManagerInterface
+    {
+    }
+}
+
+namespace Magento\Framework\App {
+    interface ResourceConnection
+    {
+    }
+
+    interface RequestInterface
+    {
+    }
+
+    interface CacheInterface
+    {
+    }
+
+    class Bootstrap
+    {
+    }
+
+    class State
+    {
+    }
+}
+
+namespace Magento\Framework\App\Action {
+    interface HttpGetActionInterface
+    {
+    }
+
+    interface HttpPostActionInterface
+    {
+    }
+
+    class Context
+    {
+    }
+
+    class Action
+    {
+    }
+}
+
+namespace Magento\Framework\Exception {
+    class NoSuchEntityException extends \Exception
+    {
+    }
+
+    class CouldNotSaveException extends \Exception
+    {
+    }
+
+    class LocalizedException extends \Exception
+    {
+    }
+}
+
+namespace Magento\Framework\DB {
+    class Select
+    {
+        public function __call($name, $arguments)
+        {
+        }
+    }
+}
+
+namespace Magento\Framework\DB\Adapter {
+    interface AdapterInterface
+    {
+    }
+}
+
+namespace Magento\Framework\View\Result {
+    class PageFactory
+    {
+    }
+}
+
+namespace Magento\Framework\View\Page {
+    class Title
+    {
+    }
+
+    class Config
+    {
+    }
+}
+
+namespace Magento\Framework\View\Element\UiComponent\Control {
+    interface ButtonProviderInterface
+    {
+    }
+}
+
+namespace Magento\Framework\View\Element\UiComponent\DataProvider {
+    class SearchResult
+    {
+        public function __call($name, $arguments)
+        {
+        }
+    }
+}
+
+namespace Magento\Framework\Model\ResourceModel\Db {
+    abstract class AbstractDb
+    {
+        public function __call($name, $arguments)
+        {
+        }
+    }
+}
+
+namespace Magento\Framework\Model\ResourceModel\Db\Collection {
+    abstract class AbstractCollection
+    {
+        public function __call($name, $arguments)
+        {
+        }
+    }
+}
+
+namespace Magento\Framework\Model {
+    abstract class AbstractModel
+    {
+        public function __call($name, $arguments)
+        {
+        }
+    }
+
+    class Context
+    {
+    }
+}
+
+namespace Magento\Framework {
+    class Registry
+    {
+        public function __call($name, $arguments)
+        {
+        }
+    }
+
+    interface UrlInterface
+    {
+    }
+
+    interface ObjectManagerInterface
+    {
+    }
+}
+
+namespace Magento\Framework\Api {
+    interface SearchCriteriaInterface
+    {
+    }
+
+    interface SearchResultsInterface
+    {
+    }
+
+    class SearchResults
+    {
+        public function __call($name, $arguments)
+        {
+        }
+    }
+}
+
+namespace Magento\Framework\Api\SearchCriteria {
+    interface CollectionProcessorInterface
+    {
+    }
+}
+
+namespace Magento\Framework\Controller\Result {
+    class JsonFactory
+    {
+    }
+
+    class Json
+    {
+        public function __call($name, $arguments)
+        {
+        }
+    }
+}
+
+namespace Magento\Framework\Mail {
+    interface TransportInterface
+    {
+    }
+}
+
+namespace Magento\Framework\Mail\Template {
+    class TransportBuilder
+    {
+        public function __call($name, $arguments)
+        {
+        }
+    }
+}
+
+namespace Magento\Framework\Translate\Inline {
+    interface StateInterface
+    {
+    }
+}
+
+namespace Magento\Framework\App\Request {
+    interface DataPersistorInterface
+    {
+    }
+}
+
+namespace Magento\Framework\Serialize {
+    interface SerializerInterface
+    {
+    }
+}
+
+namespace Magento\Framework\HTTP\Client {
+    class Curl
+    {
+        public function __call($name, $arguments)
+        {
+        }
+    }
+}
+
+namespace Magento\Framework\Data {
+    interface OptionSourceInterface
+    {
+    }
+}
+
+namespace Magento\Framework\Setup {
+    interface ModuleDataSetupInterface
+    {
+    }
+}
+
+namespace Magento\Backend\App\Action {
+    class Context
+    {
+    }
+}
+
+namespace Magento\Backend\App {
+    class Action
+    {
+    }
+}
+
+namespace Magento\Backend\Block\Widget {
+    class Context
+    {
+    }
+}
+
+namespace Magento\Backend\Model\View\Result {
+    class Redirect
+    {
+        public function __call($name, $arguments)
+        {
+        }
+    }
+
+    class Page
+    {
+        public function __call($name, $arguments)
+        {
+        }
+    }
+}
+
+namespace Magento\Store\Model {
+    interface StoreManagerInterface
+    {
+    }
+
+    class Store
+    {
+        public function __call($name, $arguments)
+        {
+        }
+    }
+}
+
+namespace Magento\Customer\Api {
+    interface CustomerRepositoryInterface
+    {
+    }
+}
+
+namespace Magento\Customer\Api\Data {
+    interface CustomerInterface
+    {
+    }
+}
+
+namespace Magento\Customer\Model {
+    class Session
+    {
+        public function __call($name, $arguments)
+        {
+        }
+    }
+}
+
+namespace Magento\Sales\Model {
+    class Order
+    {
+        public function __call($name, $arguments)
+        {
+        }
+    }
+}
+
+namespace Magento\Quote\Model {
+    class Quote
+    {
+        public function __call($name, $arguments)
+        {
+        }
+    }
+}
+
+namespace Magento\Quote\Model\Quote\Address\Total {
+    class Collector
+    {
+    }
+}
+
+namespace Magento\Framework\Component {
+    class ComponentRegistrar
+    {
+        const MODULE = 'module';
+
+        public static function register($type, $componentName, $path)
+        {
+        }
+    }
+}

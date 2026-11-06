@@ -195,7 +195,8 @@ class ModuleQualityFinding(Base):
     __table_args__ = (
         CheckConstraint(
             "check_type IN ('composer_completeness','deprecated_annotation','hardcoded_secret',"
-            "'security_advisory','abandoned_dependency','outdated_dependency')",
+            "'security_advisory','abandoned_dependency','outdated_dependency',"
+            "'phpstan_error','phpmd_issue','phpcs_violation','php_compat_issue')",
             name="ck_module_quality_findings_check_type",
         ),
         CheckConstraint(

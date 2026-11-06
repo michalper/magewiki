@@ -92,7 +92,11 @@ function QualityBadges({ module }: { module: ModuleSummary }) {
     module.secrets_count > 0 ||
     module.security_advisory_count > 0 ||
     module.abandoned_dependency_count > 0 ||
-    module.outdated_dependency_count > 0;
+    module.outdated_dependency_count > 0 ||
+    module.phpstan_error_count > 0 ||
+    module.phpmd_issue_count > 0 ||
+    module.phpcs_violation_count > 0 ||
+    module.php_compat_issue_count > 0;
   if (!hasAny) return <SeverityBadge severity="ok">clean</SeverityBadge>;
   return (
     <div className="flex flex-wrap gap-1">
@@ -116,6 +120,18 @@ function QualityBadges({ module }: { module: ModuleSummary }) {
       {module.outdated_dependency_count > 0 && (
         <SeverityBadge severity="info">{module.outdated_dependency_count} outdated</SeverityBadge>
       )}
+      {module.phpstan_error_count > 0 && (
+        <SeverityBadge severity="warning">{module.phpstan_error_count} phpstan</SeverityBadge>
+      )}
+      {module.phpmd_issue_count > 0 && (
+        <SeverityBadge severity="warning">{module.phpmd_issue_count} phpmd</SeverityBadge>
+      )}
+      {module.phpcs_violation_count > 0 && (
+        <SeverityBadge severity="warning">{module.phpcs_violation_count} phpcs</SeverityBadge>
+      )}
+      {module.php_compat_issue_count > 0 && (
+        <SeverityBadge severity="warning">{module.php_compat_issue_count} php-compat</SeverityBadge>
+      )}
     </div>
   );
 }
@@ -138,6 +154,10 @@ function toCsv(modules: ModuleSummary[]): string {
     "security_advisory_count",
     "abandoned_dependency_count",
     "outdated_dependency_count",
+    "phpstan_error_count",
+    "phpmd_issue_count",
+    "phpcs_violation_count",
+    "php_compat_issue_count",
     "last_scanned_at",
   ];
   const escape = (v: unknown) => {
@@ -162,6 +182,10 @@ function toCsv(modules: ModuleSummary[]): string {
       m.security_advisory_count,
       m.abandoned_dependency_count,
       m.outdated_dependency_count,
+      m.phpstan_error_count,
+      m.phpmd_issue_count,
+      m.phpcs_violation_count,
+      m.php_compat_issue_count,
       m.last_scanned_at,
     ]
       .map(escape)

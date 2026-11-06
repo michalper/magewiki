@@ -151,7 +151,11 @@ function TopFindingsBar({ modules }: { modules: ModuleSummary[] }) {
         m.secrets_count +
         m.security_advisory_count +
         m.abandoned_dependency_count +
-        m.outdated_dependency_count,
+        m.outdated_dependency_count +
+        m.phpstan_error_count +
+        m.phpmd_issue_count +
+        m.phpcs_violation_count +
+        m.php_compat_issue_count,
     }))
     .filter((d) => d.total > 0)
     .sort((a, b) => b.total - a.total)
@@ -198,6 +202,10 @@ export default function StatsPage() {
       securityAdvisories: modules.reduce((sum, m) => sum + m.security_advisory_count, 0),
       abandoned: modules.reduce((sum, m) => sum + m.abandoned_dependency_count, 0),
       outdated: modules.reduce((sum, m) => sum + m.outdated_dependency_count, 0),
+      phpstanErrors: modules.reduce((sum, m) => sum + m.phpstan_error_count, 0),
+      phpmdIssues: modules.reduce((sum, m) => sum + m.phpmd_issue_count, 0),
+      phpcsViolations: modules.reduce((sum, m) => sum + m.phpcs_violation_count, 0),
+      phpCompatIssues: modules.reduce((sum, m) => sum + m.php_compat_issue_count, 0),
     }),
     [modules]
   );
@@ -251,6 +259,15 @@ export default function StatsPage() {
               accent={totals.abandoned > 0 ? palette.status.warning : undefined}
             />
             <StatTile label="Outdated dependencies" value={totals.outdated} />
+            <StatTile
+              label="PHP static-analysis findings"
+              value={totals.phpstanErrors + totals.phpmdIssues + totals.phpcsViolations + totals.phpCompatIssues}
+              accent={
+                totals.phpstanErrors + totals.phpmdIssues + totals.phpcsViolations + totals.phpCompatIssues > 0
+                  ? palette.status.warning
+                  : undefined
+              }
+            />
           </div>
 
           <div className="flex flex-wrap gap-4">

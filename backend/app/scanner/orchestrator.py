@@ -28,6 +28,7 @@ from app.scanner.dto import DiscoveredModule, PendingAnalysisJob
 from app.scanner.events_xml import parse_events_xml
 from app.scanner.hashing import aggregate_hash, compute_module_file_hashes, diff_file_hashes
 from app.scanner.module_xml import InvalidModuleXmlError, parse_module_xml
+from app.scanner.php_analyzer_client import check_php_static_analysis
 from app.scanner.php_classes import catalog_module_classes
 from app.scanner.readme_check import has_readme
 from app.scanner.secrets_scanner import scan_hardcoded_secrets
@@ -404,6 +405,7 @@ async def _persist_module(
         *scan_hardcoded_secrets(pm.discovered.root),
         *await check_security_advisories(session, all_requirements),
         *await check_abandoned_outdated(session, all_requirements),
+        *await check_php_static_analysis(pm.discovered.root),
     ]
     for finding in quality_findings:
         session.add(
