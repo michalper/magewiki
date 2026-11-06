@@ -34,7 +34,7 @@ httpx = "^0.28"
 # Testing (RAG eval):        ragas
 
 [tool.poetry.group.dev.dependencies]
-pytest = "^8.3"
+pytest = ">=8.3,<10.0"
 pytest-asyncio = "^1.0"
 pytest-cov = ">=6,<8"
 ruff = "^0.17"
