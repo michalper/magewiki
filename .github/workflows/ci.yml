@@ -149,6 +149,6 @@ jobs:
       - uses: actions/checkout@v7
       - uses: ./.github/actions/setup-backend-env
       - run: poetry run python -m app.evaluation.run_ci_eval
-      - uses: marocchino/sticky-pull-request-comment@v2
+      - uses: marocchino/sticky-pull-request-comment@v3
         with:
           path: backend/app/evaluation/report/ci_eval_comment.md
