@@ -18,12 +18,40 @@ def _names_in_clause(clause: Node, source: bytes) -> list[str]:
     return [node_text(c, source) for c in clause.children if c.type in ("name", "qualified_name")]
 
 
-def _file_namespace(root: Node, source: bytes) -> str | None:
-    namespaces = find_all(root, {"namespace_definition"})
-    if not namespaces:
-        return None
-    name_node = next((c for c in namespaces[0].children if c.type == "namespace_name"), None)
+def _namespace_name(namespace_def: Node, source: bytes) -> str | None:
+    name_node = next((c for c in namespace_def.children if c.type == "namespace_name"), None)
     return node_text(name_node, source) if name_node is not None else None
+
+
+def _collect_namespaced_declarations(root: Node, source: bytes) -> list[tuple[Node, str | None]]:
+    """Pair each class/interface/trait declaration with the namespace actually
+    in effect for it, in document order. A single file-wide namespace would be
+    wrong for a file with more than one `namespace X { ... }` block (each
+    braced block's namespace applies only within it) or the semicolon style
+    (`namespace X;` applies to every following sibling up to the next
+    namespace_definition, not to the whole file).
+    """
+    results: list[tuple[Node, str | None]] = []
+
+    def walk(nodes: list[Node], current_ns: str | None) -> None:
+        ns = current_ns
+        for node in nodes:
+            if node.type == "namespace_definition":
+                name = _namespace_name(node, source)
+                body = node.child_by_field_name("body")
+                if body is not None:
+                    # Braced: scoped to this block only, siblings after it keep `ns`.
+                    walk(list(body.children), name)
+                else:
+                    # Semicolon style: applies to subsequent siblings.
+                    ns = name
+                continue
+            if node.type in _DECLARATION_TYPES:
+                results.append((node, ns))
+            walk(list(node.children), ns)
+
+    walk(list(root.children), None)
+    return results
 
 
 def _extract_methods(class_body: Node, source: bytes) -> list[PhpMethodEntry]:
@@ -45,10 +73,9 @@ def _extract_methods(class_body: Node, source: bytes) -> list[PhpMethodEntry]:
 def parse_php_file(path: Path, relative_file_path: str) -> list[PhpClassEntry]:
     source = path.read_bytes()
     tree = parse_php(source)
-    namespace = _file_namespace(tree.root_node, source)
 
     entries: list[PhpClassEntry] = []
-    for decl in find_all(tree.root_node, _DECLARATION_TYPES):
+    for decl, namespace in _collect_namespaced_declarations(tree.root_node, source):
         name_node = decl.child_by_field_name("name")
         if name_node is None:
             continue

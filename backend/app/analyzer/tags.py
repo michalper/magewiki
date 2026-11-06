@@ -48,10 +48,17 @@ def derive_parser_tags(dependency_names: list[str]) -> list[Tag]:
 
 
 def filter_tags(tags: list[Tag]) -> tuple[list[Tag], list[str]]:
+    """Filter the raw, untrusted LLM-produced tags (doc.tags) against the
+    controlled vocabulary. Never trust a tag's self-reported `source` here —
+    genuine parser tags come only from derive_parser_tags() and are merged in
+    separately by the caller; nothing legitimately reaches this function
+    already carrying source="parser", so honoring that claim would let the
+    model bypass ALLOWED_TAGS just by setting it.
+    """
     kept: list[Tag] = []
     rejected: list[str] = []
     for tag in tags:
-        if tag.source == "parser" or tag.name in ALLOWED_TAGS:
+        if tag.name in ALLOWED_TAGS:
             kept.append(tag)
         else:
             rejected.append(tag.name)

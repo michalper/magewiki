@@ -2,9 +2,9 @@ import shutil
 from pathlib import Path
 
 import pytest
-from sqlalchemy import delete, select
+from sqlalchemy import delete, select, update
 
-from app.models import DiPlugin, DiPreference, EventObserver, Module, ModuleDependency, PhpClass
+from app.models import DiPlugin, DiPreference, EventObserver, FileHash, Module, ModuleDependency, PhpClass
 from app.scanner.orchestrator import scan_repository
 
 
@@ -109,6 +109,47 @@ async def test_scan_repository_detects_a_single_changed_file(demo_store_path: Pa
     assert second.modules[0].files_added == 0
     assert second.modules[0].files_changed == 1
     assert second.modules[0].files_removed == 0
+
+
+@pytest.mark.asyncio
+async def test_scan_repository_preserves_unanalyzed_status_on_a_no_op_rescan(
+    demo_store_path: Path, db_session, tmp_path: Path
+):
+    """A FileHash left analyzed=False by a budget-paused analyze_file job must
+    stay analyzed=False across a later rescan where that file's content is
+    unchanged — the rescan must not assume "unchanged" means "was analyzed",
+    or the file silently drops out of cli.py's budget-resume requeue
+    (which only selects FileHash.analyzed.is_(False)) forever.
+    """
+    repo_copy = tmp_path / "demo-store"
+    shutil.copytree(demo_store_path, repo_copy)
+    repo_root = str(repo_copy.resolve())
+    await _delete_module_if_present(db_session, repo_root, "Vendor_Module")
+
+    await scan_repository(repo_root, db_session)
+    module = await db_session.scalar(
+        select(Module).where(Module.repo_root == repo_root, Module.name == "Vendor_Module")
+    )
+
+    # Simulate a budget pause: one file's analyze_file job never completed.
+    await db_session.execute(
+        update(FileHash)
+        .where(FileHash.module_id == module.id, FileHash.relative_path == "etc/module.xml")
+        .values(analyzed=False)
+    )
+    await db_session.commit()
+
+    # Change an unrelated file so the scan has *some* diff to process, while
+    # etc/module.xml's content stays byte-for-byte the same.
+    observer_file = repo_copy / "app/code/Vendor/Module/Observer/SampleOrderObserver.php"
+    observer_file.write_text(observer_file.read_text() + "\n// unrelated change\n")
+
+    await scan_repository(repo_root, db_session)
+
+    file_hash = await db_session.scalar(
+        select(FileHash).where(FileHash.module_id == module.id, FileHash.relative_path == "etc/module.xml")
+    )
+    assert file_hash.analyzed is False
 
 
 @pytest.mark.asyncio

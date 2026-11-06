@@ -43,3 +43,11 @@ def test_module_doc_skips_validation_without_context():
     # don't care about source provenance).
     doc = ModuleDoc.model_validate(_valid_doc_payload("anything.php"))
     assert isinstance(doc.features[0], Feature)
+
+
+def test_module_doc_rejects_any_source_when_known_sources_is_empty():
+    # A config-only/XML-only module has zero known files/classes (known_sources()
+    # returns an empty set) -> every claimed source must be rejected, not waved
+    # through as if validation weren't requested at all.
+    with pytest.raises(ValidationError):
+        ModuleDoc.model_validate(_valid_doc_payload("anything.php"), context={"known_sources": set()})

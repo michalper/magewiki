@@ -78,6 +78,10 @@ async def run_agent(session: AsyncSession, messages: list[dict], audience: str) 
     """
     if await is_budget_exceeded(session):
         yield {"event": "error", "detail": "Monthly LLM budget exceeded — cannot answer right now."}
+        # Clients wait on "done" to clear loading state (the documented
+        # sources/token/done contract) — never leave them hanging on an
+        # early-exit path that only ever emits "error".
+        yield {"event": "done", "tokens_in": 0, "tokens_out": 0, "cost_usd": "0"}
         return
 
     llm_config = await resolve_llm_config(session)
@@ -88,6 +92,7 @@ async def run_agent(session: AsyncSession, messages: list[dict], audience: str) 
     tokens_out_total = 0
     cost_total = Decimal("0")
 
+    forced_retry_used = False
     for _round in range(MAX_TOOL_ROUNDS):
         response = await litellm.acompletion(
             model=llm_config.model,
@@ -106,6 +111,23 @@ async def run_agent(session: AsyncSession, messages: list[dict], audience: str) 
         message = response.choices[0].message
         tool_calls = message.tool_calls
         if not tool_calls:
+            if not sources and not forced_retry_used:
+                # The model answered without ever calling a tool, so the
+                # answer-only-from-tool-data contract can't actually be
+                # grounded — nudge it once rather than trusting the system
+                # prompt alone to prevent fabrication.
+                forced_retry_used = True
+                history.append(
+                    {
+                        "role": "user",
+                        "content": (
+                            "You answered without calling any tools. Call at least one relevant tool "
+                            "before answering — if nothing relevant comes back, say plainly that you "
+                            "could not find anything."
+                        ),
+                    }
+                )
+                continue
             break
 
         history.append(message.model_dump())

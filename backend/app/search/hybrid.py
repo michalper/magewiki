@@ -39,11 +39,20 @@ identifier_hits AS (
        OR similarity(pc.class_name, :query_text) > :trgm_threshold
 ),
 identifiers AS (
+    -- A module-name hit maps only to that module's own module-level chunk
+    -- (one row), not every chunk the module owns — joining unconditionally
+    -- on "ih.relative_path IS NULL" would fan one identifier match out
+    -- across all of a module's chunks at the same similarity score,
+    -- flooding the :topk rank budget and starving a more specific
+    -- class-name hit elsewhere of a rank slot entirely.
     SELECT ch.id AS chunk_id,
            row_number() OVER (ORDER BY ih.sim DESC) AS rnk
     FROM identifier_hits ih
     JOIN chunks ch ON ch.module_id = ih.module_id
-        AND (ih.relative_path IS NULL OR ch.relative_path = ih.relative_path OR ch.chunk_type = 'module')
+        AND (
+            (ih.relative_path IS NULL AND ch.chunk_type = 'module')
+            OR ch.relative_path = ih.relative_path
+        )
     ORDER BY ih.sim DESC
     LIMIT :topk
 ),

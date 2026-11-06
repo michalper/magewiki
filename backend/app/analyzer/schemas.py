@@ -51,9 +51,15 @@ class ModuleDoc(BaseModel):
 
     @model_validator(mode="after")
     def _validate_sources(self, info: ValidationInfo) -> "ModuleDoc":
-        known_sources = (info.context or {}).get("known_sources") if info.context else None
-        if not known_sources:
+        # Distinguish "no context passed" (caller didn't opt into validation,
+        # e.g. re-validating an already-validated doc read back from the DB)
+        # from "context passed with zero known sources" (a module with no
+        # PHP classes/file analyses) — the latter must still reject every
+        # claimed source, not skip validation, or a config-only module could
+        # have any hallucinated source sail through uncontested.
+        if info.context is None or "known_sources" not in info.context:
             return self
+        known_sources: set[str] = info.context["known_sources"]
 
         for feature in self.features:
             if feature.source not in known_sources:
