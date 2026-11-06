@@ -6,7 +6,10 @@ This file is the single source of truth for architecture decisions, data model, 
 
 MageWiki-AI is a universal catalog of Magento 2 modules with an AI agent: it scans code, analyzes it with an LLM, stores the knowledge in a database, and lets PMs and developers ask natural-language questions (e.g. "do we have a module with a Klaviyo integration?"). This is a portfolio project on GitHub (`michalper/magewiki`) — it must ship as **finished**, not sprawling.
 
-- **Universal**: works on any Magento 2.3/2.4+ store, no hardcoded paths. Sources: `app/code`, `vendor`, and `app/etc/config.php` (enabled/disabled status).
+- **Universal**: works on any Magento 2.3/2.4+ store, no hardcoded paths. Sources: `app/code`,
+  `vendor`, Composer `"path"`-type repositories declared in the root `composer.json` (e.g.
+  in-house/monorepo-style modules outside both of the above), and `app/etc/config.php`
+  (enabled/disabled status).
 - **Read-only**: scanned code is never modified; no README files are ever written into scanned modules.
 - **Knowledge lives in the database**: each module's description is a JSON record; Markdown is rendered on demand. Optional `.md` export is allowed and always writes outside the scanned project.
 - **The agent answers only from collected data**, citing module and file; no results means "not found."
@@ -63,6 +66,27 @@ self-documenting instead of requiring a read of `docker-compose.yml`. The two
 fixture-specific vars are unchanged — they serve a different, narrower purpose
 (tests/eval need one named repo, not "any repo under a general area") and keep working
 exactly as before.
+
+**Composer path-repository discovery (recorded 2026-11-06):** real-world gap, flagged
+by a user testing against his employer's actual store: `find_modules()`
+(`app/scanner/discovery.py`) only ever walked `app/code` and `vendor`, so a module
+installed via a Composer `"path"`-type repository declared in the root `composer.json`
+(`"repositories": {"local": {"type": "path", "url": "src/*/*"}}` — a common way to
+install in-house/monorepo-style modules that live entirely outside both directories)
+was silently invisible to a scan. Composer path repositories do typically get
+symlinked into `vendor/` on install, which `os.walk()`'s default `followlinks=False`
+wouldn't follow anyway (verified directly: a symlinked directory is listed in a
+parent's `dirnames` but never visited as a `dirpath` itself) — relying on that symlink
+existing would be fragile regardless (skippable via `"symlink": false`, absent before
+`composer install` has ever run). `app/scanner/composer_repositories.py`'s new
+`find_path_repository_globs()` reads the declaration directly instead (handling both
+Composer's legacy array-of-objects and newer object-keyed-by-name `repositories`
+shapes), and `find_modules()` globs each declared path against the repo root, tagging
+matches with a new `source_type = "composer_path"` — the frontend already renders
+`source_type` as plain text with dynamically-derived filter options, so no frontend
+change was needed. Verified end-to-end against a real `POST /scan` (not just unit
+tests): a `src/<vendor>/<package>/etc/module.xml` fixture matching `src/*/*` was
+discovered and persisted with the correct `source_type`.
 
 **Live scan progress decision (recorded 2026-11-06):** a real scan of a large store
 (hundreds of modules, each incurring real HTTP calls to php-analyzer and
