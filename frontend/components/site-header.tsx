@@ -38,7 +38,7 @@ export function SiteHeader() {
           <span className="font-semibold tracking-tight">MageWiki-AI</span>
         </Link>
 
-        <nav className="flex items-center gap-1 text-sm">
+        <nav className="flex items-center gap-1 text-sm overflow-x-auto min-w-0">
           {NAV_LINKS.map((link) => {
             const active = pathname === link.href || pathname?.startsWith(link.href + "/");
             return (
@@ -58,18 +58,21 @@ export function SiteHeader() {
           })}
         </nav>
 
-        <div className="ml-auto flex items-center gap-3">
-          <span
-            className="size-2 rounded-full"
-            title={healthQuery.isLoading ? "Checking API…" : healthy ? "API healthy" : "API unreachable"}
-            style={{
-              backgroundColor: healthQuery.isLoading
-                ? "var(--muted-foreground)"
-                : healthy
-                  ? "oklch(0.64 0.19 145)"
-                  : "var(--destructive)",
-            }}
-          />
+        <div className="ml-auto flex items-center gap-3 shrink-0">
+          <span className="flex items-center gap-1.5 text-xs text-muted-foreground">
+            <span
+              className="size-2 rounded-full shrink-0"
+              aria-hidden="true"
+              style={{
+                backgroundColor: healthQuery.isLoading
+                  ? "var(--muted-foreground)"
+                  : healthy
+                    ? "oklch(0.64 0.19 145)"
+                    : "var(--destructive)",
+              }}
+            />
+            {healthQuery.isLoading ? "Checking API…" : healthy ? "API online" : "API unreachable"}
+          </span>
           <ThemeToggle />
         </div>
       </div>

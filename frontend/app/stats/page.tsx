@@ -18,6 +18,7 @@ import {
 } from "recharts";
 import { useChartPalette } from "@/components/chart-palette";
 import type { paths } from "@/lib/api-types";
+import { useDocumentTitle } from "@/lib/use-document-title";
 
 type ModuleSummary =
   paths["/modules"]["get"]["responses"][200]["content"]["application/json"][number];
@@ -198,6 +199,7 @@ function TopFindingsBar({ modules }: { modules: ModuleSummary[] }) {
 }
 
 export default function StatsPage() {
+  useDocumentTitle("Stats");
   const modulesQuery = useQuery({ queryKey: ["modules"], queryFn: fetchModules });
   const palette = useChartPalette();
   const modules = useMemo(() => modulesQuery.data ?? [], [modulesQuery.data]);

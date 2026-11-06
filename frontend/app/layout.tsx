@@ -15,7 +15,7 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "MageWiki-AI",
+  title: { default: "MageWiki-AI", template: "%s · MageWiki-AI" },
   description: "AI-powered catalog and chat agent for Magento 2 modules",
 };
 

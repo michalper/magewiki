@@ -6,6 +6,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import type { components } from "@/lib/api-types";
+import { useDocumentTitle } from "@/lib/use-document-title";
 
 type LlmSettingsResponse = components["schemas"]["LlmSettingsResponse"];
 type LlmSettingsUpdate = components["schemas"]["LlmSettingsUpdate"];
@@ -43,6 +44,7 @@ function KeyBadge({ configured }: { configured: boolean }) {
 }
 
 export default function SettingsPage() {
+  useDocumentTitle("Settings");
   const queryClient = useQueryClient();
   const settingsQuery = useQuery({ queryKey: ["llm-settings"], queryFn: fetchSettings });
 
@@ -110,6 +112,7 @@ export default function SettingsPage() {
               value={llmModel}
               onChange={(e) => setLlmModel(e.target.value)}
               placeholder="e.g. anthropic/claude-haiku-5-5, or ollama_chat/llama3.1"
+              aria-label="LLM model"
               className="font-mono"
             />
             <Input
@@ -117,11 +120,13 @@ export default function SettingsPage() {
               value={llmApiKey}
               onChange={(e) => setLlmApiKey(e.target.value)}
               placeholder="API key — leave blank to keep current key"
+              aria-label="LLM API key"
             />
             <Input
               value={llmApiBase}
               onChange={(e) => setLlmApiBase(e.target.value)}
               placeholder="API base URL (optional — for Ollama, e.g. http://host.docker.internal:11434)"
+              aria-label="LLM API base URL"
               className="font-mono"
             />
             <div className="flex gap-2">
@@ -158,6 +163,7 @@ export default function SettingsPage() {
               value={embeddingModel}
               onChange={(e) => setEmbeddingModel(e.target.value)}
               placeholder="e.g. openai/text-embedding-3-small"
+              aria-label="Embedding model"
               className="font-mono"
             />
             <Input
@@ -165,11 +171,13 @@ export default function SettingsPage() {
               value={embeddingApiKey}
               onChange={(e) => setEmbeddingApiKey(e.target.value)}
               placeholder="API key — leave blank to keep current key"
+              aria-label="Embedding API key"
             />
             <Input
               value={embeddingApiBase}
               onChange={(e) => setEmbeddingApiBase(e.target.value)}
               placeholder="API base URL (optional — for Ollama)"
+              aria-label="Embedding API base URL"
               className="font-mono"
             />
             <div className="flex gap-2">

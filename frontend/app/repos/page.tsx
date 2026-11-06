@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useQuery } from "@tanstack/react-query";
 import { SeverityBadge } from "@/components/severity-badge";
 import type { paths } from "@/lib/api-types";
+import { useDocumentTitle } from "@/lib/use-document-title";
 
 type RepoSummary = paths["/repos"]["get"]["responses"][200]["content"]["application/json"][number];
 type ModuleOverlapEntry =
@@ -41,6 +42,7 @@ function totalFindings(r: RepoSummary): number {
 }
 
 export default function ReposPage() {
+  useDocumentTitle("Repos");
   const reposQuery = useQuery({ queryKey: ["repos"], queryFn: fetchRepos });
   const overlapQuery = useQuery({ queryKey: ["modules-overlap"], queryFn: fetchModuleOverlap });
 
@@ -137,6 +139,9 @@ export default function ReposPage() {
           ))}
         </div>
       )}
+
+      {overlapQuery.isLoading && <p>Loading...</p>}
+      {overlapQuery.isError && <p className="text-destructive">Failed to load module overlap.</p>}
 
       {overlapQuery.data && overlapQuery.data.length > 0 && (
         <div className="flex flex-col gap-3">
