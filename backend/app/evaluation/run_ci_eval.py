@@ -81,7 +81,9 @@ def _markdown(metrics: dict[str, dict[str, float]]) -> str:
 async def _run_scenario(session, scenario: CiScenario, chunks_by_path: dict[str, int]) -> dict[str, list[int]]:
     expected_vector = _vector_noise_embedding(scenario)
 
-    async def _fake_embed(_query_text, **_kwargs):
+    async def _fake_embed(
+        query: str, *, model: str, api_key: str | None, api_base: str | None = None
+    ) -> list[float]:
         return expected_vector
 
     isolated_retrieval.embed_query_text = _fake_embed
@@ -102,9 +104,15 @@ async def main() -> None:
     async with async_session_factory() as session:
         module = await _seed(session)
         try:
+            # relative_path is nullable at the schema level (module-level chunks
+            # don't have one), but every chunk _seed() creates here is a "file" chunk
+            # with an explicit path — filtering is just making that existing
+            # invariant explicit to the type checker, not changing which chunks
+            # participate in these CI scenarios.
             chunks_by_path = {
                 c.relative_path: c.id
                 for c in (await session.scalars(select(Chunk).where(Chunk.module_id == module.id))).all()
+                if c.relative_path is not None
             }
 
             per_mode: dict[str, list[tuple[list[int], set[int]]]] = {"vector": [], "keyword": [], "hybrid": []}

@@ -6,7 +6,7 @@ from sqlalchemy import delete, select
 
 from app.analyzer.client import LlmCallResult
 from app.analyzer.schemas import FileSummary, ModuleDoc
-from app.models import AnalysisCache, Chunk, FileHash, Module, ModuleDocument
+from app.models import AnalysisCache, Chunk, FileHash, Module, ModuleDocument, PhpClass, PhpClassMethod
 from app.scanner.orchestrator import scan_repository
 from app.tasks.jobs import analyze_file, embed_chunks, synthesize_module
 
@@ -145,6 +145,36 @@ async def test_embed_chunks_builds_module_file_and_method_chunks(demo_store_path
     assert call_log == []
     chunks_after = (await db_session.scalars(select(Chunk).where(Chunk.module_id == module.id))).all()
     assert len(chunks_after) == 10
+
+
+@pytest.mark.asyncio
+async def test_embed_chunks_skips_a_method_with_null_line_numbers(demo_store_path: Path, db_session, monkeypatch):
+    """start_line/end_line are nullable DB columns (PhpClassMethod), even though a
+    real tree-sitter parse always populates them — this is a defensive guard, not a
+    behavior real parsed methods should ever hit, but it must not crash the whole
+    module's embedding when it does.
+    """
+    module = await _reach_embedding_state(demo_store_path, db_session, monkeypatch)
+
+    methods = (
+        await db_session.scalars(
+            select(PhpClassMethod)
+            .join(PhpClass, PhpClassMethod.class_id == PhpClass.id)
+            .where(PhpClass.module_id == module.id, (PhpClass.is_plugin.is_(True)) | (PhpClass.is_observer.is_(True)))
+        )
+    ).all()
+    assert len(methods) == 2  # same two methods the baseline test expects as chunks
+    methods[0].start_line = None
+    await db_session.commit()
+
+    call_log: list[str] = []
+    monkeypatch.setattr("app.tasks.jobs.embed_text", _fake_embed_text(call_log))
+
+    await embed_chunks(None, module.id, module.current_hash)
+
+    assert len(call_log) == 9  # 1 module + 7 file + 1 method (the other method was skipped)
+    chunks = (await db_session.scalars(select(Chunk).where(Chunk.module_id == module.id))).all()
+    assert len(chunks) == 9
 
 
 @pytest.mark.asyncio

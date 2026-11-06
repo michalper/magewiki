@@ -28,13 +28,15 @@ class Source:
 def _turn_cost(response, model: str) -> tuple[int, int, Decimal]:
     tokens_in = response.usage.prompt_tokens
     tokens_out = response.usage.completion_tokens
+    cost: Decimal | None = None
     try:
-        cost = litellm.completion_cost(completion_response=response)
+        raw_cost = litellm.completion_cost(completion_response=response)
+        cost = Decimal(str(raw_cost)) if raw_cost else None
     except Exception:  # noqa: BLE001 - cost computation must never block the chat response
         cost = None
     if not cost or cost <= 0:
         cost = compute_cost_usd(model, tokens_in, tokens_out)
-    return tokens_in, tokens_out, Decimal(str(cost))
+    return tokens_in, tokens_out, cost
 
 
 def _collect_sources(tool_name: str, args: dict, result: dict, sources: dict[tuple, Source]) -> None:
@@ -185,10 +187,11 @@ async def run_agent(session: AsyncSession, messages: list[dict], audience: str) 
         if usage is not None:
             tokens_in_total += usage.prompt_tokens
             tokens_out_total += usage.completion_tokens
-            cost = getattr(usage, "cost", None)
-            if not cost:
-                cost = compute_cost_usd(llm_config.model, usage.prompt_tokens, usage.completion_tokens)
-            cost_total += Decimal(str(cost))
+            raw_cost = getattr(usage, "cost", None)
+            stream_cost: Decimal | None = Decimal(str(raw_cost)) if raw_cost else None
+            if not stream_cost:
+                stream_cost = compute_cost_usd(llm_config.model, usage.prompt_tokens, usage.completion_tokens)
+            cost_total += stream_cost
 
     session.add(
         AnalysisCache(

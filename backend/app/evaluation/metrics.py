@@ -22,7 +22,7 @@ def reciprocal_rank(ranked_ids: Sequence[int], relevant_ids: set[int]) -> float:
 
 
 def aggregate(
-    per_question: list[tuple[Sequence[int], set[int]]], ks: tuple[int, ...] = DEFAULT_KS
+    per_question: Sequence[tuple[Sequence[int], set[int]]], ks: tuple[int, ...] = DEFAULT_KS
 ) -> dict[str, float]:
     """Mean recall@k (for each k) and MRR over a list of (ranked_ids, relevant_ids) pairs."""
     if not per_question:
