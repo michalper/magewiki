@@ -55,8 +55,12 @@ async function fetchScanRoots(): Promise<ScanRootsResponse> {
   return res.json();
 }
 
-async function streamScan(path: string, onEvent: (event: ScanStreamEvent) => void): Promise<void> {
-  await streamSse<ScanStreamEvent>(`${apiUrl()}/scan/stream`, { path }, onEvent);
+async function streamScan(
+  path: string,
+  onEvent: (event: ScanStreamEvent) => void,
+  signal?: AbortSignal,
+): Promise<void> {
+  await streamSse<ScanStreamEvent>(`${apiUrl()}/scan/stream`, { path }, onEvent, signal);
 }
 
 const STATE_VARIANTS: Record<string, "default" | "secondary" | "outline" | "destructive"> = {
@@ -395,10 +399,18 @@ export default function ModulesPage() {
   const [scanResult, setScanResult] = useState<ScanResponse | null>(null);
   const [scanError, setScanError] = useState<string | null>(null);
   const scanLogRef = useRef<HTMLDivElement>(null);
+  const scanAbortControllerRef = useRef<AbortController | null>(null);
 
   useEffect(() => {
     scanLogRef.current?.scrollTo({ top: scanLogRef.current.scrollHeight });
   }, [scanLog]);
+
+  useEffect(() => {
+    // Navigating away mid-scan must not leave the backend's scan (and the
+    // whole-scan advisory lock it holds for its duration) running after the
+    // page that was listening for its progress is gone.
+    return () => scanAbortControllerRef.current?.abort();
+  }, []);
 
   async function startScan() {
     const trimmed = path.trim();
@@ -409,6 +421,9 @@ export default function ModulesPage() {
     setScanProgress(null);
     setScanResult(null);
     setScanError(null);
+
+    const controller = new AbortController();
+    scanAbortControllerRef.current = controller;
 
     let eventsSinceRefresh = 0;
     try {
@@ -435,19 +450,28 @@ export default function ModulesPage() {
           if (eventsSinceRefresh >= 5) {
             eventsSinceRefresh = 0;
             queryClient.invalidateQueries({ queryKey: ["modules"] });
+            // Also refresh any already-expanded row's detail panel — otherwise
+            // it keeps showing the pre-scan doc/state while the list above it
+            // has already moved on.
+            queryClient.invalidateQueries({ queryKey: ["module"] });
           }
         } else if (event.event === "done") {
           setScanStatus("done");
           setScanResult(event.result);
           queryClient.invalidateQueries({ queryKey: ["modules"] });
+          queryClient.invalidateQueries({ queryKey: ["module"] });
         } else if (event.event === "error") {
           setScanStatus("error");
           setScanError(event.detail);
         }
-      });
+      }, controller.signal);
     } catch (err) {
-      setScanStatus("error");
-      setScanError((err as Error).message);
+      // An intentional abort (navigating away) isn't a failure worth showing —
+      // the controls it would update may not even be mounted anymore.
+      if ((err as Error).name !== "AbortError") {
+        setScanStatus("error");
+        setScanError((err as Error).message);
+      }
     }
   }
 
