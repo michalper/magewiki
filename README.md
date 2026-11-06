@@ -51,36 +51,42 @@ Full detail (done-criteria, data model, RAG design, and the decision recorded be
 ## Evaluation
 
 Retrieval quality measured against a real third-party module (`Ordo_Automation`,
-B2B/B2C marketing automation), with real OpenAI embeddings and a real Anthropic
-synthesis pass — not a synthetic fixture. recall@k = "at least one correct chunk
-appeared in the top k results"; MRR = mean reciprocal rank of the first correct hit.
-See `backend/app/evaluation/` for the question set, metrics, and runner.
+B2B/B2C marketing automation, 840 files), with a real Anthropic synthesis pass and
+real local Ollama embeddings (`bge-m3`) — not a synthetic fixture. recall@k = "at
+least one correct chunk appeared in the top k results"; MRR = mean reciprocal rank of
+the first correct hit. See `backend/app/evaluation/` for the question set, metrics,
+and runner.
 
-The suite is built and wired into CI (`7b`'s PR-comment check), but hasn't been run
-against this exact revision yet — the numbers below aren't filled in. Regenerate them
-with:
+The suite is built and wired into CI (`7b`'s PR-comment check); the numbers below are
+from a real run against this fixture. Regenerate them with:
 
 ```bash
 docker compose exec api python -m app.evaluation.run_eval
 ```
 
-This makes real OpenAI/Anthropic API calls (not free) and writes
-`backend/app/evaluation/report/eval_report.json`.
-
-To run it at $0, point `EMBEDDING_MODEL`/`LLM_MODEL` at a local Ollama model
-instead (`.env`, or the Settings page's BYOK override — see
-`app/runtime_config.py`'s `resolve_embedding_config`/`resolve_llm_config`,
-which the eval runner already goes through, same as the main chat/analysis
-path). Two honest caveats: the resulting recall@k/MRR numbers then measure a
-different embedding model, not comparable to a real OpenAI-embeddings run;
-and this specific path (Ollama + the evaluation suite specifically) hasn't
-been run end-to-end yet, only the main chat/analysis BYOK path has.
+This makes real Anthropic (synthesis) + embedding API calls — OpenAI
+`text-embedding-3-small` by default (not free), or point `EMBEDDING_MODEL` at a local
+Ollama model instead (`.env`, or the Settings page's BYOK override) to run at $0. The
+$0 Ollama path has now been run end-to-end successfully (the table below is from that
+run, `EMBEDDING_MODEL=ollama/bge-m3`, `EMBEDDING_DIMENSIONS=1024` — the embedding
+vector's dimension is configurable per deployment, see CLAUDE.md's "Configurable
+embedding dimension" decision note) — one honest caveat remains: these numbers measure
+`bge-m3`, not OpenAI's embedding model, so they aren't directly comparable to a run
+with `EMBEDDING_MODEL` left at its OpenAI default.
 
 | Mode | recall@1 | recall@3 | recall@5 | recall@10 | MRR |
 |---|---|---|---|---|---|
-| Vector-only | — | — | — | — | — |
-| FTS-only | — | — | — | — | — |
-| Hybrid (RRF) | — | — | — | — | — |
+| Vector-only | 0.50 | 0.80 | 0.90 | 0.90 | 0.68 |
+| FTS-only | 0.10 | 0.20 | 0.20 | 0.20 | 0.13 |
+| Hybrid (RRF) | 0.50 | 0.90 | 0.90 | 0.90 | 0.68 |
+
+Hybrid clearly beats FTS-only (which alone misses most relevant chunks on these
+natural-language questions) and matches-or-beats vector-only at every k, confirming
+the RRF fusion is pulling its weight rather than just adding complexity. Enumeration
+questions (5/5) and negative/"not found" questions (3/3) also passed in full — the
+agent correctly used SQL-backed tools for "how many" questions instead of relying on
+lossy top-k retrieval, and correctly said "not found" rather than hallucinating when
+asked about an integration (Klaviyo) the module doesn't have.
 
 ## Quickstart
 
