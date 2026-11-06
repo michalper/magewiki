@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -21,8 +21,9 @@ async function streamChat(
   messages: { role: string; content: string }[],
   audience: Audience,
   onEvent: (event: ChatEvent) => void,
+  signal?: AbortSignal,
 ): Promise<void> {
-  await streamSse<ChatEvent>(`${apiUrl()}/chat`, { messages, audience }, onEvent);
+  await streamSse<ChatEvent>(`${apiUrl()}/chat`, { messages, audience }, onEvent, signal);
 }
 
 function SourceChips({ sources }: { sources: Source[] }) {
@@ -46,6 +47,14 @@ export default function ChatPage() {
   const [input, setInput] = useState("");
   const [audience, setAudience] = useState<Audience>("dev");
   const [isStreaming, setIsStreaming] = useState(false);
+  const abortControllerRef = useRef<AbortController | null>(null);
+
+  useEffect(() => {
+    // Navigating away mid-answer must not leave the backend's LLM call still
+    // running (and still billing) after the page that was listening for its
+    // tokens is gone.
+    return () => abortControllerRef.current?.abort();
+  }, []);
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -57,27 +66,39 @@ export default function ChatPage() {
     setInput("");
     setIsStreaming(true);
 
+    const controller = new AbortController();
+    abortControllerRef.current = controller;
+
     try {
-      await streamChat(history, audience, (event) => {
+      await streamChat(
+        history,
+        audience,
+        (event) => {
+          setMessages((prev) => {
+            const next = [...prev];
+            const last = next[next.length - 1];
+            if (event.event === "token") {
+              next[next.length - 1] = { ...last, content: last.content + event.text };
+            } else if (event.event === "sources") {
+              next[next.length - 1] = { ...last, sources: event.sources };
+            } else if (event.event === "error") {
+              next[next.length - 1] = { ...last, error: event.detail };
+            }
+            return next;
+          });
+        },
+        controller.signal,
+      );
+    } catch (err) {
+      // An intentional abort (navigating away) isn't a failure worth showing —
+      // the message list it would update may not even be mounted anymore.
+      if ((err as Error).name !== "AbortError") {
         setMessages((prev) => {
           const next = [...prev];
-          const last = next[next.length - 1];
-          if (event.event === "token") {
-            next[next.length - 1] = { ...last, content: last.content + event.text };
-          } else if (event.event === "sources") {
-            next[next.length - 1] = { ...last, sources: event.sources };
-          } else if (event.event === "error") {
-            next[next.length - 1] = { ...last, error: event.detail };
-          }
+          next[next.length - 1] = { ...next[next.length - 1], error: "Failed to reach the API." };
           return next;
         });
-      });
-    } catch {
-      setMessages((prev) => {
-        const next = [...prev];
-        next[next.length - 1] = { ...next[next.length - 1], error: "Failed to reach the API." };
-        return next;
-      });
+      }
     } finally {
       setIsStreaming(false);
     }

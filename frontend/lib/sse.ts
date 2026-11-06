@@ -12,11 +12,13 @@ export async function streamSse<T extends { event: string }>(
   url: string,
   body: unknown,
   onEvent: (event: T) => void,
+  signal?: AbortSignal,
 ): Promise<void> {
   const res = await fetch(url, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(body),
+    signal,
   });
   if (!res.ok || !res.body) {
     throw new Error(`API responded with ${res.status}`);
