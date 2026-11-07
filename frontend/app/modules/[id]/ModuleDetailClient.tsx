@@ -4,6 +4,7 @@ import { useState, type ReactNode } from "react";
 import Link from "next/link";
 import { useQuery } from "@tanstack/react-query";
 import ReactMarkdown, { type Components } from "react-markdown";
+import remarkGfm from "remark-gfm";
 import { EnabledBadge } from "@/components/enabled-badge";
 import { SeverityBadge, SEVERITY_ORDER, type Severity } from "@/components/severity-badge";
 import { StateBadge } from "@/components/state-badge";
@@ -129,7 +130,7 @@ function ReadmeSectionCard({
 }) {
   return (
     <CollapsibleCard title={title} collapsible={body.length > COLLAPSE_THRESHOLD_CHARS}>
-      <ReactMarkdown components={components}>{body}</ReactMarkdown>
+      <ReactMarkdown remarkPlugins={[remarkGfm]} components={components}>{body}</ReactMarkdown>
     </CollapsibleCard>
   );
 }
@@ -257,6 +258,15 @@ function readmeMarkdownComponents(idByName: Map<string, number>): Components {
     },
     a: (props) => <a className="text-primary hover:underline" {...props} />,
     code: (props) => <code className="bg-background/60 rounded px-1 py-0.5 font-mono text-xs" {...props} />,
+    table: (props) => (
+      <div className="overflow-x-auto mb-3">
+        <table className="text-sm border-collapse" {...props} />
+      </div>
+    ),
+    th: (props) => (
+      <th className="border border-border px-2 py-1 text-left font-semibold bg-background/40" {...props} />
+    ),
+    td: (props) => <td className="border border-border px-2 py-1 align-top" {...props} />,
     strong: ({ children, ...props }) => {
       const severity = riskSeverityFromStrongText(children);
       if (severity) {

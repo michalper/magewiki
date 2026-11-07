@@ -2,6 +2,8 @@
 
 import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
+import ReactMarkdown, { type Components } from "react-markdown";
+import remarkGfm from "remark-gfm";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
@@ -9,6 +11,27 @@ import { apiUrl } from "@/lib/api";
 import type { Audience, ChatEvent, Source } from "@/lib/chat-types";
 import { streamSse } from "@/lib/sse";
 import { useDocumentTitle } from "@/lib/use-document-title";
+
+// Assistant replies are prompted to use markdown (tables, bold, code spans) --
+// rendered with remark-gfm for pipe-table support, since a table otherwise
+// shows its raw "| a | b |" syntax as plain text.
+const CHAT_MARKDOWN_COMPONENTS: Components = {
+  p: (props) => <p className="mb-2 last:mb-0 leading-relaxed" {...props} />,
+  ul: (props) => <ul className="list-disc pl-5 mb-2 space-y-1" {...props} />,
+  ol: (props) => <ol className="list-decimal pl-5 mb-2 space-y-1" {...props} />,
+  a: (props) => <a className="text-primary hover:underline" {...props} />,
+  code: (props) => <code className="bg-background/60 rounded px-1 py-0.5 font-mono text-xs" {...props} />,
+  strong: (props) => <strong className="font-semibold" {...props} />,
+  table: (props) => (
+    <div className="overflow-x-auto mb-2">
+      <table className="text-sm border-collapse" {...props} />
+    </div>
+  ),
+  th: (props) => (
+    <th className="border border-border px-2 py-1 text-left font-semibold bg-background/40" {...props} />
+  ),
+  td: (props) => <td className="border border-border px-2 py-1 align-top" {...props} />,
+};
 
 type DisplayMessage = {
   role: "user" | "assistant";
@@ -106,7 +129,7 @@ export default function ChatPage() {
   }
 
   return (
-    <div className="flex flex-col flex-1 gap-6 p-8 max-w-3xl mx-auto w-full">
+    <div className="flex flex-col flex-1 gap-6 p-8 max-w-4xl mx-auto w-full">
       <div className="flex items-center justify-between">
         <h1 className="text-2xl font-semibold tracking-tight">Chat</h1>
         <div className="flex gap-1">
@@ -141,10 +164,18 @@ export default function ChatPage() {
             className={
               m.role === "user"
                 ? "self-end bg-primary text-primary-foreground rounded-2xl px-4 py-2 max-w-[80%]"
-                : "self-start bg-muted text-foreground rounded-2xl px-4 py-2 max-w-[80%]"
+                : "self-start bg-muted text-foreground rounded-2xl px-4 py-2 max-w-full"
             }
           >
-            <p className="whitespace-pre-wrap text-sm">{m.content}</p>
+            {m.role === "assistant" ? (
+              <div className="text-sm">
+                <ReactMarkdown remarkPlugins={[remarkGfm]} components={CHAT_MARKDOWN_COMPONENTS}>
+                  {m.content}
+                </ReactMarkdown>
+              </div>
+            ) : (
+              <p className="whitespace-pre-wrap text-sm">{m.content}</p>
+            )}
             {m.error && <p className="text-destructive text-sm mt-1">{m.error}</p>}
             {m.sources && <SourceChips sources={m.sources} />}
           </div>
