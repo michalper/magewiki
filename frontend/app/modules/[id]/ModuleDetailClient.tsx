@@ -31,6 +31,48 @@ function plainListItemText(children: ReactNode): string | null {
   return null;
 }
 
+const RISK_SEVERITY_CLASSES: Record<string, string> = {
+  high: "bg-red-100 text-red-700 dark:bg-red-950 dark:text-red-400",
+  medium: "bg-orange-100 text-orange-700 dark:bg-orange-950 dark:text-orange-400",
+  low: "bg-blue-100 text-blue-700 dark:bg-blue-950 dark:text-blue-400",
+};
+
+// A README's own "## Risks" list item leads with a bold "[high]"/"[medium]"/
+// "[low]" tag (the module_synthesis_v1 prompt's own convention) — render it
+// as a colored badge, same visual language as quality findings' severity
+// badges, instead of leaving it as plain bold bracketed text.
+function riskSeverityFromStrongText(children: ReactNode): string | null {
+  if (typeof children !== "string") return null;
+  const match = /^\[(high|medium|low)\]$/i.exec(children.trim());
+  return match ? match[1].toLowerCase() : null;
+}
+
+// README markdown always follows the module_synthesis_v1 prompt's fixed
+// template (Description, Features, Integrations, Tags, Risks, For PMs, For
+// developers, Dependencies, Plugins, Observers, ...) — splitting on "## "
+// headings turns the single scroll of text into one card per section, same
+// visual language as the Quality findings card below it.
+function splitReadmeIntoSections(markdown: string): { title: string; body: string }[] {
+  const lines = markdown.split("\n");
+  const sections: { title: string; body: string }[] = [];
+  let title = "Overview";
+  let body: string[] = [];
+  for (const line of lines) {
+    const heading = /^##\s+(.+)$/.exec(line);
+    if (heading) {
+      sections.push({ title, body: body.join("\n").trim() });
+      title = heading[1].trim();
+      body = [];
+    } else if (!/^#\s+/.test(line)) {
+      // Drop the "# Module (composer/name)" h1 — the page header already
+      // shows the module name, and composer name is shown a few lines up.
+      body.push(line);
+    }
+  }
+  sections.push({ title, body: body.join("\n").trim() });
+  return sections.filter((s) => s.body.length > 0);
+}
+
 // No Tailwind typography plugin in this project — style the rendered README
 // Markdown directly instead of pulling in another dependency for it.
 function readmeMarkdownComponents(idByName: Map<string, number>): Components {
@@ -57,7 +99,23 @@ function readmeMarkdownComponents(idByName: Map<string, number>): Components {
     },
     a: (props) => <a className="text-primary hover:underline" {...props} />,
     code: (props) => <code className="bg-background/60 rounded px-1 py-0.5 font-mono text-xs" {...props} />,
-    strong: (props) => <strong className="font-semibold" {...props} />,
+    strong: ({ children, ...props }) => {
+      const severity = riskSeverityFromStrongText(children);
+      if (severity) {
+        return (
+          <span
+            className={`inline-block rounded px-1.5 py-0.5 text-xs font-semibold uppercase mr-1.5 ${RISK_SEVERITY_CLASSES[severity]}`}
+          >
+            {severity}
+          </span>
+        );
+      }
+      return (
+        <strong className="font-semibold" {...props}>
+          {children}
+        </strong>
+      );
+    },
   };
 }
 
@@ -156,17 +214,26 @@ export default function ModuleDetailClient({ id }: { id: string }) {
             </div>
           )}
 
-          <div id="readme" className="rounded-2xl bg-card p-5 shadow-sm scroll-mt-20">
-            <h2 className="text-lg font-medium mb-3">README</h2>
-            {readmeQuery.isLoading && <p className="text-sm text-muted-foreground">Loading...</p>}
-            {readmeQuery.data === null && (
-              <p className="text-sm text-muted-foreground">This module has not been analyzed yet.</p>
-            )}
-            {readmeQuery.data && (
-              <div className="text-sm bg-muted rounded-xl p-4 overflow-x-auto">
-                <ReactMarkdown components={readmeMarkdownComponents(idByName)}>{readmeQuery.data}</ReactMarkdown>
+          <div id="readme" className="flex flex-col gap-4 scroll-mt-20">
+            {readmeQuery.isLoading && (
+              <div className="rounded-2xl bg-card p-5 shadow-sm">
+                <p className="text-sm text-muted-foreground">Loading...</p>
               </div>
             )}
+            {readmeQuery.data === null && (
+              <div className="rounded-2xl bg-card p-5 shadow-sm">
+                <p className="text-sm text-muted-foreground">This module has not been analyzed yet.</p>
+              </div>
+            )}
+            {readmeQuery.data &&
+              splitReadmeIntoSections(readmeQuery.data).map((section) => (
+                <div key={section.title} className="rounded-2xl bg-card p-5 shadow-sm">
+                  <h2 className="text-lg font-medium mb-3">{section.title}</h2>
+                  <div className="text-sm">
+                    <ReactMarkdown components={readmeMarkdownComponents(idByName)}>{section.body}</ReactMarkdown>
+                  </div>
+                </div>
+              ))}
           </div>
 
           {moduleQuery.data.quality_findings.length > 0 && (
