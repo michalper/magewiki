@@ -55,5 +55,5 @@ async def main() -> None:
     print(f"\nFull report written to {REPORT_PATH}")
 
 
-if __name__ == "__main__":
+if __name__ == "__main__":  # pragma: no cover - entry-point guard, exercised via subprocess in tests, not instrumented
     asyncio.run(main())
