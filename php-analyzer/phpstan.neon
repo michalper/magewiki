@@ -3,6 +3,13 @@ includes:
 
 parameters:
     level: 5
+    # Scanned modules are third-party code this sidecar doesn't control — an
+    # inaccurate/incomplete @param or @return (common in real-world Magento
+    # modules) shouldn't be trusted as ground truth over what the code
+    # actually does. Confirmed as a real, independently-chosen default by a
+    # separate, battle-tested internal Magento-module scanner (same
+    # ecosystem, same "no real Magento install" scanning environment).
+    treatPhpDocTypesAsCertain: false
     # magentoRoot/bootstrapFiles are NOT set here with a dynamic value —
     # confirmed empirically that PHPStan's %env(...)% does not reliably
     # interpolate for these two keys (bootstrapFiles passed the literal,

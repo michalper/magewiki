@@ -529,6 +529,22 @@ which no longer exists (replaced by `vendor/magento/php-compatibility-fork`)
 `dealerdirect/phpcodesniffer-composer-installer` plugin already configures
 this correctly on every install.
 
+**PHPStan's own phpVersion auto-detection doesn't reach every rule
+(recorded 2026-11-07):** after a `git pull` brought Ordo_Automation's real
+fixture up to date (828 → 1514 classes), the real finding count — still
+flagged as too high by the user — turned out to have a fourth real cause:
+`classConstant.nativeTypeNotSupported` ("Class constants with native types
+are supported only on PHP 8.3 and later") was firing on `private const array
+X = [...]` even when the sidecar ran it under `php85`, and even though
+PHPStan's own `--debug` output reported "PHP version for analysis: 8.4.27
+(from runtime)" — confirmed via a minimal, config-free reproduction
+(`level: 0`, no bitexpert, no overlay) that this is a genuine PHPStan 2.3.5
+quirk: runtime auto-detection doesn't propagate to this specific
+non-ignorable rule, but setting `phpVersion` explicitly as a literal integer
+in the config does. `run_phpstan()`'s overlay config now always sets it,
+mapped 1:1 from the chosen `php_binary` (`php83` → `80300`, etc.). Net:
+1262 → 922 `phpstan_error` findings on the real, now-larger module.
+
 **composer.json facts that were parsed but never surfaced anywhere
 (recorded 2026-11-07):** flagged by a user looking at Ordo_Automation's own
 real, current composer.json (not the `vendor-src-sync` snapshot) and asking

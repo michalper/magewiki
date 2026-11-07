@@ -95,14 +95,26 @@ function neon_quote(string $value): string
 // differently, as a Nette DI "Statement" object reaching code that expects a
 // plain string). Generating a tiny overlay config with both as literal, real
 // paths and including the real phpstan.neon from it sidesteps the issue.
+// PHPStan's own "PHP version for analysis: X (from runtime)" auto-detection
+// (visible in --debug output) does not actually reach every rule — confirmed
+// empirically with a minimal reproduction: a bare `private const array X =
+// [...]` (valid PHP 8.3+ syntax) still raised the non-ignorable
+// classConstant.nativeTypeNotSupported error when run under php85 with
+// nothing else in the config, and only setting `phpVersion` explicitly as a
+// literal integer fixed it. Maps 1:1 to the three binaries installed in the
+// Dockerfile.
+const PHP_VERSION_IDS = ['php83' => 80300, 'php84' => 80400, 'php85' => 80500];
+
 function _run_phpstan_with_bootstrap(
     string $root, string $modulePath, string $magentoRoot, string $autoloadFile, string $phpBinary
 ): ?array {
     $overlayPath = tempnam(sys_get_temp_dir(), 'phpstan_overlay_') . '.neon';
+    $phpVersionId = PHP_VERSION_IDS[$phpBinary] ?? PHP_VERSION_IDS['php84'];
     file_put_contents(
         $overlayPath,
         "includes:\n    - " . neon_quote($root . '/phpstan.neon') . "\n" .
         "parameters:\n" .
+        "    phpVersion: $phpVersionId\n" .
         "    magento:\n        magentoRoot: " . neon_quote($magentoRoot) . "\n" .
         "    bootstrapFiles:\n        - " . neon_quote($autoloadFile) . "\n"
     );
@@ -115,7 +127,26 @@ function _run_phpstan_with_bootstrap(
         unlink($overlayPath);
     }
     $data = json_decode($result['stdout'], true);
-    return is_array($data) ? $data : null;
+    if (!is_array($data)) {
+        return null;
+    }
+    // A non-empty top-level "errors" entry means PHPStan itself crashed
+    // (a config/internal error, not a per-file analysis result) — confirmed
+    // as a real risk by a separate, battle-tested internal Magento-module
+    // scanner: bitexpert/phpstan-magento's autoloader services (Factory/
+    // Proxy/ExtensionInterface) can throw this way when magentoRoot isn't
+    // backed by a real Magento install. Only treat it as a full failure (to
+    // trigger run_phpstan()'s own retry-without-bootstrap below) when
+    // "files" is ALSO empty — if PHPStan ever emits both a scan-wide error
+    // alongside real per-file messages, those real messages are still worth
+    // keeping. Verified directly against this sidecar's own two real cases
+    // (a real vendor/autoload.php, and the no-op fallback) that "errors" is
+    // normally empty — this is a defensive check for a failure mode not yet
+    // observed here, not a fix for one that was.
+    if (!empty($data['errors']) && empty($data['files'])) {
+        return null;
+    }
+    return $data;
 }
 
 function run_phpstan(string $root, string $modulePath, string $magentoRoot, string $phpBinary): array

@@ -41,12 +41,14 @@ async def test_real_ordo_automation_module(db_session):
         select(Module).where(Module.repo_root == repo_root, Module.name == "Ordo_Automation")
     )
     assert module is not None
-    # composer.json's own "version" field wins over module.xml's setup_version
-    # (which really is "0.1.0" in this real fixture, but is stale — see CLAUDE.md's
-    # version-source-priority decision note).
-    assert module.setup_version == "1.0.0"
-    assert module.composer_name == "ordo/module-automation"
-    assert module.license == ["MIT"]
+    # Both module.xml's setup_version and composer.json's own "version" field
+    # were deliberately dropped upstream (see CLAUDE.md's version-source-
+    # priority decision note's follow-up) — None is the honest answer now,
+    # not a stale guess from either source.
+    assert module.setup_version is None
+    assert module.composer_name == "michalper/ordo"
+    assert module.license == ["OSL-3.0"]
+    assert module.homepage == "https://ordo.marketing"
     assert module.enabled is None  # no app/etc/config.php at the standalone module's own root
 
     deps = (await db_session.scalars(
@@ -60,7 +62,14 @@ async def test_real_ordo_automation_module(db_session):
     plugins = {c.fqcn: c for c in classes if c.is_plugin}
     observers = {c.class_name for c in classes if c.is_observer}
 
-    assert set(plugins.keys()) == set(EXPECTED_PLUGINS.keys())
+    # Subset, not exact equality: this is a real, actively-developed module
+    # (confirmed: a routine `git pull` here once added 780 files) — pinning
+    # every plugin/observer that happens to exist today would make this test
+    # fail on every unrelated upstream change. EXPECTED_PLUGINS/_OBSERVERS are
+    # a stable, known-present sample that verifies the scanner still finds
+    # real di.xml plugins/events.xml observers correctly, not an exhaustive
+    # inventory of the module's current state.
+    assert EXPECTED_PLUGINS.keys() <= plugins.keys()
     for fqcn, expected_method in EXPECTED_PLUGINS.items():
         method_names = {
             m.name for m in (await db_session.scalars(
@@ -69,7 +78,7 @@ async def test_real_ordo_automation_module(db_session):
         }
         assert expected_method in method_names
 
-    assert observers == EXPECTED_OBSERVERS
+    assert EXPECTED_OBSERVERS <= observers
 
     preferences = (await db_session.scalars(
         select(DiPreference).where(DiPreference.module_id == module.id)
