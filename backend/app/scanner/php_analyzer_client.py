@@ -1,10 +1,12 @@
-import asyncio
+import logging
 from pathlib import Path
 
 import httpx
 
 from app.config import settings
 from app.scanner.dto import QualityFinding
+
+logger = logging.getLogger(__name__)
 
 _TOOL_CHECK_TYPES = {
     "phpstan": "phpstan_error",
@@ -16,11 +18,12 @@ _TOOL_CHECK_TYPES = {
 
 async def _call_tool(tool: str, module_path: str) -> list[dict]:
     try:
-        async with httpx.AsyncClient(timeout=60.0) as client:
+        async with httpx.AsyncClient(timeout=120.0) as client:
             response = await client.post(f"{settings.php_analyzer_url}/{tool}", json={"module_path": module_path})
             response.raise_for_status()
             data = response.json()
     except httpx.HTTPError:
+        logger.warning("php-analyzer %s call failed for %s", tool, module_path, exc_info=True)
         return []
     except ValueError:
         # PHP's built-in dev server returns 200 with an empty body on an
@@ -31,6 +34,7 @@ async def _call_tool(tool: str, module_path: str) -> list[dict]:
         # production: this previously propagated all the way up and failed
         # the *whole module's* persistence, not just "no findings from this
         # tool" as the fail-open contract here promises.
+        logger.warning("php-analyzer %s returned an unparseable response for %s", tool, module_path)
         return []
     if not isinstance(data, dict):
         return []
@@ -55,10 +59,17 @@ async def check_php_static_analysis(module_root: Path) -> list[QualityFinding]:
     """
     findings: list[QualityFinding] = []
     tools = list(_TOOL_CHECK_TYPES.items())
-    # Four independent HTTP calls to the sidecar, none depending on another's
-    # result — run concurrently instead of serializing up to 4x60s of timeout
-    # budget per module.
-    results = await asyncio.gather(*(_call_tool(tool, str(module_root)) for tool, _check_type in tools))
+    # Sequential, not concurrent: the sidecar's PHP built-in dev server
+    # (`php -S`) is single-threaded, so four concurrent calls queue up
+    # server-side regardless — confirmed in production, this cost nothing in
+    # real wall-clock time (the server processes them one at a time either
+    # way) but silently lost findings from whichever tool landed last in the
+    # queue, since every call's client-side timeout clock started ticking at
+    # dispatch time, not at its actual turn to run, and a large real module
+    # (828 classes) pushed the last tool's wait-plus-processing time past the
+    # old 60s timeout with nothing logged. Calling sequentially gives each
+    # tool a fresh timeout window starting when it actually begins running.
+    results = [await _call_tool(tool, str(module_root)) for tool, _check_type in tools]
     for (_tool, check_type), items in zip(tools, results, strict=True):
         for item in items:
             findings.append(

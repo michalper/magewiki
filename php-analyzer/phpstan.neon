@@ -1,6 +1,26 @@
 parameters:
     level: 5
-    stubFiles:
+    # scanFiles, not stubFiles: stubFiles only refines types on classes PHPStan
+    # already knows exist via the autoloader (e.g. correcting an imprecise
+    # PHPDoc in a real library) — it never makes an unknown class exist in the
+    # first place. Since this sidecar deliberately has no real magento/
+    # framework installed (see CLAUDE.md's Phase 12 decision: avoiding a
+    # repo.magento.com auth requirement), every Magento class was genuinely
+    # unresolvable regardless of this stub's content, until verified
+    # empirically against a minimal reproduction: stubFiles left
+    # "implements unknown interface ObserverInterface" even though the stub
+    # declares it; scanFiles resolved it. scanFiles is what actually makes
+    # these declarations exist for PHPStan's class reflection.
+    scanFiles:
         - magento-core.stub
     excludePaths:
         - '*/vendor/*'
+        # Standard Magento 2 module test layout (Test/Unit, Test/Integration) in
+        # every module, not Ordo-specific — PHPUnit mock/stub chains
+        # ($mock->expects()->method()->willReturn()) are a different noise
+        # source than the stub coverage above and dominate real-fleet counts:
+        # verified empirically that 10204 of 11788 remaining findings against
+        # a real 828-class module were inside */Test/* before this exclusion.
+        # Test-code quality is a different concern than the production
+        # business logic these findings are meant to flag.
+        - '*/Test/*'

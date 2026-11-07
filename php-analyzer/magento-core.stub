@@ -14,16 +14,36 @@
  * Scoped to what the project's own fixtures actually reference (demo-store
  * + the real Ordo_Automation module), not every Magento class — add more
  * here as new "unknown class" noise shows up against other real stores.
+ *
+ * A bare __call($name, $arguments) is not enough to silence "undefined
+ * method" on its own — PHPStan needs an explicit @method tag per magic
+ * method, confirmed empirically against a minimal reproduction. Classes
+ * below that proxy through DataObject-style magic getters/setters carry
+ * @method tags for the handful of calls real modules actually make
+ * (setData/getData/getId/etc.), not a faithful signature reproduction.
  */
+
+namespace {
+    function __($text, ...$args)
+    {
+    }
+}
 
 namespace Magento\Framework\Event {
     interface ObserverInterface
     {
     }
 
+    /**
+     * @method mixed getData(string $key = '')
+     */
     class Observer
     {
         public function __call($name, $arguments)
+        {
+        }
+
+        public function getEvent()
         {
         }
     }
@@ -66,10 +86,38 @@ namespace Magento\Framework\App\Action {
 
     class Context
     {
+        public function getRequest()
+        {
+        }
+
+        public function getMessageManager()
+        {
+        }
+
+        public function getResultRedirectFactory()
+        {
+        }
     }
 
+    // Base of the real admin-controller inheritance chain every scanned
+    // module's own AbstractCampaignAction-style base class extends through
+    // Magento\Backend\App\Action below — getRequest()/$resultRedirectFactory/
+    // $messageManager are genuinely inherited from here in real Magento, not
+    // dynamic properties, so PHPStan needs them declared on the base, not on
+    // every concrete controller that happens to reference them.
     class Action
     {
+        protected $_request;
+        protected $resultRedirectFactory;
+        protected $messageManager;
+
+        public function __construct(Context $context)
+        {
+        }
+
+        public function getRequest()
+        {
+        }
     }
 }
 
@@ -152,11 +200,12 @@ namespace Magento\Framework\Model\ResourceModel\Db\Collection {
 }
 
 namespace Magento\Framework\Model {
-    abstract class AbstractModel
+    /**
+     * @method mixed getId()
+     * @method $this setId(mixed $value)
+     */
+    abstract class AbstractModel extends \Magento\Framework\DataObject
     {
-        public function __call($name, $arguments)
-        {
-        }
     }
 
     class Context
@@ -178,6 +227,21 @@ namespace Magento\Framework {
 
     interface ObjectManagerInterface
     {
+    }
+
+    /**
+     * @method mixed getData(string $key = '', $index = null)
+     * @method $this setData(string $key, $value = null)
+     * @method bool hasData(string $key = '')
+     * @method $this unsetData(string $key = '')
+     * @method mixed getId()
+     * @method $this setId(mixed $value)
+     */
+    class DataObject
+    {
+        public function __call($name, $arguments)
+        {
+        }
     }
 }
 
@@ -272,13 +336,13 @@ namespace Magento\Framework\Setup {
 }
 
 namespace Magento\Backend\App\Action {
-    class Context
+    class Context extends \Magento\Framework\App\Action\Context
     {
     }
 }
 
 namespace Magento\Backend\App {
-    class Action
+    class Action extends \Magento\Framework\App\Action\Action
     {
     }
 }

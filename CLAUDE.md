@@ -405,6 +405,54 @@ at all; (3) `module.xml`'s `setup_version` — last resort. Composer's version
 wins even when `setup_version` is present and non-empty, not only as a
 fallback for when it's missing.
 
+**PHPStan noise: `stubFiles` was the wrong parameter, and the sidecar's own
+concurrency was silently losing results (recorded 2026-11-07):** a real
+760-module store scan surfaced a single module (Ordo_Automation, 828 classes)
+with 18049 `module_quality_findings`, almost all `phpstan_error` — verified
+empirically (a minimal reproduction run directly against this project's own
+`php-analyzer/magento-core.stub`) that the root cause was `phpstan.neon`
+using `stubFiles` instead of `scanFiles`: `stubFiles` only refines types on
+classes PHPStan already knows exist via the autoloader, it never makes an
+unknown class exist in the first place — since this sidecar deliberately has
+no real `magento/framework` installed (avoiding a repo.magento.com auth
+requirement), every Magento class in the stub was genuinely unresolvable
+under `stubFiles` regardless of the stub's content. Switched to `scanFiles`
+and expanded the stub (global `__()`, `Magento\Framework\DataObject` with
+`@method` tags — a bare `__call()` alone doesn't silence "undefined method",
+confirmed empirically — and a fleshed-out `Magento\Framework\App\Action\Action`
+base class with `getRequest()`/`$resultRedirectFactory`/`$messageManager`,
+matching the exact noise patterns seen in the real report). Also excluded
+`*/Test/*` (standard Magento module test layout, not Ordo-specific) after
+measuring that 10204 of the remaining 11788 findings were PHPUnit mock/stub
+chains (`$mock->expects()->method()`) inside test code, a different concern
+than production business logic. Net effect on the real module: 14926 →
+1584 `phpstan_error` findings (the residual noise is now mostly Magento's own
+auto-generated `*Factory`/`*CollectionFactory` classes, which don't exist as
+real files at all — closing that gap fully would need `bitexpert/phpstan-
+magento`'s factory-autoloader plus a real `magentoRoot`, evaluated and
+deliberately deferred: it requires PHPStan 2.x and a path to a full Magento
+installation the sidecar doesn't have for a standalone-scanned module like
+Ordo_Automation).
+
+Separately, and more seriously: after this fix, the real DB still showed
+*zero* `phpstan_error`/`php_compat_issue` rows for the same module, even
+though a direct call to the sidecar returned 1584 findings. Root-caused via
+the sidecar's own request log: `php -S`, the sidecar's built-in PHP dev
+server, is single-threaded, so `check_php_static_analysis`'s four concurrent
+`asyncio.gather()` calls queued up server-side regardless of the Python-side
+concurrency — confirmed directly: phpstan's own request took 7s to process
+but 83s from send to response, because it was last in the server's queue,
+exceeding the client's 60s timeout. Every other failure mode in
+`php_analyzer_client.py` already failed open with zero logging, so this
+silently discarded two of four tools' results for any sufficiently large
+module with no error anywhere. Fixed by calling the four tools *sequentially*
+instead of concurrently (free: the single-threaded server was already
+serializing them, so this changes zero real wall-clock time) so each gets a
+fresh timeout window starting when it actually begins running, plus added
+`logging.warning(..., exc_info=True)` on every fail-open path — previously
+pure silent data loss, impossible to distinguish from "this tool genuinely
+found nothing."
+
 ## Phase plan
 
 MVP = Phases 0–5. Each phase is done separately: first a plan for approval, then code with tests, then a small commit. Don't skip phases.
