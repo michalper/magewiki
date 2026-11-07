@@ -95,6 +95,50 @@ jobs:
       - run: docker build -t magewiki-frontend-ci ./frontend
       - run: docker build -t magewiki-php-analyzer-ci -f php-analyzer/Dockerfile .
 
+  image-scan:
+    needs: docker-build
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      security-events: write
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - image: backend
+            context: ./backend
+            dockerfile: ./backend/Dockerfile
+          - image: frontend
+            context: ./frontend
+            dockerfile: ./frontend/Dockerfile
+          - image: php-analyzer
+            context: .
+            dockerfile: php-analyzer/Dockerfile
+    steps:
+      - uses: actions/checkout@v7
+      - run: docker build -t magewiki-${{ matrix.image }}-ci -f ${{ matrix.dockerfile }} ${{ matrix.context }}
+      # pip-audit/npm audit (in the backend/frontend jobs above) only scan the
+      # project's own lockfiles — this catches CVEs in the OS-layer packages the
+      # base image (e.g. python:3.11-slim) brings in, which nothing else here does.
+      # continue-on-error, same as pip-audit above: a base-image OS-layer CVE with
+      # no upstream fix yet shouldn't permanently block CI — findings still show
+      # up in the step output and the Security tab (next step) either way.
+      - name: Trivy scan (${{ matrix.image }})
+        uses: aquasecurity/trivy-action@0.28.0
+        continue-on-error: true
+        with:
+          image-ref: magewiki-${{ matrix.image }}-ci
+          format: sarif
+          output: trivy-${{ matrix.image }}.sarif
+          severity: CRITICAL,HIGH
+          exit-code: "1"
+      - name: Upload Trivy results to the Security tab
+        if: always()
+        uses: github/codeql-action/upload-sarif@v3
+        with:
+          sarif_file: trivy-${{ matrix.image }}.sarif
+          category: "trivy-${{ matrix.image }}"
+
   e2e-smoke:
     runs-on: ubuntu-latest
     steps:
