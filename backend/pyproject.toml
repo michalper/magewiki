@@ -66,6 +66,16 @@ markers = [
     "ollama: tests that call a real local Ollama server — free, but require OLLAMA_BASE_URL reachable; run explicitly with `pytest -m ollama`",
 ]
 
+[tool.coverage.run]
+# SQLAlchemy's async extension bridges every DBAPI call through a greenlet
+# switch internally (even for a native async driver like asyncpg) — without
+# this, coverage.py's tracer loses track of lines whose execution resumes
+# after an `await session.execute(...)`/etc. call, misreporting real, tested
+# code as uncovered. Confirmed directly: tests/test_health.py's healthy-path
+# test asserts on the exact body `db_status = "ok"` produces, yet that line
+# showed as "missed" without this setting.
+concurrency = ["greenlet", "thread"]
+
 [build-system]
 requires = ["poetry-core"]
 build-backend = "poetry.core.masonry.api"
