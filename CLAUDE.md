@@ -761,6 +761,23 @@ blocked (version-lag only, no CVE, so not worth the same force-override treatmen
 5.9.3 — `typescript-eslint` requires `<6.1.0` and `openapi-typescript` requires `^5.x`,
 neither has released support for TypeScript 7 yet.
 
+**Open: bump the backend's actual Python runtime (flagged 2026-11-07, not yet
+done):** `backend/pyproject.toml`'s `python = ">=3.11,<3.15"` constraint already
+allows a newer interpreter, but what actually runs is `backend/Dockerfile`'s
+`FROM python:3.11-slim` — the two had drifted apart. Before bumping the image,
+verify the C-extension dependencies (`tree-sitter-php`, `asyncpg`, `lxml`) ship
+prebuilt wheels for the target version; land on 3.13 first (mature, broad wheel
+support) rather than jumping straight to the newest release. Not a pre-release
+blocker.
+
+**Open: require 100% coverage in CI (flagged 2026-11-07, not yet done):** real
+coverage today is 82%. Plan, per explicit user decision: write tests to close
+the gap to 100% first, then raise Codecov's enforced threshold to 100% —
+not the other way around, which would just fail every PR immediately.
+Frontend has no unit-test runner at all yet (only Playwright e2e), so closing
+this gap on the frontend side means adding one (vitest, most likely) before
+any frontend file can count toward the 100%.
+
 **Code-scanning/Dependabot alert triage (recorded 2026-11-07):** reviewed all 448 open
 GitHub code-scanning alerts and 15 open Dependabot alerts. One real bug found and
 fixed: `_validate_scan_path()` (`app/api/routes/modules.py`) and `webhook_scan()`
