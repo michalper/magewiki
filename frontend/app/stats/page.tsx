@@ -9,7 +9,6 @@ import {
   CartesianGrid,
   Cell,
   LabelList,
-  Legend,
   Pie,
   PieChart,
   ResponsiveContainer,
@@ -35,19 +34,6 @@ type ModuleSummary =
 function sumByCheckType(modules: ModuleSummary[], checkType: string): number {
   return modules.reduce((sum, m) => sum + (m.finding_counts[checkType] ?? 0), 0);
 }
-
-// Fixed order, never derived from the data being rendered — see CLAUDE.md's
-// module state machine and the dataviz skill's "assign categorical hues in
-// fixed order, never cycled" rule.
-const STATE_ORDER = [
-  "up_to_date",
-  "pending",
-  "scanning",
-  "analyzing",
-  "embedding",
-  "paused_budget",
-  "failed",
-];
 
 async function fetchModules(): Promise<ModuleSummary[]> {
   return apiFetch("/modules");
@@ -132,66 +118,6 @@ function ProgressRing({
         </div>
       </div>
       <span className="text-sm text-center text-muted-foreground">{label}</span>
-    </div>
-  );
-}
-
-function StateDonut({ modules }: { modules: ModuleSummary[] }) {
-  const palette = useChartPalette();
-  const counts = STATE_ORDER.map((state) => ({
-    name: state,
-    value: modules.filter((m) => m.state === state).length,
-    color: palette.categorical[STATE_ORDER.indexOf(state)],
-  })).filter((d) => d.value > 0);
-
-  if (counts.length === 0) return null;
-
-  const total = counts.reduce((sum, d) => sum + d.value, 0);
-
-  return (
-    <div className="rounded-2xl bg-card p-5 shadow-sm">
-      <h3 className="text-sm font-medium mb-2 text-muted-foreground">Module state</h3>
-      <ResponsiveContainer width="100%" height={240}>
-        <PieChart>
-          <Pie
-            data={counts}
-            dataKey="value"
-            nameKey="name"
-            innerRadius={50}
-            outerRadius={80}
-            stroke="none"
-            // Direct percentage label per slice (<=4 series here per the
-            // dataviz skill's labeling rule) — otherwise the only way to
-            // see a proportion is hovering, which a static screenshot
-            // can't do.
-            label={({ cx, cy, midAngle, outerRadius: r, percent }) => {
-              const RADIAN = Math.PI / 180;
-              const labelRadius = r + 18;
-              const x = cx + labelRadius * Math.cos(-(midAngle ?? 0) * RADIAN);
-              const y = cy + labelRadius * Math.sin(-(midAngle ?? 0) * RADIAN);
-              return (
-                <text
-                  x={x}
-                  y={y}
-                  fill={palette.ink.secondary}
-                  fontSize={12}
-                  textAnchor={x > cx ? "start" : "end"}
-                  dominantBaseline="central"
-                >
-                  {Math.round((percent ?? 0) * 100)}%
-                </text>
-              );
-            }}
-            labelLine={{ stroke: palette.ink.muted }}
-          >
-            {counts.map((entry) => (
-              <Cell key={entry.name} fill={entry.color} />
-            ))}
-          </Pie>
-          <Tooltip formatter={(value) => [`${value} of ${total} modules`, ""]} />
-          <Legend formatter={(value: string) => `${value} (${counts.find((c) => c.name === value)?.value ?? 0})`} />
-        </PieChart>
-      </ResponsiveContainer>
     </div>
   );
 }
@@ -360,10 +286,7 @@ export default function StatsPage() {
             />
           </div>
 
-          <div className="grid gap-4 sm:grid-cols-2">
-            <StateDonut modules={modules} />
-            <TopFindingsBar modules={modules} />
-          </div>
+          <TopFindingsBar modules={modules} />
         </>
       )}
     </div>
