@@ -1,5 +1,17 @@
+includes:
+    - vendor/bitexpert/phpstan-magento/extension.neon
+
 parameters:
     level: 5
+    # magentoRoot/bootstrapFiles are NOT set here with a dynamic value —
+    # confirmed empirically that PHPStan's %env(...)% does not reliably
+    # interpolate for these two keys (bootstrapFiles passed the literal,
+    # unsubstituted "%env(...)%" text straight to hash_file(); an unquoted
+    # attempt failed differently, as a Nette DI "Statement" object reaching
+    # code that expects a plain string). run_phpstan() instead generates a
+    # small per-request overlay .neon (via `includes: [this file]`) with
+    # both parameters as literal, real paths, and passes that overlay as
+    # --configuration instead of this file directly.
     # scanFiles, not stubFiles: stubFiles only refines types on classes PHPStan
     # already knows exist via the autoloader (e.g. correcting an imprecise
     # PHPDoc in a real library) — it never makes an unknown class exist in the

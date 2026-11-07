@@ -485,6 +485,64 @@ correct regardless of any individual tool's own exclude-flag quirks. Verified
 end-to-end against the real Ordo_Automation fixture: `phpcs_violation` 2842
 → 0 (legitimately clean against its own ruleset), total findings 4707 → 1736.
 
+**php-analyzer runs three PHP versions side by side, picked per scanned
+module (recorded 2026-11-07):** the remaining 1584 `phpstan_error` findings
+were still mostly noise — real Magento core classes (not just bitexpert/
+phpstan-magento's auto-generated-class magic) need the scanned store's own
+real Composer autoloader to resolve at all, confirmed empirically:
+`vendor/bitexpert/phpstan-magento`'s `magentoRoot` alone still left ordinary
+classes like `Magento\Backend\Block\Template` as "extends unknown class".
+Wiring in the real `vendor/autoload.php` immediately hit a real, structural
+problem the user flagged directly: Composer's generated
+`vendor/composer/platform_check.php` enforces a scanned module's own declared
+PHP version requirement strictly, and it can't be disabled without mutating
+the scanned module's own files (never done here) — a sidecar fixed to one
+PHP version can never satisfy every scanned module's own requirement (Ordo
+alone has required `>=8.4 <8.6` and, in its real, actively-developed repo
+rather than the `vendor-src-sync` snapshot used for fixtures here, `>=8.3
+<8.6`). Rejected a graceful-degrade-only fix (retry without the real
+autoloader on failure) in favor of actually installing multiple PHP versions,
+per explicit user request. `php-analyzer`'s Dockerfile now uses `alpine:edge`
+(confirmed the only Alpine base packaging php83 **and** php84 **and** php85
+side by side as of this writing — numbered releases top out at php84) with
+all three installed as separate binaries; `app/scanner/php_analyzer_client.py`'s
+`_pick_php_binary()` reuses the existing Composer-constraint overlap checker
+(`app/scanner/semver.py`, already built for the CVE check) to pick the
+highest of the three a scanned module's own `composer.json` php constraint
+allows, defaulting to php84. The chosen binary runs all four tools, not just
+phpstan, for consistency. `run_phpstan()` still retries without the real
+autoloader if it fails for some other reason (e.g. the module's constraint
+falls outside all three installed versions) — degraded, not zero, findings.
+
+Two more real, structural bugs surfaced building this, both fixed: (1)
+`%env(...)%` does not reliably interpolate for PHPStan's `bootstrapFiles`/
+custom extension parameters — confirmed empirically (one left the literal
+unsubstituted text in a file path; a different, unquoted attempt failed as a
+Nette DI "Statement" object reaching code expecting a plain string) — fixed
+by generating a small per-request overlay `.neon` file with the real paths
+as literals, `include`-ing the real `phpstan.neon` from it, instead. (2) The
+Dockerfile's `vendor/bin/phpcs --config-set installed_paths` override (from
+before this session) had gone stale after `magento/magento-coding-standard`'s
+major-version bump — it referenced `vendor/phpcompatibility/php-compatibility`,
+which no longer exists (replaced by `vendor/magento/php-compatibility-fork`)
+— removed entirely rather than re-hardcoded, since composer's own
+`dealerdirect/phpcodesniffer-composer-installer` plugin already configures
+this correctly on every install.
+
+**composer.json facts that were parsed but never surfaced anywhere
+(recorded 2026-11-07):** flagged by a user looking at Ordo_Automation's own
+real, current composer.json (not the `vendor-src-sync` snapshot) and asking
+why `homepage`/`authors`/required PHP extensions weren't shown anywhere —
+`license` turned out to have the exact same problem (parsed, stored on
+`Module`, never exposed via the API at all). Added `homepage`, `authors`
+("Name <email>" strings), and `php_extensions` (the `ext-*` keys `require`
+already excludes from the CVE-check package list, since they have no
+Packagist page) to `ComposerResult`/`Module`, and exposed all four
+(including the pre-existing `license`) on `ModuleDetail`. Deliberately didn't
+add composer `scripts`/`autoload`/`config.allow-plugins` in the same pass —
+lower-value, more niche fields for a module catalog's own UI; worth adding
+individually if ever asked for, not speculatively bundled in here.
+
 ## Phase plan
 
 MVP = Phases 0–5. Each phase is done separately: first a plan for approval, then code with tests, then a small commit. Don't skip phases.

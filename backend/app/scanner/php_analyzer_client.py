@@ -5,8 +5,28 @@ import httpx
 
 from app.config import settings
 from app.scanner.dto import QualityFinding
+from app.scanner.semver import constraints_overlap
 
 logger = logging.getLogger(__name__)
+
+# PHP versions actually installed side by side in the php-analyzer sidecar
+# (see php-analyzer/Dockerfile) — highest first, so the loop below prefers
+# the newest version a module's own composer.json php constraint allows.
+# Composer's own platform_check.php enforces a scanned module's declared PHP
+# version strictly when its real vendor/autoload.php is used for bitexpert/
+# phpstan-magento's class resolution (see CLAUDE.md's decision note) — a
+# single fixed interpreter version can never satisfy every scanned module.
+_AVAILABLE_PHP_BINARIES = [("php85", 5), ("php84", 4), ("php83", 3)]
+_DEFAULT_PHP_BINARY = "php84"
+
+
+def _pick_php_binary(php_constraint: str | None) -> str:
+    if not php_constraint:
+        return _DEFAULT_PHP_BINARY
+    for binary, minor in _AVAILABLE_PHP_BINARIES:
+        if constraints_overlap(php_constraint, f">=8.{minor}.0 <8.{minor + 1}.0"):
+            return binary
+    return _DEFAULT_PHP_BINARY
 
 _TOOL_CHECK_TYPES = {
     "phpstan": "phpstan_error",
@@ -16,10 +36,13 @@ _TOOL_CHECK_TYPES = {
 }
 
 
-async def _call_tool(tool: str, module_path: str) -> list[dict]:
+async def _call_tool(tool: str, module_path: str, magento_root: str | None, php_binary: str) -> list[dict]:
+    payload: dict[str, str] = {"module_path": module_path, "php_binary": php_binary}
+    if magento_root is not None:
+        payload["magento_root"] = magento_root
     try:
         async with httpx.AsyncClient(timeout=120.0) as client:
-            response = await client.post(f"{settings.php_analyzer_url}/{tool}", json={"module_path": module_path})
+            response = await client.post(f"{settings.php_analyzer_url}/{tool}", json=payload)
             response.raise_for_status()
             data = response.json()
     except httpx.HTTPError:
@@ -48,7 +71,9 @@ def _relativize(file_path: str, module_root: Path) -> str:
         return file_path
 
 
-async def check_php_static_analysis(module_root: Path) -> list[QualityFinding]:
+async def check_php_static_analysis(
+    module_root: Path, repo_root: Path, php_constraint: str | None = None
+) -> list[QualityFinding]:
     """Real PHP static analysis via the php-analyzer sidecar (Phase 12) — the
     one case where MageWiki shells out to real PHP tooling rather than just
     parsing with tree-sitter. Fails open per tool (a sidecar outage degrades
@@ -56,9 +81,26 @@ async def check_php_static_analysis(module_root: Path) -> list[QualityFinding]:
     types default to "warning" — informational, not blocking, since there's
     no "upgrade readiness" gate concept yet to make php_compat_issue
     meaningful as a hard blocker the way v1 treats it.
+
+    repo_root (the scanned store's root, not just this one module) is passed
+    to phpstan only, as bitexpert/phpstan-magento's magentoRoot — a module
+    nested inside a real store (e.g. vendor/amasty/base) needs the *store's*
+    vendor/magento/framework, not its own; repo_root already equals
+    module_root for a standalone, self-contained checkout (confirmed against
+    the real Ordo_Automation fixture, which ships its own full vendor/magento/*
+    and is scanned standalone).
+
+    php_constraint (the module's own composer.json php requirement) picks
+    which of the sidecar's side-by-side PHP interpreters (8.3/8.4/8.5 — see
+    php-analyzer/Dockerfile) runs every tool for this module: Composer's own
+    platform_check.php enforces a scanned module's declared PHP version
+    strictly once its real vendor/autoload.php is loaded for bitexpert/
+    phpstan-magento's class resolution, and no single fixed interpreter
+    version can satisfy every scanned module's own requirement.
     """
     findings: list[QualityFinding] = []
     tools = list(_TOOL_CHECK_TYPES.items())
+    php_binary = _pick_php_binary(php_constraint)
     # Sequential, not concurrent: the sidecar's PHP built-in dev server
     # (`php -S`) is single-threaded, so four concurrent calls queue up
     # server-side regardless — confirmed in production, this cost nothing in
@@ -69,7 +111,10 @@ async def check_php_static_analysis(module_root: Path) -> list[QualityFinding]:
     # (828 classes) pushed the last tool's wait-plus-processing time past the
     # old 60s timeout with nothing logged. Calling sequentially gives each
     # tool a fresh timeout window starting when it actually begins running.
-    results = [await _call_tool(tool, str(module_root)) for tool, _check_type in tools]
+    results = [
+        await _call_tool(tool, str(module_root), str(repo_root) if tool == "phpstan" else None, php_binary)
+        for tool, _check_type in tools
+    ]
     for (_tool, check_type), items in zip(tools, results, strict=True):
         for item in items:
             # Every tool is asked to exclude Test/ at its own CLI level too

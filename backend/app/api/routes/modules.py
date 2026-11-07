@@ -205,6 +205,10 @@ class QualityFindingResponse(BaseModel):
 
 
 class ModuleDetail(ModuleSummary):
+    license: list[str] | None = None
+    homepage: str | None = None
+    authors: list[str] = []
+    php_extensions: list[str] = []
     dependencies: list[str]
     classes: list[PhpClassSummary]
     preferences: list[DiPreferenceSummary]
@@ -596,6 +600,10 @@ async def get_module(module_id: int, session: AsyncSession = Depends(get_session
         enabled=module.enabled,
         state=module.state,
         setup_version=module.setup_version,
+        license=module.license,
+        homepage=module.homepage,
+        authors=module.authors or [],
+        php_extensions=module.php_extensions or [],
         class_count=len(classes),
         plugin_count=sum(1 for c in classes if c.is_plugin),
         observer_count=sum(1 for c in classes if c.is_observer),

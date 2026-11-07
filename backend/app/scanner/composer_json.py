@@ -39,7 +39,25 @@ def parse_composer_json(path: Path) -> ComposerResult | None:
         has_phpunit_dev_dependency="phpunit/phpunit" in require_dev,
         requirements=_third_party_packages(require),
         dev_requirements=_third_party_packages(require_dev),
+        homepage=raw.get("homepage") if isinstance(raw.get("homepage"), str) else None,
+        authors=_authors(raw.get("authors")),
+        php_extensions=sorted(name for name in require if name.startswith("ext-")),
     )
+
+
+def _authors(raw_authors: object) -> list[str]:
+    if not isinstance(raw_authors, list):
+        return []
+    formatted = []
+    for author in raw_authors:
+        if not isinstance(author, dict):
+            continue
+        name = author.get("name")
+        if not isinstance(name, str) or not name:
+            continue
+        email = author.get("email")
+        formatted.append(f"{name} <{email}>" if isinstance(email, str) and email else name)
+    return formatted
 
 
 def _third_party_packages(require: dict) -> dict[str, str]:

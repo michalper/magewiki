@@ -235,7 +235,34 @@ export default function ModuleDetailClient({ id }: { id: string }) {
           <p className="text-sm text-muted-foreground">
             Last scanned {new Date(moduleQuery.data.last_scanned_at).toLocaleString()} — composer:{" "}
             {moduleQuery.data.composer_name ?? "—"} — version: {moduleQuery.data.setup_version ?? "—"}
+            {moduleQuery.data.license && moduleQuery.data.license.length > 0 && (
+              <> — license: {moduleQuery.data.license.join(", ")}</>
+            )}
           </p>
+
+          {(moduleQuery.data.homepage || moduleQuery.data.authors.length > 0) && (
+            <p className="text-sm text-muted-foreground">
+              {moduleQuery.data.homepage && (
+                <a
+                  href={moduleQuery.data.homepage}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="text-primary hover:underline"
+                >
+                  {moduleQuery.data.homepage}
+                </a>
+              )}
+              {moduleQuery.data.homepage && moduleQuery.data.authors.length > 0 && " — "}
+              {moduleQuery.data.authors.length > 0 && moduleQuery.data.authors.join(", ")}
+            </p>
+          )}
+
+          {moduleQuery.data.php_extensions.length > 0 && (
+            <div className="text-sm flex flex-wrap items-center gap-x-1">
+              <span className="font-medium">Requires PHP extensions:</span>
+              <span className="font-mono text-muted-foreground">{moduleQuery.data.php_extensions.join(", ")}</span>
+            </div>
+          )}
 
           {moduleQuery.data.dependencies.length > 0 && (
             <div className="text-sm flex flex-wrap items-center gap-x-1">

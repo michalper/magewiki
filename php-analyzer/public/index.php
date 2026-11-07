@@ -34,6 +34,28 @@ if ($realModulePath === false) {
     exit;
 }
 
+// Only phpstan uses this (bitexpert/phpstan-magento's magentoRoot) — optional,
+// and falls back to the module's own path (correct for a self-contained
+// standalone checkout that ships its own full vendor/magento/*, e.g. the real
+// Ordo_Automation fixture) when the caller doesn't know a wider store root.
+$magentoRootRaw = is_array($body) ? ($body['magento_root'] ?? null) : null;
+$magentoRoot = is_string($magentoRootRaw) && $magentoRootRaw !== '' && is_dir($magentoRootRaw)
+    ? (realpath($magentoRootRaw) ?: $realModulePath)
+    : $realModulePath;
+
+// Validated against a strict allowlist (not passed straight through) even
+// though this endpoint is internal-only — it still ends up as the first
+// element of a proc_open() command array, i.e. the actual binary executed.
+// Picked by the Python caller from the scanned module's own composer.json
+// php constraint (see app/scanner/php_analyzer_client.py's _pick_php_binary);
+// php83/php84/php85 are installed side by side for exactly this (see
+// Dockerfile) — a scanned module's own vendor/autoload.php, loaded for
+// bitexpert/phpstan-magento's class resolution, enforces its declared PHP
+// version strictly via Composer's generated platform_check.php, and no
+// single fixed interpreter version can satisfy every scanned module.
+$phpBinaryRaw = is_array($body) ? ($body['php_binary'] ?? null) : null;
+$phpBinary = in_array($phpBinaryRaw, ['php83', 'php84', 'php85'], true) ? $phpBinaryRaw : 'php84';
+
 function run_command(array $command): array
 {
     $descriptors = [1 => ['pipe', 'w'], 2 => ['pipe', 'w']];
@@ -53,18 +75,77 @@ function run_command(array $command): array
 // — analysing the real 828-class Ordo_Automation module). Run every tool as
 // `php -d memory_limit=-1 <binary>` rather than invoking vendor/bin/* via
 // its own shebang, so the override applies uniformly to all four.
-function with_memory_limit(string $binary): array
+function with_memory_limit(string $phpBinary, string $binary): array
 {
-    return ['php', '-d', 'memory_limit=-1', $binary];
+    return [$phpBinary, '-d', 'memory_limit=-1', $binary];
 }
 
-function run_phpstan(string $root, string $modulePath): array
+// NEON single-quoted strings escape an embedded ' by doubling it, same as
+// YAML — these paths come from realpath() upstream (not arbitrary user
+// text), but escape defensively anyway rather than assume that always holds.
+function neon_quote(string $value): string
 {
-    $result = run_command([
-        ...with_memory_limit($root . '/vendor/bin/phpstan'),
-        'analyse', '--error-format=json', '--no-progress', '--configuration=' . $root . '/phpstan.neon', $modulePath,
-    ]);
+    return "'" . str_replace("'", "''", $value) . "'";
+}
+
+// magentoRoot/bootstrapFiles can't be set dynamically via %env(...)% in
+// phpstan.neon itself — confirmed empirically that PHPStan's env()
+// resolution doesn't reliably apply to these two keys (one left the literal,
+// unsubstituted "%env(...)%" text in a file path; the other failed
+// differently, as a Nette DI "Statement" object reaching code that expects a
+// plain string). Generating a tiny overlay config with both as literal, real
+// paths and including the real phpstan.neon from it sidesteps the issue.
+function _run_phpstan_with_bootstrap(
+    string $root, string $modulePath, string $magentoRoot, string $autoloadFile, string $phpBinary
+): ?array {
+    $overlayPath = tempnam(sys_get_temp_dir(), 'phpstan_overlay_') . '.neon';
+    file_put_contents(
+        $overlayPath,
+        "includes:\n    - " . neon_quote($root . '/phpstan.neon') . "\n" .
+        "parameters:\n" .
+        "    magento:\n        magentoRoot: " . neon_quote($magentoRoot) . "\n" .
+        "    bootstrapFiles:\n        - " . neon_quote($autoloadFile) . "\n"
+    );
+    try {
+        $result = run_command([
+            ...with_memory_limit($phpBinary, $root . '/vendor/bin/phpstan'),
+            'analyse', '--error-format=json', '--no-progress', '--configuration=' . $overlayPath, $modulePath,
+        ]);
+    } finally {
+        unlink($overlayPath);
+    }
     $data = json_decode($result['stdout'], true);
+    return is_array($data) ? $data : null;
+}
+
+function run_phpstan(string $root, string $modulePath, string $magentoRoot, string $phpBinary): array
+{
+    // bitexpert's autoloaders only synthesize Magento's *Factory/*Proxy/
+    // extension-interface classes (generated code that never exists as real
+    // files) — an ordinary real class like Magento\Backend\Block\Template
+    // still needs the scanned store's own real Composer autoloader to
+    // resolve at all, confirmed empirically: bitexpert's magentoRoot alone
+    // left those as "extends unknown class". Falls back to a no-op file when
+    // the scanned module has no real vendor/autoload.php of its own (e.g. a
+    // minimal fixture) — bootstrapFiles require()s the path unconditionally.
+    $realAutoload = $magentoRoot . '/vendor/autoload.php';
+    $noopAutoload = $root . '/noop-autoload.php';
+    $preferredAutoload = is_file($realAutoload) ? $realAutoload : $noopAutoload;
+
+    $data = _run_phpstan_with_bootstrap($root, $modulePath, $magentoRoot, $preferredAutoload, $phpBinary);
+    if ($data === null && $preferredAutoload !== $noopAutoload) {
+        // The real autoloader can fail outright — most commonly, the scanned
+        // module's own composer.json declares a PHP version requirement this
+        // sidecar's own PHP runtime doesn't satisfy (Composer's generated
+        // vendor/composer/platform_check.php enforces this strictly, and
+        // can't be disabled without mutating the scanned module's own files,
+        // which MageWiki never does). Retry without the real autoloader:
+        // bitexpert's magentoRoot-independent features (DataObject magic
+        // methods, ObjectManager type hints) and the custom stub still apply,
+        // just without real-class resolution — degraded, not zero, findings,
+        // for a module whose PHP requirement doesn't match this sidecar's.
+        $data = _run_phpstan_with_bootstrap($root, $modulePath, $magentoRoot, $noopAutoload, $phpBinary);
+    }
     $findings = [];
     foreach (($data['files'] ?? []) as $file => $info) {
         foreach (($info['messages'] ?? []) as $message) {
@@ -74,10 +155,10 @@ function run_phpstan(string $root, string $modulePath): array
     return $findings;
 }
 
-function run_phpmd(string $root, string $modulePath): array
+function run_phpmd(string $root, string $modulePath, string $phpBinary): array
 {
     $result = run_command([
-        ...with_memory_limit($root . '/vendor/bin/phpmd'), $modulePath, 'json', 'codesize,unusedcode,design',
+        ...with_memory_limit($phpBinary, $root . '/vendor/bin/phpmd'), $modulePath, 'json', 'codesize,unusedcode,design',
         '--exclude', 'vendor/*',
     ]);
     $data = json_decode($result['stdout'], true);
@@ -95,7 +176,7 @@ function run_phpmd(string $root, string $modulePath): array
     return $findings;
 }
 
-function run_phpcs(string $root, string $modulePath): array
+function run_phpcs(string $root, string $modulePath, string $phpBinary): array
 {
     // phpcs writes deprecation/CSS-sniff-registration noise to stdout ahead
     // of the JSON report itself, which silently corrupts a stdout-based
@@ -129,7 +210,7 @@ function run_phpcs(string $root, string $modulePath): array
     }
     try {
         run_command([
-            ...with_memory_limit($root . '/vendor/bin/phpcs'), '--standard=' . ($ownRuleset ?? 'Magento2'),
+            ...with_memory_limit($phpBinary, $root . '/vendor/bin/phpcs'), '--standard=' . ($ownRuleset ?? 'Magento2'),
             '--report=json', '--report-file=' . $reportFile, '--extensions=php',
             '--ignore=*/vendor/*,*/Test/*', $modulePath,
         ]);
@@ -150,10 +231,10 @@ function run_phpcs(string $root, string $modulePath): array
     return $findings;
 }
 
-function run_rector(string $root, string $modulePath): array
+function run_rector(string $root, string $modulePath, string $phpBinary): array
 {
     $result = run_command([
-        ...with_memory_limit($root . '/vendor/bin/rector'), 'process', $modulePath, '--dry-run',
+        ...with_memory_limit($phpBinary, $root . '/vendor/bin/rector'), 'process', $modulePath, '--dry-run',
         '--output-format=json', '--config=' . $root . '/rector.php', '--no-progress-bar',
     ]);
     $data = json_decode($result['stdout'], true);
@@ -191,7 +272,9 @@ if (!isset($tools[$requestPath])) {
 }
 
 try {
-    $findings = ($tools[$requestPath])($analyzerRoot, $realModulePath);
+    $findings = $requestPath === '/phpstan'
+        ? run_phpstan($analyzerRoot, $realModulePath, $magentoRoot, $phpBinary)
+        : ($tools[$requestPath])($analyzerRoot, $realModulePath, $phpBinary);
 } catch (Throwable $e) {
     // An uncaught exception/fatal error here previously reached PHP's
     // built-in dev server's own handler, which closes the connection with a

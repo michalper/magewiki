@@ -89,7 +89,7 @@ async def test_check_php_static_analysis_maps_each_tool_to_its_check_type(tmp_pa
         "app.scanner.php_analyzer_client.httpx.AsyncClient", lambda *a, **k: _FakeAsyncClient(findings_by_tool)
     )
 
-    findings = await check_php_static_analysis(module_root)
+    findings = await check_php_static_analysis(module_root, module_root)
 
     by_check_type = {f.check_type: f for f in findings}
     assert set(by_check_type) == {"phpstan_error", "phpmd_issue", "phpcs_violation", "php_compat_issue"}
@@ -104,7 +104,7 @@ async def test_check_php_static_analysis_fails_open_on_connection_error(tmp_path
     module_root.mkdir(parents=True)
     monkeypatch.setattr("app.scanner.php_analyzer_client.httpx.AsyncClient", lambda *a, **k: _RaisingAsyncClient())
 
-    findings = await check_php_static_analysis(module_root)
+    findings = await check_php_static_analysis(module_root, module_root)
 
     assert findings == []
 
@@ -123,7 +123,7 @@ async def test_check_php_static_analysis_fails_open_on_an_empty_200_body(tmp_pat
         "app.scanner.php_analyzer_client.httpx.AsyncClient", lambda *a, **k: _EmptyBodyAsyncClient()
     )
 
-    findings = await check_php_static_analysis(module_root)
+    findings = await check_php_static_analysis(module_root, module_root)
 
     assert findings == []
 
@@ -136,7 +136,7 @@ async def test_check_php_static_analysis_with_no_findings(tmp_path, monkeypatch)
         "app.scanner.php_analyzer_client.httpx.AsyncClient", lambda *a, **k: _FakeAsyncClient({})
     )
 
-    findings = await check_php_static_analysis(module_root)
+    findings = await check_php_static_analysis(module_root, module_root)
 
     assert findings == []
 

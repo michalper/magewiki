@@ -533,6 +533,9 @@ async def _persist_module(
     module.composer_name = composer_name
     module.composer_type = pm.composer.type if pm.composer else None
     module.license = pm.composer.license if pm.composer else None
+    module.homepage = pm.composer.homepage if pm.composer else None
+    module.authors = pm.composer.authors if pm.composer else []
+    module.php_extensions = pm.composer.php_extensions if pm.composer else []
     module.has_readme = has_readme(pm.discovered.root)
     module.has_tests = has_tests(pm.discovered.root)
     module.enabled = enabled
@@ -674,7 +677,10 @@ async def _persist_module(
         ]
 
     session_findings, php_static_findings = await asyncio.gather(
-        _session_based_checks(), check_php_static_analysis(pm.discovered.root)
+        _session_based_checks(),
+        check_php_static_analysis(
+            pm.discovered.root, repo_root, pm.composer.php_constraint if pm.composer else None
+        ),
     )
     quality_findings = [
         *composer_completeness_findings(pm.composer),

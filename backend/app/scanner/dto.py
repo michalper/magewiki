@@ -42,6 +42,14 @@ class ComposerResult:
     # dependency checks. Excludes "php" and "ext-*"/"lib-*" platform entries.
     requirements: dict[str, str] = field(default_factory=dict)
     dev_requirements: dict[str, str] = field(default_factory=dict)
+    # Already-parsed facts that were never actually surfaced anywhere, parser
+    # or API — flagged by a user looking at Ordo_Automation's own real
+    # composer.json and asking why homepage/authors/required PHP extensions
+    # weren't shown anywhere at all (license had the exact same problem:
+    # parsed and stored on Module, but never exposed via the API either).
+    homepage: str | None = None
+    authors: list[str] = field(default_factory=list)  # "Name <email>" or just "Name"
+    php_extensions: list[str] = field(default_factory=list)  # e.g. "ext-openssl", "ext-curl"
 
 
 @dataclass

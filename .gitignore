@@ -16,6 +16,10 @@ node_modules/
 out/
 npm-debug.log*
 
+# PHP (php-analyzer sidecar) — composer.lock IS committed, same convention as
+# backend/poetry.lock and frontend/package-lock.json, for reproducible builds.
+php-analyzer/vendor/
+
 # Env files
 .env
 .env.*.local

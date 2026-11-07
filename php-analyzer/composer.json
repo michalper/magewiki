@@ -5,11 +5,12 @@
     "license": "MIT",
     "require": {
         "php": ">=8.2",
-        "phpstan/phpstan": "^1.11",
+        "phpstan/phpstan": "^2.0",
+        "bitexpert/phpstan-magento": "^0.44",
         "phpmd/phpmd": "^2.15",
         "squizlabs/php_codesniffer": "^3.10",
-        "magento/magento-coding-standard": "^31",
-        "rector/rector": "^0.15.10"
+        "magento/magento-coding-standard": "^41",
+        "rector/rector": "^2.0"
     },
     "config": {
         "allow-plugins": {

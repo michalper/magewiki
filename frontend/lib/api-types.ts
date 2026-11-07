@@ -505,6 +505,20 @@ export interface components {
             finding_counts: {
                 [key: string]: number;
             };
+            /** License */
+            license?: string[] | null;
+            /** Homepage */
+            homepage?: string | null;
+            /**
+             * Authors
+             * @default []
+             */
+            authors: string[];
+            /**
+             * Php Extensions
+             * @default []
+             */
+            php_extensions: string[];
             /** Dependencies */
             dependencies: string[];
             /** Classes */
