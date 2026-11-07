@@ -1,7 +1,7 @@
 import asyncio
 import logging
 from collections.abc import AsyncIterator
-from dataclasses import dataclass, field
+from dataclasses import asdict, dataclass, field
 from datetime import UTC, datetime
 from pathlib import Path
 
@@ -359,6 +359,27 @@ async def _run_scan(root: Path, session: AsyncSession) -> AsyncIterator[dict]:
     yield {"event": "done", "result": result}
 
 
+_ModuleChildModel = type[DiPreference] | type[DiPlugin] | type[EventObserver] | type[GraphQlField]
+
+
+async def _sync_module_children(
+    session: AsyncSession, module_id: int, model_cls: _ModuleChildModel, entries: list
+) -> None:
+    """Replace every row of model_cls for this module — delete, then reinsert from
+    freshly parsed entries. Shared by every 1:N parsed-fact table whose DTO field
+    names already match the model's column names exactly (DiPreference, DiPlugin,
+    EventObserver, GraphQlField) — a single, always-correct code path instead of a
+    hand-maintained delete() + insert-loop pair per entity type (4 near-identical
+    copies before this), which can desync as new fact types are added. This
+    project already hit exactly that class of bug once (e9ed07a's pending_file_count
+    desync, caused by a forgotten reset in one of several hand-copied code paths).
+    Safe to call for a brand-new module too — deleting from an empty set is a no-op.
+    """
+    await session.execute(delete(model_cls).where(model_cls.module_id == module_id))
+    for entry in entries:
+        session.add(model_cls(module_id=module_id, **asdict(entry)))
+
+
 async def _persist_module(
     session: AsyncSession,
     repo_root: Path,
@@ -414,10 +435,8 @@ async def _persist_module(
         outcome.status = "updated"
         await session.execute(delete(ModuleDependency).where(ModuleDependency.module_id == module.id))
         await session.execute(delete(PhpClass).where(PhpClass.module_id == module.id))
-        await session.execute(delete(DiPreference).where(DiPreference.module_id == module.id))
-        await session.execute(delete(DiPlugin).where(DiPlugin.module_id == module.id))
-        await session.execute(delete(EventObserver).where(EventObserver.module_id == module.id))
-        await session.execute(delete(GraphQlField).where(GraphQlField.module_id == module.id))
+        # DiPreference/DiPlugin/EventObserver/GraphQlField are deleted together with
+        # their reinsertion in _sync_module_children below, not here.
         await session.execute(delete(FileHash).where(FileHash.module_id == module.id))
         await session.execute(delete(ModuleQualityFinding).where(ModuleQualityFinding.module_id == module.id))
         await session.execute(
@@ -483,44 +502,12 @@ async def _persist_module(
     for dep_name in pm.module_xml.sequence:
         session.add(ModuleDependency(module_id=module.id, depends_on_name=dep_name))
 
-    for pref in pm.di.preferences:
-        session.add(DiPreference(module_id=module.id, for_type=pref.for_type, preference_type=pref.preference_type))
-
-    for plugin in pm.di.plugins:
-        session.add(
-            DiPlugin(
-                module_id=module.id,
-                intercepted_type=plugin.intercepted_type,
-                plugin_name=plugin.plugin_name,
-                plugin_class=plugin.plugin_class,
-                sort_order=plugin.sort_order,
-                disabled=plugin.disabled,
-            )
-        )
+    await _sync_module_children(session, module.id, DiPreference, pm.di.preferences)
+    await _sync_module_children(session, module.id, DiPlugin, pm.di.plugins)
     outcome.plugins = len(pm.di.plugins)
-
-    for obs in pm.events:
-        session.add(
-            EventObserver(
-                module_id=module.id,
-                event_name=obs.event_name,
-                observer_name=obs.observer_name,
-                observer_class=obs.observer_class,
-                disabled=obs.disabled,
-            )
-        )
+    await _sync_module_children(session, module.id, EventObserver, pm.events)
     outcome.observers = len(pm.events)
-
-    for gf in pm.graphql:
-        session.add(
-            GraphQlField(
-                module_id=module.id,
-                operation_type=gf.operation_type,
-                type_name=gf.type_name,
-                field_name=gf.field_name,
-                resolver_class=gf.resolver_class,
-            )
-        )
+    await _sync_module_children(session, module.id, GraphQlField, pm.graphql)
 
     classes = catalog_module_classes(pm.discovered.root)
     outcome.classes = len(classes)
