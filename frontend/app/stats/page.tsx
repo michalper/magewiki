@@ -146,18 +146,50 @@ function StateDonut({ modules }: { modules: ModuleSummary[] }) {
 
   if (counts.length === 0) return null;
 
+  const total = counts.reduce((sum, d) => sum + d.value, 0);
+
   return (
     <div className="rounded-2xl bg-card p-5 shadow-sm">
       <h3 className="text-sm font-medium mb-2 text-muted-foreground">Module state</h3>
-      <ResponsiveContainer width="100%" height={220}>
+      <ResponsiveContainer width="100%" height={240}>
         <PieChart>
-          <Pie data={counts} dataKey="value" nameKey="name" innerRadius={50} outerRadius={80} stroke="none">
+          <Pie
+            data={counts}
+            dataKey="value"
+            nameKey="name"
+            innerRadius={50}
+            outerRadius={80}
+            stroke="none"
+            // Direct percentage label per slice (<=4 series here per the
+            // dataviz skill's labeling rule) — otherwise the only way to
+            // see a proportion is hovering, which a static screenshot
+            // can't do.
+            label={({ cx, cy, midAngle, outerRadius: r, percent }) => {
+              const RADIAN = Math.PI / 180;
+              const labelRadius = r + 18;
+              const x = cx + labelRadius * Math.cos(-(midAngle ?? 0) * RADIAN);
+              const y = cy + labelRadius * Math.sin(-(midAngle ?? 0) * RADIAN);
+              return (
+                <text
+                  x={x}
+                  y={y}
+                  fill={palette.ink.secondary}
+                  fontSize={12}
+                  textAnchor={x > cx ? "start" : "end"}
+                  dominantBaseline="central"
+                >
+                  {Math.round((percent ?? 0) * 100)}%
+                </text>
+              );
+            }}
+            labelLine={{ stroke: palette.ink.muted }}
+          >
             {counts.map((entry) => (
               <Cell key={entry.name} fill={entry.color} />
             ))}
           </Pie>
-          <Tooltip />
-          <Legend />
+          <Tooltip formatter={(value) => [`${value} of ${total} modules`, ""]} />
+          <Legend formatter={(value: string) => `${value} (${counts.find((c) => c.name === value)?.value ?? 0})`} />
         </PieChart>
       </ResponsiveContainer>
     </div>
