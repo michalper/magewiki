@@ -424,17 +424,36 @@ actually boots and renders — proving a real deploy works, which nothing today
 verified.
 
 `pip-audit`'s step is deliberately `continue-on-error: true` for now, not silently
-ignored: of today's 3 real findings (not counting pip/poetry/setuptools/virtualenv
+ignored: of the original 3 real findings (not counting pip/poetry/setuptools/virtualenv
 noise from scanning the whole container instead of just the project's own
 `poetry.lock` — verified `poetry export | pip-audit -r` is the correctly-scoped
 command), `lxml` (directly pinned) was bumped `^5.3` → `^6.1` immediately since it
-was safe to do standalone; `starlette`/`filelock` are transitive and blocked by
-fastapi's own `<0.47.0` pin — their real fix needs a dedicated fastapi major-version
-bump (0.115 → 0.162+), a separate, nontrivial task with its own compatibility risk,
-not something to rush mid an unrelated "add a scanner" task. `npm audit
---audit-level=high` is fully blocking already — today's 13 frontend findings are all
-moderate/low, transitive through `shadcn`'s own dev-tooling deps (not runtime code),
-so the threshold passes clean without needing the same carve-out.
+was safe to do standalone; `starlette`/`filelock` were transitive and blocked by
+fastapi's own `<0.47.0` pin. `npm audit --audit-level=high` is fully blocking already
+— the 13 frontend findings are all moderate/low, transitive through `shadcn`'s own
+dev-tooling deps (not runtime code), so the threshold passes clean without needing the
+same carve-out.
+
+**Dependency refresh (recorded 2026-11-07):** the deferred fastapi bump above is now
+done — `fastapi` `^0.115` → `^0.162` (with `starlette`, `mcp` `^1.1` → `^2.3`,
+`asyncpg`, `tree-sitter-php`, pytest all bumped alongside, full suite re-verified
+225/225 green both before and after, since the one failure seen mid-upgrade
+reproduced as flaky in isolation and vanished on rerun — not a regression). This
+unblocked `starlette`'s CVE but not `filelock`'s: `filelock` is pinned `<4.0` by
+`litellm` itself (not by fastapi/starlette as the note above assumed), and no newer
+litellm release exists yet to relax that. Checked whether litellm's own `filelock`
+usage could be affected before forcing it: `litellm` only imports `filelock` from its
+own CLI/proxy-client tooling (`litellm/proxy/client/cli/commands/*.py`), which this
+app never invokes (only `litellm.acompletion`/`aembedding` are ever called) — so
+`backend/Dockerfile` force-installs `filelock>=4.0.9` via a `pip install --no-deps`
+step right after `poetry install`, out-of-band of the lock file, closing the real CVE
+without waiting on litellm. Revisit by removing that step once litellm relaxes its own
+pin and `filelock` can go back through `poetry update` normally. Still genuinely
+blocked (version-lag only, no CVE, so not worth the same force-override treatment):
+`redis` (`arq` pins `<6`), `huggingface-hub`/`importlib-metadata`/`python-dateutil`
+(pinned by `litellm`/`botocore`'s own upper bounds). Frontend's `typescript` stays at
+5.9.3 — `typescript-eslint` requires `<6.1.0` and `openapi-typescript` requires `^5.x`,
+neither has released support for TypeScript 7 yet.
 
 ## Working method
 
