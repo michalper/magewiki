@@ -482,7 +482,7 @@ export default function ModulesPage() {
 
   return (
     <TooltipProvider>
-    <div className="flex flex-col flex-1 gap-6 p-8 max-w-7xl mx-auto w-full">
+    <div className="flex flex-col flex-1 gap-6 p-8 w-full">
       <h1 className="text-2xl font-semibold tracking-tight">Modules</h1>
 
       {repoFilter && (
