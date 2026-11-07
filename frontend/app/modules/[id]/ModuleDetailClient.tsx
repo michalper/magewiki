@@ -11,6 +11,7 @@ import { apiFetch, apiUrl } from "@/lib/api";
 import type { components } from "@/lib/api-types";
 
 type ModuleDetail = components["schemas"]["ModuleDetail"];
+type ModuleSummary = components["schemas"]["ModuleSummary"];
 
 const PREVIEW_FINDING_COUNT = 10;
 
@@ -32,6 +33,10 @@ async function fetchModule(id: string): Promise<ModuleDetail> {
   return apiFetch(`/modules/${id}`);
 }
 
+async function fetchModules(): Promise<ModuleSummary[]> {
+  return apiFetch("/modules");
+}
+
 async function fetchReadme(id: string): Promise<string | null> {
   // apiFetch always parses JSON and can't special-case 404 as "not an error" —
   // this is the one fetch in the app that returns plain text and treats a
@@ -45,6 +50,17 @@ async function fetchReadme(id: string): Promise<string | null> {
 export default function ModuleDetailClient({ id }: { id: string }) {
   const moduleQuery = useQuery({ queryKey: ["module", id], queryFn: () => fetchModule(id) });
   const readmeQuery = useQuery({ queryKey: ["module-readme", id], queryFn: () => fetchReadme(id) });
+  // Same queryKey the Modules list page uses, so navigating here from there is
+  // an instant cache hit rather than a second full-fleet fetch.
+  const modulesQuery = useQuery({ queryKey: ["modules"], queryFn: fetchModules });
+
+  const repoRoot = moduleQuery.data?.repo_root;
+  const idByName = new Map<string, number>();
+  if (modulesQuery.data && repoRoot) {
+    for (const m of modulesQuery.data) {
+      if (m.repo_root === repoRoot) idByName.set(m.name, m.id);
+    }
+  }
 
   return (
     <div className="flex flex-col flex-1 gap-6 p-8 max-w-4xl mx-auto w-full">
@@ -82,9 +98,23 @@ export default function ModuleDetailClient({ id }: { id: string }) {
           </p>
 
           {moduleQuery.data.dependencies.length > 0 && (
-            <div className="text-sm">
-              <span className="font-medium">Depends on: </span>
-              {moduleQuery.data.dependencies.join(", ")}
+            <div className="text-sm flex flex-wrap items-center gap-x-1">
+              <span className="font-medium">Depends on:</span>
+              {moduleQuery.data.dependencies.map((dep, i) => {
+                const depId = idByName.get(dep);
+                return (
+                  <span key={dep}>
+                    {depId !== undefined ? (
+                      <Link href={`/modules/${depId}`} className="text-primary hover:underline">
+                        {dep}
+                      </Link>
+                    ) : (
+                      <span className="text-muted-foreground">{dep}</span>
+                    )}
+                    {i < moduleQuery.data.dependencies.length - 1 ? "," : ""}
+                  </span>
+                );
+              })}
             </div>
           )}
 
