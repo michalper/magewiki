@@ -41,7 +41,10 @@ async def test_real_ordo_automation_module(db_session):
         select(Module).where(Module.repo_root == repo_root, Module.name == "Ordo_Automation")
     )
     assert module is not None
-    assert module.setup_version == "0.1.0"
+    # composer.json's own "version" field wins over module.xml's setup_version
+    # (which really is "0.1.0" in this real fixture, but is stale — see CLAUDE.md's
+    # version-source-priority decision note).
+    assert module.setup_version == "1.0.0"
     assert module.composer_name == "ordo/module-automation"
     assert module.license == ["MIT"]
     assert module.enabled is None  # no app/etc/config.php at the standalone module's own root

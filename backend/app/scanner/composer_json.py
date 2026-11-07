@@ -30,6 +30,7 @@ def parse_composer_json(path: Path) -> ComposerResult | None:
         type=raw.get("type"),
         license=license_list,
         description=raw.get("description"),
+        version=raw.get("version") if isinstance(raw.get("version"), str) else None,
         has_php_requirement=bool(require.get("php")),
         php_constraint=str(require["php"]) if require.get("php") else None,
         has_magento_dependency=any(k.startswith("magento/") for k in require),

@@ -384,6 +384,27 @@ any of them (a permission error, or a TOCTOU race between each parser's own
 module in the store, not just the one with the bad file. Now isolated the
 same way `module.xml`'s own parse errors already were.
 
+**Version source priority: Composer wins over `setup_version` (recorded
+2026-11-07):** first fixed the narrower case — `module.xml`'s `setup_version`
+is optional since Magento 2.3's declarative schema and often absent entirely
+(`Amasty_Base` has no `setup_version` attribute at all) — by falling back to
+`vendor/composer/installed.json`'s resolved version
+(`app/scanner/installed_versions.py`) when `setup_version` was missing. Then
+a second real case, caught by the project's own author looking at his own
+module (`Ordo_Automation`): `setup_version` isn't just sometimes *absent*,
+it's commonly *stale* — Ordo_Automation's module.xml says `"0.1.0"` even
+though its composer.json has long since moved past that, because
+`setup_version` is an internal Magento upgrade-script trigger that a module
+using declarative schema never needs to bump again after its first release,
+while composer.json's own `version` field keeps getting bumped on every real
+release. Final priority, highest first: (1) composer.json's own `version`
+field (now parsed into `ComposerResult.version`) — present for both
+Amasty_Base and Ordo_Automation; (2) Composer's `installed.json`-resolved
+version — covers a package with no `version` field in its own composer.json
+at all; (3) `module.xml`'s `setup_version` — last resort. Composer's version
+wins even when `setup_version` is present and non-empty, not only as a
+fallback for when it's missing.
+
 ## Phase plan
 
 MVP = Phases 0–5. Each phase is done separately: first a plan for approval, then code with tests, then a small commit. Don't skip phases.

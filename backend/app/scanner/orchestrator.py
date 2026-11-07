@@ -460,16 +460,25 @@ async def _persist_module(
                 )
             )
 
-    # module.xml's setup_version is optional since Magento 2.3's declarative schema
-    # and frequently absent on modern modules entirely (confirmed against a real
-    # store: Amasty_Base has no setup_version attribute at all) — fall back to
-    # Composer's own resolved version for the package, which is populated for
-    # every genuinely Composer-installed module regardless of whether it declares
-    # setup_version.
-    module.setup_version = pm.module_xml.setup_version or (
-        installed_versions.get(pm.composer.name) if pm.composer and pm.composer.name else None
+    # Composer's version wins over module.xml's setup_version, not just as a
+    # fallback for when setup_version is absent — setup_version is an internal
+    # Magento upgrade-script trigger, commonly left stale at its initial value
+    # for a module's whole lifetime once declarative schema removes the need to
+    # ever bump it again (confirmed against two real cases: Amasty_Base has no
+    # setup_version attribute at all, and Ordo_Automation's says "0.1.0" even
+    # though its composer.json says "1.0.0" — setup_version was simply never
+    # touched after the module's very first release). Prefer composer.json's own
+    # "version" field (present for both of those real cases) over the Composer-
+    # resolved installed.json version (only present for genuinely Composer-
+    # installed packages — absent for e.g. a manually vendor-src-synced module),
+    # falling back to setup_version only when neither Composer source has one.
+    composer_name = pm.composer.name if pm.composer else None
+    module.setup_version = (
+        (pm.composer.version if pm.composer else None)
+        or (installed_versions.get(composer_name) if composer_name else None)
+        or pm.module_xml.setup_version
     )
-    module.composer_name = pm.composer.name if pm.composer else None
+    module.composer_name = composer_name
     module.composer_type = pm.composer.type if pm.composer else None
     module.license = pm.composer.license if pm.composer else None
     module.has_readme = has_readme(pm.discovered.root)

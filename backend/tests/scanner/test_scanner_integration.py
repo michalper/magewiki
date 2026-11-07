@@ -323,3 +323,33 @@ async def test_scan_repository_falls_back_to_composer_installed_version(
 
     module = await db_session.scalar(select(Module).where(Module.repo_root == repo_root, Module.name == "Vendor_Module"))
     assert module.setup_version == "2.4.7"
+
+
+@pytest.mark.asyncio
+async def test_scan_repository_prefers_composer_version_over_a_stale_setup_version(
+    demo_store_path: Path, db_session, tmp_path: Path
+):
+    # Real-world gap, flagged by a user looking at his own real module (Ordo_
+    # Automation): module.xml's setup_version is an internal Magento upgrade-
+    # script trigger, commonly left stale at its initial value for a module's
+    # whole lifetime — Ordo_Automation's says "0.1.0" even though its real
+    # composer.json version is well past that. Composer's version must win even
+    # when setup_version IS present (not just as a fallback for when it's absent
+    # — that's the separate Amasty_Base-shaped case covered above).
+    repo_root_path = tmp_path / "store"
+    shutil.copytree(demo_store_path, repo_root_path)
+
+    composer_json_path = repo_root_path / "app/code/Vendor/Module/composer.json"
+    composer_json_path.write_text(
+        composer_json_path.read_text().replace(
+            '"name": "vendor/module-sample",', '"name": "vendor/module-sample",\n    "version": "1.5.0",'
+        ),
+        encoding="utf-8",
+    )
+
+    repo_root = str(repo_root_path.resolve())
+    await delete_module_if_present(db_session, repo_root, "Vendor_Module")
+    await scan_repository(repo_root, db_session)
+
+    module = await db_session.scalar(select(Module).where(Module.repo_root == repo_root, Module.name == "Vendor_Module"))
+    assert module.setup_version == "1.5.0"
