@@ -120,7 +120,7 @@ jobs:
       - run: docker build -t magewiki-${{ matrix.image }}-ci -f ${{ matrix.dockerfile }} ${{ matrix.context }}
       # pip-audit/npm audit (in the backend/frontend jobs above) only scan the
       # project's own lockfiles — this catches CVEs in the OS-layer packages the
-      # base image (e.g. python:3.11-slim) brings in, which nothing else here does.
+      # base image (e.g. python:3.13-slim) brings in, which nothing else here does.
       # continue-on-error, same as pip-audit above: a base-image OS-layer CVE with
       # no upstream fix yet shouldn't permanently block CI — findings still show
       # up in the step output and the Security tab (next step) either way.

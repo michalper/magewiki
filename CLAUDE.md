@@ -798,14 +798,32 @@ blocked (version-lag only, no CVE, so not worth the same force-override treatmen
 5.9.3 — `typescript-eslint` requires `<6.1.0` and `openapi-typescript` requires `^5.x`,
 neither has released support for TypeScript 7 yet.
 
-**Open: bump the backend's actual Python runtime (flagged 2026-11-07, not yet
-done):** `backend/pyproject.toml`'s `python = ">=3.11,<3.15"` constraint already
-allows a newer interpreter, but what actually runs is `backend/Dockerfile`'s
-`FROM python:3.11-slim` — the two had drifted apart. Before bumping the image,
-verify the C-extension dependencies (`tree-sitter-php`, `asyncpg`, `lxml`) ship
-prebuilt wheels for the target version; land on 3.13 first (mature, broad wheel
-support) rather than jumping straight to the newest release. Not a pre-release
-blocker.
+**Backend Python runtime bumped to 3.13 (recorded 2026-11-07):** closes the drift
+flagged above — `backend/pyproject.toml`'s `python = ">=3.11,<3.15"` already allowed
+a newer interpreter, but `backend/Dockerfile` still ran `python:3.11-slim`. Checked the
+precondition before bumping: all three C-extension dependencies
+(`tree-sitter-php`, `asyncpg`, `lxml`) ship wheels compatible with 3.13 — confirmed by
+actually building the image (fast install, no compiler invoked) rather than trusting
+PyPI's file-list tags at a glance, which first looked like `tree-sitter-php` had no
+3.12/3.13 wheel at all until it turned out its wheels use the `cp310-abi3` stable-ABI
+tag (forward-compatible with every later CPython, not version-specific per release).
+Verified end-to-end on the real image, not just a standalone build: `docker compose
+build api worker` + `up`, then inside the real running container — `python --version`
+reports 3.13.18, `GET /health` returns `schema: "ok"`, the full suite passes
+(452/452; the +1 from the usual 453 is a fixture-path-only skip from a narrower ad-hoc
+`docker run` during investigation, not a real count — the final compose-based run is
+the one that counts), `ruff check` and `mypy app` both clean. Also bumped
+`.github/actions/setup-backend-env/action.yml`'s separately-pinned
+`actions/setup-python` version (3.11 → 3.13) — the same composite action every CI job
+that needs a backend environment uses, so this was the second place that had quietly
+drifted from the Dockerfile besides the one already found. Landed on 3.13 (mature,
+broad wheel support) rather than the newest release, per the original plan.
+
+**Still open: filelock override removal.** The `backend/Dockerfile` `pip install
+--no-deps "filelock>=4.0.9,<5"` step (see "Dependency refresh" above) is still needed —
+re-checked PyPI directly: litellm's latest published release (1.108.2, same as
+installed) still requires `filelock<4.0,>=3.16.1`. Revisit once a newer litellm relaxes
+that pin.
 
 **Open: require 100% coverage in CI (flagged 2026-11-07, not yet done):** real
 coverage today is 82%. Plan, per explicit user decision: write tests to close
