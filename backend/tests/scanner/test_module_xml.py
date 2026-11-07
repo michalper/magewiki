@@ -19,3 +19,11 @@ def test_parse_module_xml_missing_module_element(tmp_path: Path):
 
     with pytest.raises(InvalidModuleXmlError):
         parse_module_xml(bad_xml)
+
+
+def test_parse_module_xml_malformed_xml(tmp_path: Path):
+    bad_xml = tmp_path / "module.xml"
+    bad_xml.write_text("<config><unclosed>")
+
+    with pytest.raises(InvalidModuleXmlError, match="malformed module.xml"):
+        parse_module_xml(bad_xml)

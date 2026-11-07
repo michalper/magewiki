@@ -36,3 +36,23 @@ def test_parse_system_xml(tmp_path: Path):
 
 def test_parse_system_xml_missing_file(tmp_path: Path):
     assert parse_system_xml(tmp_path / "system.xml") == []
+
+
+def test_parse_system_xml_malformed_xml(tmp_path: Path):
+    path = tmp_path / "system.xml"
+    path.write_text("<config><unclosed>", encoding="utf-8")
+    assert parse_system_xml(path) == []
+
+
+def test_parse_system_xml_skips_sections_groups_and_fields_without_an_id(tmp_path: Path):
+    path = tmp_path / "system.xml"
+    path.write_text(
+        '<?xml version="1.0"?>\n'
+        "<config><system>"
+        '<section><group id="g"><field id="f"/></group></section>'
+        '<section id="s"><group><field id="f"/></group></section>'
+        '<section id="s"><group id="g"><field/></group></section>'
+        "</system></config>",
+        encoding="utf-8",
+    )
+    assert parse_system_xml(path) == []

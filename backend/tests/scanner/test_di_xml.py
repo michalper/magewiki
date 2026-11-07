@@ -30,3 +30,26 @@ def test_parse_di_xml_missing_file(tmp_path: Path):
     assert result.preferences == []
     assert result.plugins == []
     assert result.virtual_types == []
+
+
+def test_parse_di_xml_malformed_xml(tmp_path: Path):
+    path = tmp_path / "di.xml"
+    path.write_text("<config><unclosed>", encoding="utf-8")
+    result = parse_di_xml(path)
+    assert result.preferences == []
+    assert result.plugins == []
+    assert result.virtual_types == []
+
+
+def test_parse_di_xml_skips_a_type_without_a_name_and_a_plugin_missing_attributes(tmp_path: Path):
+    path = tmp_path / "di.xml"
+    path.write_text(
+        '<?xml version="1.0"?>\n'
+        "<config>"
+        '<type><plugin name="x" type="Vendor\\Module\\Plugin\\X"/></type>'
+        '<type name="Vendor\\Module\\Model\\Real"><plugin type="NoNameAttr"/></type>'
+        "</config>",
+        encoding="utf-8",
+    )
+    result = parse_di_xml(path)
+    assert result.plugins == []

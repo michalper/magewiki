@@ -47,3 +47,22 @@ def test_parse_webapi_xml_route_without_resource(tmp_path: Path):
 
     assert len(routes) == 1
     assert routes[0].acl_resource is None
+
+
+def test_parse_webapi_xml_malformed_xml(tmp_path: Path):
+    path = tmp_path / "webapi.xml"
+    path.write_text("<routes><unclosed>", encoding="utf-8")
+    assert parse_webapi_xml(path) == []
+
+
+def test_parse_webapi_xml_skips_routes_missing_required_pieces(tmp_path: Path):
+    path = tmp_path / "webapi.xml"
+    path.write_text(
+        '<?xml version="1.0"?>\n'
+        "<routes>"
+        '<route url="/V1/no-service" method="GET"/>'
+        '<route url="/V1/incomplete-service" method="GET"><service class="OnlyClass"/></route>'
+        "</routes>",
+        encoding="utf-8",
+    )
+    assert parse_webapi_xml(path) == []

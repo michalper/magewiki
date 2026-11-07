@@ -30,3 +30,15 @@ def test_parse_db_schema_xml(tmp_path: Path):
 
 def test_parse_db_schema_xml_missing_file(tmp_path: Path):
     assert parse_db_schema_xml(tmp_path / "db_schema.xml") == []
+
+
+def test_parse_db_schema_xml_malformed_xml(tmp_path: Path):
+    path = tmp_path / "db_schema.xml"
+    path.write_text("<schema><unclosed>", encoding="utf-8")
+    assert parse_db_schema_xml(path) == []
+
+
+def test_parse_db_schema_xml_skips_a_table_without_a_name(tmp_path: Path):
+    path = tmp_path / "db_schema.xml"
+    path.write_text('<?xml version="1.0"?>\n<schema><table comment="no name"/></schema>', encoding="utf-8")
+    assert parse_db_schema_xml(path) == []

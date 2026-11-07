@@ -31,6 +31,24 @@ def test_parse_crontab_xml_missing_file(tmp_path: Path):
     assert parse_crontab_xml(tmp_path / "crontab.xml") == []
 
 
+def test_parse_crontab_xml_malformed_xml(tmp_path: Path):
+    path = tmp_path / "crontab.xml"
+    path.write_text("<config><unclosed>", encoding="utf-8")
+    assert parse_crontab_xml(path) == []
+
+
+def test_parse_crontab_xml_skips_a_job_missing_a_required_attribute(tmp_path: Path):
+    path = tmp_path / "crontab.xml"
+    path.write_text(
+        '<?xml version="1.0"?>\n'
+        '<config><group id="default">'
+        '<job name="x" method="execute"/>'
+        "</group></config>",
+        encoding="utf-8",
+    )
+    assert parse_crontab_xml(path) == []
+
+
 def test_parse_crontab_xml_job_without_schedule(tmp_path: Path):
     path = tmp_path / "crontab.xml"
     path.write_text(

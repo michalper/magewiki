@@ -57,3 +57,16 @@ def test_parse_graphql_schema_malformed_sdl_returns_empty(tmp_path: Path):
     schema.write_text("this is not { valid graphql sdl !!!", encoding="utf-8")
 
     assert parse_graphql_schema(schema) == []
+
+
+def test_parse_graphql_schema_ignores_a_non_resolver_directive_and_a_non_object_definition(tmp_path: Path):
+    schema = tmp_path / "schema.graphqls"
+    schema.write_text(
+        'scalar CustomScalar\n\ntype Query {\n    field(arg: String): String @deprecated(reason: "unused")\n}\n',
+        encoding="utf-8",
+    )
+
+    entries = parse_graphql_schema(schema)
+
+    assert len(entries) == 1
+    assert entries[0].resolver_class is None

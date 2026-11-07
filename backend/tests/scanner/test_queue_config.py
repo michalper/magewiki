@@ -73,3 +73,35 @@ def test_parse_queue_config_standalone_consumer_with_no_topology(tmp_path: Path)
     assert bindings[0].topic == "vendor.module.sample.dispatch"
     assert bindings[0].consumer_name == "vendor.module.sample.dispatch"
     assert bindings[0].handler_class == "Vendor\\Module\\Model\\Queue\\SampleConsumer"
+
+
+def test_parse_queue_config_malformed_xml_is_treated_as_absent(tmp_path: Path):
+    bad = _write(tmp_path, "communication.xml", "<config><unclosed>")
+    bindings = parse_queue_config(bad, tmp_path / "queue_topology.xml", tmp_path / "queue_consumer.xml")
+    assert bindings == []
+
+
+def test_parse_queue_config_skips_incomplete_topic_and_consumer_entries(tmp_path: Path):
+    communication = _write(
+        tmp_path, "communication.xml",
+        '<?xml version="1.0"?>\n<config><topic name="no.handler"/></config>',
+    )
+    consumer = _write(
+        tmp_path, "queue_consumer.xml",
+        '<?xml version="1.0"?>\n<config><consumer name="no-queue"/></config>',
+    )
+
+    bindings = parse_queue_config(communication, tmp_path / "queue_topology.xml", consumer)
+
+    assert bindings == []
+
+
+def test_parse_queue_config_fills_handler_from_the_consumer_when_communication_xml_lacks_one(tmp_path: Path):
+    topology = _write(tmp_path, "queue_topology.xml", _QUEUE_TOPOLOGY_XML)
+    consumer = _write(tmp_path, "queue_consumer.xml", _QUEUE_CONSUMER_XML)
+
+    bindings = parse_queue_config(tmp_path / "communication.xml", topology, consumer)
+
+    assert len(bindings) == 1
+    assert bindings[0].handler_class == "Vendor\\Module\\Model\\Queue\\SampleConsumer"
+    assert bindings[0].handler_method == "execute"
