@@ -25,6 +25,19 @@ class Tag(BaseModel):
     source: Literal["parser", "ai"]
     confidence: float = Field(ge=0, le=1)
 
+    @model_validator(mode="before")
+    @classmethod
+    def _coerce_bare_string(cls, data: object) -> object:
+        # Synthesis occasionally emits tags as bare strings ("payments") instead of
+        # the required {name, source, confidence} object, even after a corrective
+        # reprompt — seen in ~32 real ModuleDoc validation failures at fleet scale.
+        # A bare string is unambiguously AI-sourced (a parser-derived tag is never
+        # free-form text) with no confidence signal to anchor to, so default to a
+        # mid-point confidence rather than reject a tag the model clearly meant.
+        if isinstance(data, str):
+            return {"name": data, "source": "ai", "confidence": 0.5}
+        return data
+
 
 class ConfigOption(BaseModel):
     path: str

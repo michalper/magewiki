@@ -8,6 +8,7 @@ from decimal import Decimal
 # primary source of truth.
 MODEL_PRICES_USD_PER_MTOK: dict[str, dict[str, Decimal]] = {
     "anthropic/claude-haiku-5-5": {"input": Decimal("1.00"), "output": Decimal("5.00")},
+    "anthropic/claude-sonnet-5-5": {"input": Decimal("3.00"), "output": Decimal("15.00")},
     "openai/text-embedding-3-small": {"input": Decimal("0.02"), "output": Decimal("0.00")},
 }
 

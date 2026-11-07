@@ -10,6 +10,14 @@ class Settings(BaseSettings):
     cors_origins: str = "http://localhost:3000"
     redis_url: str = "redis://redis:6379/0"
     llm_model: str = "anthropic/claude-haiku-5-5"
+    # Module-level synthesis asks for a much larger, stricter structured JSON object
+    # than per-file summaries — empirically LLM_MODEL's cheap default (haiku) omits
+    # required ModuleDoc fields even after corrective retries, at real fleet scale
+    # (~340/760 modules in one real store). Empty means "same as LLM_MODEL" (no
+    # behavior change); set to a stronger model to use it for synthesis only, while
+    # analyze_file's per-file summaries stay on the cheap default. Must use the same
+    # provider as LLM_MODEL — it reuses LLM_MODEL's api_key/api_base unchanged.
+    synthesis_model: str = ""
     llm_monthly_budget_usd: float = 20.0
     anthropic_api_key: str = ""
     embedding_model: str = "openai/text-embedding-3-small"

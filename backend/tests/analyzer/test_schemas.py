@@ -1,7 +1,7 @@
 import pytest
 from pydantic import ValidationError
 
-from app.analyzer.schemas import Feature, FileSummary, ModuleDoc
+from app.analyzer.schemas import Feature, FileSummary, ModuleDoc, Tag
 
 
 def _valid_doc_payload(source: str) -> dict:
@@ -51,3 +51,16 @@ def test_module_doc_rejects_any_source_when_known_sources_is_empty():
     # through as if validation weren't requested at all.
     with pytest.raises(ValidationError):
         ModuleDoc.model_validate(_valid_doc_payload("anything.php"), context={"known_sources": set()})
+
+
+def test_tag_coerces_a_bare_string_into_an_ai_sourced_tag():
+    tag = Tag.model_validate("payments")
+    assert tag == Tag(name="payments", source="ai", confidence=0.5)
+
+
+def test_module_doc_coerces_bare_string_tags():
+    payload = _valid_doc_payload("anything.php")
+    payload["tags"] = ["payments", "search"]
+    doc = ModuleDoc.model_validate(payload)
+    assert [t.name for t in doc.tags] == ["payments", "search"]
+    assert all(t.source == "ai" and t.confidence == 0.5 for t in doc.tags)

@@ -34,7 +34,11 @@ from app.models import (
     PhpClass,
     PhpClassMethod,
 )
-from app.runtime_config import resolve_embedding_config, resolve_llm_config
+from app.runtime_config import (
+    resolve_embedding_config,
+    resolve_llm_config,
+    resolve_synthesis_llm_config,
+)
 from app.scanner.magento_github import (
     fetch_release_component_versions,
     fetch_release_php_constraint,
@@ -219,7 +223,7 @@ async def synthesize_module(ctx: dict | None, module_id: int, module_current_has
             if module is None or module.current_hash != module_current_hash:
                 return  # stale job from a superseded scan generation
 
-            llm_config = await resolve_llm_config(session)
+            llm_config = await resolve_synthesis_llm_config(session)
             cached = await _lookup_cache(
                 session, module_current_hash, llm_config.model, MODULE_SYNTHESIS_PROMPT_VERSION, "module_synthesis"
             )
