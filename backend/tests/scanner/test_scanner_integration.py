@@ -292,3 +292,34 @@ async def test_scan_repository_isolates_an_oserror_in_one_module(
 
     module = await db_session.scalar(select(Module).where(Module.repo_root == repo_root, Module.name == "Vendor_Module"))
     assert module is not None
+
+
+@pytest.mark.asyncio
+async def test_scan_repository_falls_back_to_composer_installed_version(
+    demo_store_path: Path, db_session, tmp_path: Path
+):
+    # Real-world gap, flagged by a user looking at a real module's page: module.xml's
+    # setup_version is optional since Magento 2.3's declarative schema and often
+    # absent entirely on modern modules (confirmed against a real store: Amasty_Base
+    # has no setup_version attribute at all) — Composer's own resolved version for
+    # the package must still surface as this module's "version".
+    repo_root_path = tmp_path / "store"
+    shutil.copytree(demo_store_path, repo_root_path)
+
+    module_xml_path = repo_root_path / "app/code/Vendor/Module/etc/module.xml"
+    module_xml_path.write_text(
+        module_xml_path.read_text().replace(' setup_version="1.0.0"', ""), encoding="utf-8"
+    )
+
+    composer_dir = repo_root_path / "vendor" / "composer"
+    composer_dir.mkdir(parents=True)
+    (composer_dir / "installed.json").write_text(
+        '{"packages": [{"name": "vendor/module-sample", "version": "2.4.7"}]}', encoding="utf-8"
+    )
+
+    repo_root = str(repo_root_path.resolve())
+    await delete_module_if_present(db_session, repo_root, "Vendor_Module")
+    await scan_repository(repo_root, db_session)
+
+    module = await db_session.scalar(select(Module).where(Module.repo_root == repo_root, Module.name == "Vendor_Module"))
+    assert module.setup_version == "2.4.7"

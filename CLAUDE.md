@@ -205,7 +205,7 @@ Anti-hallucination rules:
 - Lists of events, plugins, crons, endpoints, tables, and dependencies are inserted by parser code; the AI never invents them.
 - `unknown` is allowed instead of guessing; code takes precedence over a module's own README.
 - Tags carry `source` (`parser` or `ai`) and `confidence`. Deterministic signals (`composer.json`, a dependency on `Magento_Payment`, interfaces, `config.xml`) reinforce AI-assigned tags.
-- Starter tag vocabulary: `payments`, `shipping`, `marketing`, `erp`, `search`, `seo`, `checkout`, `admin-tools`, `performance`, `b2b`.
+- Tag vocabulary (`app/analyzer/tags.py`'s `ALLOWED_TAGS`): `payments`, `shipping`, `marketing`, `erp`, `search`, `seo`, `checkout`, `admin-tools`, `performance`, `b2b`, `inventory`, `catalog`, `customer`, `cms`, `graphql`, `api`, `analytics`, `security`, `multi-store`, `theme`, `pwa`, `cron`. Expanded 2026-11-07 from the original 10 (the "starter" set) — flagged by a user looking at a real module's page and noticing categories like inventory/catalog/customer/cms/graphql/api had no tag that actually fit across a real 760-module fleet.
 - README is stored together with `content_hash`, `model`, and `prompt_version`, so staleness is always knowable.
 
 ## RAG and the agent
