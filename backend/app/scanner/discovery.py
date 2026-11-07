@@ -49,6 +49,7 @@ def find_modules(repo_root: Path) -> list[DiscoveredModule]:
     if (repo_root / "etc" / "module.xml").is_file():
         return [DiscoveredModule(root=repo_root, relative_path=Path("."), source_type="standalone")]
 
+    resolved_repo_root = repo_root.resolve()
     discovered: list[DiscoveredModule] = []
     for source_dir, source_type in _STORE_SOURCE_DIRS:
         scan_root = repo_root / source_dir
@@ -56,9 +57,29 @@ def find_modules(repo_root: Path) -> list[DiscoveredModule]:
             discovered.extend(_find_module_roots(scan_root, repo_root, source_type))
 
     for glob_pattern in find_path_repository_globs(repo_root / "composer.json"):
-        for match in repo_root.glob(glob_pattern):
-            if match.is_dir():
-                discovered.extend(_find_module_roots(match, repo_root, "composer_path"))
+        # The glob pattern is read verbatim from the scanned repo's own composer.json
+        # (find_path_repository_globs), so it's not trusted: an absolute pattern makes
+        # Path.glob() raise NotImplementedError, and a relative one containing ".."
+        # (e.g. a realistic monorepo config like "../shared/*", not even an attack)
+        # can match outside repo_root — Path.relative_to() doesn't catch that since it
+        # works on literal path components, not resolved ones. Resolve and check
+        # containment per match, and never let a malformed pattern abort the whole
+        # scan — this is a nice-to-have discovery aid, not something that should ever
+        # break a scan.
+        try:
+            matches = list(repo_root.glob(glob_pattern))
+        except (NotImplementedError, ValueError, OSError):
+            continue
+        for match in matches:
+            if not match.is_dir():
+                continue
+            try:
+                resolved_match = match.resolve()
+            except OSError:
+                continue
+            if not resolved_match.is_relative_to(resolved_repo_root):
+                continue
+            discovered.extend(_find_module_roots(resolved_match, resolved_repo_root, "composer_path"))
 
     # Dedupe by resolved real path — belt-and-suspenders against the same
     # module being reached twice (e.g. overlapping path-repository glob

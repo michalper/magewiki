@@ -62,6 +62,44 @@ def test_find_modules_discovers_a_module_via_a_composer_path_repository(
     assert discovered[0].relative_path == Path("src/CustomModule/Module")
 
 
+def test_a_composer_path_repository_glob_cannot_escape_repo_root_via_dotdot(
+    tmp_path: Path, demo_module_path: Path
+):
+    """The glob pattern is read verbatim from the scanned repo's own composer.json
+    (not operator-controlled) — a realistic monorepo config like "../shared/*"
+    (not even an attack) would otherwise let Path.glob() match a module outside
+    repo_root entirely, bypassing the scan-root containment boundary enforced at
+    the API layer.
+    """
+    repo_root = tmp_path / "repo"
+    repo_root.mkdir(parents=True)
+    outside = tmp_path / "outside" / "SecretModule"
+    shutil.copytree(demo_module_path, outside)
+    (repo_root / "composer.json").write_text(
+        json.dumps({"repositories": {"local": {"type": "path", "url": "../outside/*"}}})
+    )
+
+    discovered = find_modules(repo_root)
+
+    assert discovered == []
+
+
+def test_an_absolute_composer_path_repository_glob_does_not_crash_the_scan(tmp_path: Path):
+    """Composer path repositories support absolute URLs, which make
+    Path.glob() raise NotImplementedError — this is a nice-to-have discovery
+    aid, per its own docstring, and must never abort the whole scan.
+    """
+    repo_root = tmp_path / "repo"
+    (repo_root / "app" / "code").mkdir(parents=True)
+    (repo_root / "composer.json").write_text(
+        json.dumps({"repositories": {"local": {"type": "path", "url": "/etc/*"}}})
+    )
+
+    discovered = find_modules(repo_root)
+
+    assert discovered == []
+
+
 def test_find_modules_is_not_confused_by_an_unrelated_vendor_symlink_to_the_same_module(
     tmp_path: Path, demo_module_path: Path
 ):
