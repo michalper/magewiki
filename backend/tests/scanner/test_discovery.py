@@ -126,3 +126,37 @@ def test_find_modules_is_not_confused_by_an_unrelated_vendor_symlink_to_the_same
 
     assert len(discovered) == 1
     assert discovered[0].source_type == "composer_path"
+
+
+def test_a_composer_path_repository_glob_skips_a_file_match(tmp_path: Path):
+    repo_root = tmp_path / "repo"
+    repo_root.mkdir()
+    (repo_root / "src").mkdir()
+    (repo_root / "src" / "NotADirectory").write_text("just a file", encoding="utf-8")
+    (repo_root / "composer.json").write_text(
+        json.dumps({"repositories": {"local": {"type": "path", "url": "src/*"}}})
+    )
+
+    assert find_modules(repo_root) == []
+
+
+def test_a_composer_path_repository_glob_match_is_skipped_if_resolve_raises_oserror(
+    tmp_path: Path, demo_module_path: Path, monkeypatch
+):
+    repo_root = tmp_path / "repo"
+    (repo_root / "src" / "CustomModule").mkdir(parents=True)
+    shutil.copytree(demo_module_path, repo_root / "src" / "CustomModule" / "Module")
+    (repo_root / "composer.json").write_text(
+        json.dumps({"repositories": {"local": {"type": "path", "url": "src/*/*"}}})
+    )
+
+    real_resolve = Path.resolve
+
+    def _raise_for_the_match(self, strict=False):
+        if self.name == "Module":
+            raise OSError("name too long")
+        return real_resolve(self, strict=strict)
+
+    monkeypatch.setattr(Path, "resolve", _raise_for_the_match)
+
+    assert find_modules(repo_root) == []

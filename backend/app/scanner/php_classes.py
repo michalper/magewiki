@@ -58,7 +58,10 @@ def _extract_methods(class_body: Node, source: bytes) -> list[PhpMethodEntry]:
     methods = []
     for method_node in find_all(class_body, {"method_declaration"}):
         name_node = method_node.child_by_field_name("name")
-        if name_node is None:
+        if name_node is None:  # pragma: no cover - defensive; verified tree-sitter-php never emits
+            # a "method_declaration" node with no name — a malformed method (e.g. missing the name
+            # entirely) is demoted to a generic ERROR node by the grammar instead, confirmed directly
+            # against several malformed inputs.
             continue
         methods.append(
             PhpMethodEntry(
@@ -77,7 +80,11 @@ def parse_php_file(path: Path, relative_file_path: str) -> list[PhpClassEntry]:
     entries: list[PhpClassEntry] = []
     for decl, namespace in _collect_namespaced_declarations(tree.root_node, source):
         name_node = decl.child_by_field_name("name")
-        if name_node is None:
+        if name_node is None:  # pragma: no cover - defensive; same verified non-case as _extract_methods
+            # above — a malformed/anonymous class/interface/trait declaration either becomes a
+            # different node type entirely (e.g. PHP's own "anonymous_class" for `new class {...}`,
+            # which _DECLARATION_TYPES doesn't even match) or an ERROR node, never a properly-typed
+            # declaration node with a null name.
             continue
         class_name = node_text(name_node, source)
 

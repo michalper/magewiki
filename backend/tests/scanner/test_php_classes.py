@@ -53,3 +53,28 @@ def test_parse_php_file_uses_each_class_own_namespace_block(tmp_path: Path):
     entries = {e.class_name: e for e in parse_php_file(semicolon, "Semicolon.php")}
     assert entries["Foo"].fqcn == "A\\Foo"
     assert entries["Bar"].fqcn == "B\\Bar"
+
+
+def test_catalog_module_classes_skips_a_file_that_vanishes_before_it_can_be_read(tmp_path: Path, monkeypatch):
+    # A TOCTOU race (the file existed when discovered but is gone by the time it's
+    # read) is the realistic way this happens in production; simulated here by
+    # having the file list include a path that was never actually written.
+    good = tmp_path / "Good.php"
+    good.write_text("<?php\nclass Good {}\n")
+    vanished = tmp_path / "Vanished.php"
+
+    monkeypatch.setattr("app.scanner.php_classes.walk_module_source_files", lambda root: [good, vanished])
+
+    classes = catalog_module_classes(tmp_path)
+
+    assert {c.class_name for c in classes} == {"Good"}
+
+
+def test_parse_php_file_captures_a_class_extends_clause(tmp_path: Path):
+    path = tmp_path / "Child.php"
+    path.write_text("<?php\nclass Child extends ParentClass {}\n")
+
+    entries = parse_php_file(path, "Child.php")
+
+    assert len(entries) == 1
+    assert entries[0].extends == ["ParentClass"]
