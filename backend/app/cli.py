@@ -193,8 +193,8 @@ def main(argv: list[str] | None = None) -> int:
     if args.command == "resume-stuck":
         return asyncio.run(_run_resume_stuck(args.repo_root))
 
-    return 1
+    return 1  # pragma: no cover - unreachable: subparsers required=True restricts args.command to the 4 cases above
 
 
-if __name__ == "__main__":
+if __name__ == "__main__":  # pragma: no cover - entry-point guard, exercised via subprocess in tests, not instrumented
     sys.exit(main())
