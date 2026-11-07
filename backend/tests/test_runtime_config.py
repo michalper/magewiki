@@ -3,7 +3,11 @@ from sqlalchemy import delete
 
 from app.config import settings
 from app.models import RuntimeLlmConfig
-from app.runtime_config import resolve_embedding_config, resolve_llm_config
+from app.runtime_config import (
+    resolve_embedding_config,
+    resolve_llm_config,
+    resolve_synthesis_llm_config,
+)
 
 
 @pytest.fixture(autouse=True)
@@ -96,3 +100,25 @@ async def test_resolve_llm_and_embedding_configs_are_independent(db_session):
 
     assert llm_config.model == "deepseek/deepseek-chat"
     assert embedding_config.model == settings.embedding_model
+
+
+@pytest.mark.asyncio
+async def test_resolve_synthesis_llm_config_falls_back_to_llm_config_when_unset(db_session, monkeypatch):
+    monkeypatch.setattr(settings, "synthesis_model", "")
+    db_session.add(RuntimeLlmConfig(id=1, llm_model="deepseek/deepseek-chat", llm_api_key="sk-test-123"))
+    await db_session.commit()
+
+    config = await resolve_synthesis_llm_config(db_session)
+    assert config.model == "deepseek/deepseek-chat"
+    assert config.api_key == "sk-test-123"
+
+
+@pytest.mark.asyncio
+async def test_resolve_synthesis_llm_config_overrides_model_but_reuses_llm_credentials(db_session, monkeypatch):
+    monkeypatch.setattr(settings, "synthesis_model", "anthropic/claude-sonnet-5-5")
+    db_session.add(RuntimeLlmConfig(id=1, llm_model="anthropic/claude-haiku-5-5", llm_api_key="sk-test-456"))
+    await db_session.commit()
+
+    config = await resolve_synthesis_llm_config(db_session)
+    assert config.model == "anthropic/claude-sonnet-5-5"
+    assert config.api_key == "sk-test-456"

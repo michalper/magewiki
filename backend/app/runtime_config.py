@@ -24,6 +24,15 @@ async def resolve_llm_config(session: AsyncSession) -> ResolvedModel:
     return ResolvedModel(model=model, api_key=(row.llm_api_key if row else None), api_base=api_base or None)
 
 
+async def resolve_synthesis_llm_config(session: AsyncSession) -> ResolvedModel:
+    """Same provider credentials as resolve_llm_config (same BYOK key/base) — only
+    the model name differs, when settings.synthesis_model opts into a stronger model
+    for the module-synthesis step specifically. See config.py's synthesis_model.
+    """
+    base = await resolve_llm_config(session)
+    return ResolvedModel(model=settings.synthesis_model or base.model, api_key=base.api_key, api_base=base.api_base)
+
+
 async def resolve_embedding_config(session: AsyncSession) -> ResolvedModel:
     row = await session.get(RuntimeLlmConfig, 1)
     model = (row.embedding_model if row else None) or settings.embedding_model

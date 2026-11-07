@@ -317,6 +317,38 @@ session alongside the DB drop/recreate. Verified: the two previously-flaky tests
 passed 3/3 consecutive runs after the fix, and the full suite went from an
 intermittent 1-2 failures to 203/203 passing.
 
+**Synthesis reliability at real fleet scale (recorded 2026-11-07):** a real 760-module
+store scan surfaced that `LLM_MODEL`'s cheap default (`anthropic/claude-haiku-5-5`)
+fails `ModuleDoc` schema validation on ~341/760 modules (45%) even after the existing
+corrective-reprompt retries (`app/analyzer/client.py`'s `_MAX_ATTEMPTS=2` in both
+`_call_tool_use` and its `_call_plain_json` fallback — 4 real attempts, all exhausted).
+Two distinct patterns, not one: ~309 modules with a required field outright missing
+(`confidence`/`description`/`pm_text`), and 32 modules where the model returned `tags`
+as bare strings (`"payments"`) instead of the required `{name, source, confidence}`
+object. Fixed both without redesigning the retry machinery:
+1. `Tag` (`app/analyzer/schemas.py`) now has a `model_validator(mode="before")` that
+   coerces a bare string into `{name: <string>, source: "ai", confidence: 0.5}` before
+   validation — a bare string is unambiguously AI-sourced (a parser-derived tag is
+   never free-form text), so this closes the 32-module pattern outright rather than
+   retrying for an object shape the model keeps not producing.
+2. A new `SYNTHESIS_MODEL` setting (`app/config.py`, default empty = same as
+   `LLM_MODEL`, no behavior change unless set) lets `synthesize_module` use a stronger
+   model than `analyze_file`'s cheap per-file summaries — `resolve_synthesis_llm_config()`
+   (`app/runtime_config.py`) reuses the same BYOK `api_key`/`api_base` as the main LLM
+   config, only the model name differs, so it stays provider-agnostic rather than
+   hardcoding Anthropic. This deployment's `.env` sets it to
+   `anthropic/claude-sonnet-5-5` for the remaining ~309-module pattern. Checked the
+   real cost before deciding: `analysis_cache` showed module_synthesis averaging
+   ~6500 input / ~2500 output tokens on haiku (~$0.0019/module); sonnet's ~3x price
+   (added to `pricing.py`'s fallback table) means resynthesizing the whole 760-module
+   fleet costs roughly $1.50 → $4.50 one-time — negligible against the $20/month
+   budget. Verified against two real, previously-failing modules (not mocks): both
+   now persist a complete, schema-valid `ModuleDoc` under `anthropic/claude-sonnet-5-5`.
+   Separately, and *not* caused by this: ~381/760 modules fail at the later
+   `embed_chunks` step on a real `litellm.RateLimitError` — the configured
+   `OPENAI_API_KEY` account has no credits remaining; that's an external billing
+   issue for the operator to resolve, not a code bug.
+
 ## Phase plan
 
 MVP = Phases 0–5. Each phase is done separately: first a plan for approval, then code with tests, then a small commit. Don't skip phases.
