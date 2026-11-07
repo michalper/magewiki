@@ -406,6 +406,7 @@ MVP = Phases 0–5. Each phase is done separately: first a plan for approval, th
 | 12 | PHP static-analysis toolchain (PHPStan/PHPMD/phpcs/Rector) | Equivalent scanners run against a module and their findings show up as badges |
 | 12b | Magento upgrade readiness (PHP-version and magento/\* dependency compatibility against the latest Magento release) | A module whose composer.json can't support the latest Magento release shows a blocking badge citing exactly why |
 | 13 | One cloud (GCP or Azure) via Terraform, managed Postgres + pgvector | Public demo deployment |
+| 14 | Deeper structural facts: `webapi.xml` (REST/SOAP endpoints), `crontab.xml` (scheduled jobs), `db_schema.xml` (tables/columns), `system.xml` (admin config options) — same pattern as the "Scanner coverage: .phtml templates and GraphQL schemas" decision above (structured facts, not LLM-guessed), one new parser + table + prompt wiring per file type | Each shows up as its own structured fact block in the synthesis prompt and a `features[].source` a module's AI-written description can cite, the same way GraphQL fields already do |
 
 Version 1.0 ships before Phases 7b–9: a finished project with six technologies beats an unfinished one with ten.
 
