@@ -124,6 +124,54 @@ function downloadCsv(modules: ModuleSummary[]) {
 const TABLE_COLUMN_COUNT = 14;
 const PREVIEW_FINDING_COUNT = 5;
 
+// Mobile equivalent of a table row — a horizontally-scrolling 14-column table
+// is unusable on a phone, so narrow screens get a stacked card instead (see
+// the md:hidden / hidden md:block split at the call site). Links straight to
+// the full detail page rather than reusing ModuleRow's inline expand, since a
+// second copy of that findings-preview JSX isn't worth it for a mobile-only
+// view — tapping through to the real page is a perfectly normal mobile
+// pattern.
+function ModuleCard({ module }: { module: ModuleSummary }) {
+  return (
+    <Link
+      href={`/modules/${module.id}`}
+      className="flex flex-col gap-2 rounded-2xl bg-card p-4 shadow-sm hover:bg-accent/40"
+    >
+      <div className="flex items-start justify-between gap-2">
+        <span className="font-medium">{module.name}</span>
+        <StateBadge state={module.state} />
+      </div>
+      <div className="text-xs text-muted-foreground">
+        {module.composer_name ?? "—"}
+        {module.setup_version ? ` · v${module.setup_version}` : ""}
+      </div>
+      <div className="flex flex-wrap items-center gap-1.5">
+        <EnabledBadge enabled={module.enabled} />
+        <PresenceBadge present={module.has_readme} label="README" />
+        <PresenceBadge present={module.has_tests} label="Tests" />
+      </div>
+      <QualityBadges findingCounts={module.finding_counts} />
+      {module.tags.length > 0 && (
+        <div className="flex flex-wrap gap-1">
+          {module.tags.map((tag) => (
+            <Badge key={tag} variant="outline">
+              {tag}
+            </Badge>
+          ))}
+        </div>
+      )}
+      <div className="flex items-center justify-between border-t border-border/50 pt-2 text-xs text-muted-foreground">
+        <span>
+          {module.class_count} classes · {module.plugin_count} plugins · {module.observer_count} observers
+        </span>
+      </div>
+      <div className="text-xs text-muted-foreground">
+        {module.source_type} · scanned {new Date(module.last_scanned_at).toLocaleDateString()}
+      </div>
+    </Link>
+  );
+}
+
 function ModuleRow({
   module,
   expanded,
@@ -576,7 +624,13 @@ export default function ModulesPage() {
             </span>
           </div>
 
-          <div className="rounded-2xl bg-card p-2 shadow-sm overflow-x-auto">
+          <div className="flex flex-col gap-3 md:hidden">
+            {filteredAndSorted.map((m) => (
+              <ModuleCard key={m.id} module={m} />
+            ))}
+          </div>
+
+          <div className="hidden rounded-2xl bg-card p-2 shadow-sm overflow-x-auto md:block">
           <Table className="min-w-max">
             <TableHeader>
               <TableRow>
