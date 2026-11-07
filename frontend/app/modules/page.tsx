@@ -185,40 +185,46 @@ function ModuleRow({
     <>
       <TableRow>
         <TableCell>
-          <div className="flex items-center gap-1">
+          <div className="flex min-w-0 items-center gap-1">
             <button
               type="button"
               onClick={onToggle}
               aria-expanded={expanded}
               aria-label={expanded ? "Collapse" : "Expand"}
-              className="text-muted-foreground hover:text-foreground"
+              className="shrink-0 text-muted-foreground hover:text-foreground"
             >
               {expanded ? <ChevronDown className="size-3.5" /> : <ChevronRight className="size-3.5" />}
             </button>
-            <Link href={`/modules/${module.id}`} className="font-medium hover:text-primary hover:underline">
+            <Link
+              href={`/modules/${module.id}`}
+              title={module.name}
+              className="min-w-0 truncate font-medium hover:text-primary hover:underline"
+            >
               {module.name}
             </Link>
           </div>
         </TableCell>
-        <TableCell className="text-muted-foreground">{module.composer_name ?? "—"}</TableCell>
-        <TableCell className="text-muted-foreground font-mono text-xs">{module.setup_version ?? "—"}</TableCell>
+        <TableCell className="truncate text-muted-foreground" title={module.composer_name ?? undefined}>
+          {module.composer_name ?? "—"}
+        </TableCell>
+        <TableCell className="truncate text-muted-foreground font-mono text-xs">{module.setup_version ?? "—"}</TableCell>
         <TableCell>
           <EnabledBadge enabled={module.enabled} />
         </TableCell>
         <TableCell>
           <StateBadge state={module.state} />
         </TableCell>
-        <TableCell>{module.source_type}</TableCell>
+        <TableCell className="truncate">{module.source_type}</TableCell>
         <TableCell>
           <PresenceBadge present={module.has_readme} label="README" />
         </TableCell>
         <TableCell>
           <PresenceBadge present={module.has_tests} label="Tests" />
         </TableCell>
-        <TableCell>
+        <TableCell className="whitespace-normal">
           <QualityBadges findingCounts={module.finding_counts} />
         </TableCell>
-        <TableCell>
+        <TableCell className="whitespace-normal">
           {module.tags.length === 0 ? (
             <span className="text-muted-foreground">—</span>
           ) : (
@@ -232,7 +238,7 @@ function ModuleRow({
         <TableCell className="text-right">{module.class_count}</TableCell>
         <TableCell className="text-right">{module.plugin_count}</TableCell>
         <TableCell className="text-right">{module.observer_count}</TableCell>
-        <TableCell className="text-muted-foreground">
+        <TableCell className="truncate text-muted-foreground">
           {new Date(module.last_scanned_at).toLocaleString()}
         </TableCell>
       </TableRow>
@@ -644,7 +650,17 @@ export default function ModulesPage() {
           </div>
 
           <div className="hidden rounded-2xl bg-card p-2 shadow-sm overflow-x-auto md:block">
-          <Table className="min-w-max">
+          {/* table-fixed, with a fixed px width on every short/badge column (just
+              enough for their worst-case label, e.g. "State: paused_budget" or
+              "Enabled: unknown" — these never need more room no matter the monitor)
+              and NO width at all on the free-text/badge-cluster columns (Name,
+              Composer name, Quality, Tags). table-layout:fixed hands those four
+              whatever space is left over after the fixed columns, split evenly —
+              so the table always fills the viewport, and the extra room on a wide
+              monitor goes to the columns that can actually use it, not wasted as
+              dead space or lost to a horizontal scrollbar. Long text still gets a
+              `truncate` + hover title as a fallback for an unusually narrow window. */}
+          <Table className="w-full table-fixed">
             <TableHeader>
               <TableRow>
                 <SortableHead
@@ -655,12 +671,12 @@ export default function ModulesPage() {
                   onToggle={toggleSort}
                 />
                 <TableHead>Composer name</TableHead>
-                <TableHead>Version</TableHead>
-                <TableHead>Enabled</TableHead>
-                <TableHead>State</TableHead>
-                <TableHead>Source</TableHead>
-                <TableHead>README</TableHead>
-                <TableHead>Tests</TableHead>
+                <TableHead className="w-18">Version</TableHead>
+                <TableHead className="w-30">Enabled</TableHead>
+                <TableHead className="w-38">State</TableHead>
+                <TableHead className="w-28">Source</TableHead>
+                <TableHead className="w-19">README</TableHead>
+                <TableHead className="w-16">Tests</TableHead>
                 <TableHead>Quality</TableHead>
                 <TableHead>Tags</TableHead>
                 <SortableHead
@@ -669,7 +685,7 @@ export default function ModulesPage() {
                   currentKey={sortKey}
                   currentDir={sortDir}
                   onToggle={toggleSort}
-                  className="text-right"
+                  className="w-17 text-right"
                 />
                 <SortableHead
                   label="Plugins"
@@ -677,7 +693,7 @@ export default function ModulesPage() {
                   currentKey={sortKey}
                   currentDir={sortDir}
                   onToggle={toggleSort}
-                  className="text-right"
+                  className="w-17 text-right"
                 />
                 <SortableHead
                   label="Observers"
@@ -685,7 +701,7 @@ export default function ModulesPage() {
                   currentKey={sortKey}
                   currentDir={sortDir}
                   onToggle={toggleSort}
-                  className="text-right"
+                  className="w-19 text-right"
                 />
                 <SortableHead
                   label="Last scanned"
@@ -693,6 +709,7 @@ export default function ModulesPage() {
                   currentKey={sortKey}
                   currentDir={sortDir}
                   onToggle={toggleSort}
+                  className="w-36"
                 />
               </TableRow>
             </TableHeader>
