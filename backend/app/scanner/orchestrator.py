@@ -8,6 +8,7 @@ from pathlib import Path
 from sqlalchemy import delete, select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.config import settings
 from app.db import engine
 from app.models import (
     ComposerPackageRequirement,
@@ -159,13 +160,27 @@ async def scan_paths_events(path: str, session: AsyncSession) -> AsyncIterator[d
     only the interactive POST /scan[/stream] routes do) keeps behaving
     identically; this function is additive, not a replacement.
     """
-    roots = find_store_roots(Path(path).resolve())
-    if len(roots) <= 1:
+    discovered_roots = find_store_roots(Path(path).resolve())
+
+    # find_store_roots() enumerates path.iterdir() and follows symlinks (Path.is_dir()
+    # resolves them) — a child that's a symlink to somewhere outside the configured
+    # scan roots would otherwise bypass the one containment check the API layer makes
+    # against the top-level requested `path`, since that check never sees these
+    # dynamically-discovered children. Re-validate each one here, at the point they're
+    # actually expanded, rather than trusting every call site to re-check.
+    roots = [root for root in discovered_roots if settings.is_within_scan_roots(str(root))]
+    skipped_roots = [root for root in discovered_roots if root not in roots]
+
+    if len(roots) <= 1 and not skipped_roots:
         async for event in scan_repository_events(path, session):
             yield event
         return
 
     combined = ScanResult(repo_root=path, stores_scanned=len(roots))
+    for root in skipped_roots:
+        combined.warnings.append(
+            f"skipped {root.name}: resolves outside the configured scan roots (possible symlink escape)"
+        )
     for index, root in enumerate(roots, start=1):
         yield {"event": "store", "name": root.name, "index": index, "total": len(roots)}
         async for event in scan_repository_events(str(root), session):

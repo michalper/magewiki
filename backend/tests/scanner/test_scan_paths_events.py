@@ -3,6 +3,7 @@ from pathlib import Path
 
 import pytest
 
+from app.config import settings
 from app.db import async_session_factory
 from app.scanner.orchestrator import scan_paths_events
 
@@ -87,3 +88,48 @@ async def test_each_store_is_persisted_under_its_own_distinct_repo_root(
         modules = (await session.scalars(select(Module).where(Module.name == "Vendor_Shared"))).all()
 
     assert {m.repo_root for m in modules} == {str(store_a.resolve()), str(store_b.resolve())}
+
+
+@pytest.mark.asyncio
+async def test_a_symlinked_child_outside_the_scan_roots_is_skipped_not_scanned(
+    tmp_path: Path, demo_module_path: Path, db_session, monkeypatch
+):
+    """find_store_roots() enumerates path.iterdir(), which follows symlinks — a
+    container directory could have a child that's a symlink to somewhere outside
+    every configured scan root. The API layer's containment check only ever sees
+    the top-level requested path, never these dynamically-discovered children, so
+    scan_paths_events() itself must re-validate each one before scanning it.
+    """
+    sites = tmp_path / "sites"
+    store_a = sites / "store-a"
+    _make_module(store_a, demo_module_path, "Allowed")
+
+    outside = tmp_path / "outside-scan-roots"
+    _make_module(outside, demo_module_path, "Secret")
+    (sites / "escape-via-symlink").symlink_to(outside)
+
+    monkeypatch.setattr(settings, "magewiki_scan_root_1", str(sites))
+    monkeypatch.setattr(settings, "magewiki_scan_root_2", "")
+    monkeypatch.setattr(settings, "magewiki_scan_root_3", "")
+
+    events = [event async for event in scan_paths_events(str(sites), db_session)]
+
+    store_events = [e for e in events if e["event"] == "store"]
+    assert [e["name"] for e in store_events] == ["store-a"]
+
+    module_events = [e for e in events if e["event"] == "module"]
+    assert {e["name"] for e in module_events} == {"Vendor_Allowed"}
+
+    result = events[-1]["result"]
+    assert result.stores_scanned == 1
+    assert any("escape-via-symlink" in w and "outside the configured scan roots" in w for w in result.warnings)
+
+    async with async_session_factory() as session:
+        from sqlalchemy import select
+
+        from app.models import Module
+
+        modules = (
+            await session.scalars(select(Module).where(Module.name.in_(["Vendor_Allowed", "Vendor_Secret"])))
+        ).all()
+    assert {m.name for m in modules} == {"Vendor_Allowed"}
