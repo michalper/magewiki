@@ -159,6 +159,53 @@ function PluginsSectionCard({
   );
 }
 
+function ConfigurationSectionCard({
+  fields,
+}: {
+  fields: ModuleDetail["config_fields"];
+}) {
+  // Grouped section_id -> group_id -> fields, mirroring system.xml's own
+  // structure -- a flat "path — label" bullet per field (170+ for a module
+  // like Ordo_Automation) read as an unstructured wall of text with no way
+  // to see which fields belong together.
+  const bySection = new Map<string, Map<string, typeof fields>>();
+  for (const f of fields) {
+    if (!bySection.has(f.section_id)) bySection.set(f.section_id, new Map());
+    const groups = bySection.get(f.section_id)!;
+    if (!groups.has(f.group_id)) groups.set(f.group_id, []);
+    groups.get(f.group_id)!.push(f);
+  }
+  return (
+    <CollapsibleCard title="Configuration" collapsible={fields.length > 12}>
+      <div className="space-y-4">
+        {Array.from(bySection.entries()).map(([sectionId, groups]) => (
+          <div key={sectionId}>
+            <div className="font-mono text-xs text-foreground mb-2">{sectionId}</div>
+            <div className="space-y-2.5 pl-3 border-l border-border/50">
+              {Array.from(groups.entries()).map(([groupId, groupFields]) => (
+                <div key={groupId}>
+                  <div className="text-xs text-muted-foreground mb-1">{groupId}</div>
+                  <div className="flex flex-wrap gap-1.5">
+                    {groupFields.map((f) => (
+                      <span
+                        key={f.field_id}
+                        title={`${sectionId}/${groupId}/${f.field_id}${f.field_type ? ` (${f.field_type})` : ""}`}
+                        className="text-xs rounded-full bg-muted px-2.5 py-1"
+                      >
+                        {f.label ?? f.field_id}
+                      </span>
+                    ))}
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        ))}
+      </div>
+    </CollapsibleCard>
+  );
+}
+
 function ObserversSectionCard({
   observers,
 }: {
@@ -443,6 +490,9 @@ export default function ModuleDetailClient({ id }: { id: string }) {
                       }
                       if (section.title === "Observers" && moduleQuery.data.observers.length > 0) {
                         return <ObserversSectionCard key={section.title} observers={moduleQuery.data.observers} />;
+                      }
+                      if (section.title === "Configuration" && moduleQuery.data.config_fields.length > 0) {
+                        return <ConfigurationSectionCard key={section.title} fields={moduleQuery.data.config_fields} />;
                       }
                       return (
                         <ReadmeSectionCard
