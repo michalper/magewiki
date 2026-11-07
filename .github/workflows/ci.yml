@@ -124,7 +124,7 @@ jobs:
       # no upstream fix yet shouldn't permanently block CI — findings still show
       # up in the step output and the Security tab (next step) either way.
       - name: Trivy scan (${{ matrix.image }})
-        uses: aquasecurity/trivy-action@0.36.0
+        uses: aquasecurity/trivy-action@v0.36.0
         continue-on-error: true
         with:
           image-ref: magewiki-${{ matrix.image }}-ci
