@@ -24,6 +24,13 @@ class ComposerResult:
     type: str | None
     license: list[str] | None
     description: str | None = None
+    # The package's own declared release version, when composer.json has one — the
+    # actively-maintained "what version is this" answer for most real projects,
+    # unlike module.xml's setup_version (see hashing/orchestrator's version-source
+    # note: setup_version is an internal Magento upgrade-script trigger, commonly
+    # left stale at its initial value for the module's whole lifetime once
+    # declarative schema removes the need to ever bump it again).
+    version: str | None = None
     has_php_requirement: bool = False
     php_constraint: str | None = None
     has_magento_dependency: bool = False
