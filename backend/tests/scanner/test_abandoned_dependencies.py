@@ -152,3 +152,52 @@ async def test_check_abandoned_outdated_skips_an_unknown_package(db_session, mon
     findings = await check_abandoned_outdated(db_session, {package: "^1.0"})
 
     assert findings == []
+
+
+@pytest.mark.asyncio
+async def test_check_abandoned_outdated_skips_a_package_with_no_versions_listed(db_session, monkeypatch):
+    package = f"vendor/pkg-{uuid.uuid4().hex[:8]}"
+    monkeypatch.setattr(
+        "app.scanner.abandoned_dependencies.httpx.AsyncClient", lambda *a, **k: _FakeAsyncClient({package: []})
+    )
+
+    findings = await check_abandoned_outdated(db_session, {package: "^1.0"})
+
+    assert findings == []
+
+
+@pytest.mark.asyncio
+async def test_check_abandoned_outdated_uses_the_cache_on_a_second_call(db_session, monkeypatch):
+    package = f"vendor/pkg-{uuid.uuid4().hex[:8]}"
+    data = {package: [{"version": "2.0.0"}]}
+    client = _FakeAsyncClient(data)
+    monkeypatch.setattr("app.scanner.abandoned_dependencies.httpx.AsyncClient", lambda *a, **k: client)
+
+    await check_abandoned_outdated(db_session, {package: "^1.0"})
+    assert client.calls == [package]
+
+    await check_abandoned_outdated(db_session, {package: "^1.0"})
+
+    assert client.calls == [package]  # no second HTTP call -- the cache row served it
+
+
+@pytest.mark.asyncio
+async def test_fetch_from_packagist_returns_none_on_an_http_error(db_session, monkeypatch):
+    import httpx
+
+    class _RaisingClient:
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *args):
+            return False
+
+        async def get(self, url, params=None):
+            raise httpx.ConnectError("connection refused")
+
+    monkeypatch.setattr("app.scanner.abandoned_dependencies.httpx.AsyncClient", lambda *a, **k: _RaisingClient())
+
+    package = f"vendor/pkg-{uuid.uuid4().hex[:8]}"
+    findings = await check_abandoned_outdated(db_session, {package: "^1.0"})
+
+    assert findings == []
