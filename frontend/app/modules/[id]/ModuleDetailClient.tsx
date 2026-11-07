@@ -78,7 +78,7 @@ export default function ModuleDetailClient({ id }: { id: string }) {
           </Link>
           <p className="text-sm text-muted-foreground">
             Last scanned {new Date(moduleQuery.data.last_scanned_at).toLocaleString()} — composer:{" "}
-            {moduleQuery.data.composer_name ?? "—"}
+            {moduleQuery.data.composer_name ?? "—"} — version: {moduleQuery.data.setup_version ?? "—"}
           </p>
 
           {moduleQuery.data.dependencies.length > 0 && (

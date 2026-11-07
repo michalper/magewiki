@@ -72,6 +72,7 @@ function toCsv(modules: ModuleSummary[]): string {
   const headers = [
     "name",
     "composer_name",
+    "setup_version",
     "source_type",
     "enabled",
     "state",
@@ -91,6 +92,7 @@ function toCsv(modules: ModuleSummary[]): string {
     [
       m.name,
       m.composer_name,
+      m.setup_version,
       m.source_type,
       m.enabled,
       m.state,
@@ -119,7 +121,7 @@ function downloadCsv(modules: ModuleSummary[]) {
   URL.revokeObjectURL(url);
 }
 
-const TABLE_COLUMN_COUNT = 13;
+const TABLE_COLUMN_COUNT = 14;
 const PREVIEW_FINDING_COUNT = 5;
 
 function ModuleRow({
@@ -157,6 +159,7 @@ function ModuleRow({
           </div>
         </TableCell>
         <TableCell className="text-muted-foreground">{module.composer_name ?? "—"}</TableCell>
+        <TableCell className="text-muted-foreground font-mono text-xs">{module.setup_version ?? "—"}</TableCell>
         <TableCell>
           <EnabledBadge enabled={module.enabled} />
         </TableCell>
@@ -585,6 +588,7 @@ export default function ModulesPage() {
                   onToggle={toggleSort}
                 />
                 <TableHead>Composer name</TableHead>
+                <TableHead>Version</TableHead>
                 <TableHead>Enabled</TableHead>
                 <TableHead>State</TableHead>
                 <TableHead>Source</TableHead>

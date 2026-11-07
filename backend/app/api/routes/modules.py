@@ -85,6 +85,7 @@ class ModuleSummary(BaseModel):
     repo_root: str
     enabled: bool | None
     state: str
+    setup_version: str | None
     class_count: int
     plugin_count: int
     observer_count: int
@@ -318,6 +319,7 @@ async def list_modules(session: AsyncSession = Depends(get_session)) -> list[Mod
                 repo_root=module.repo_root,
                 enabled=module.enabled,
                 state=module.state,
+                setup_version=module.setup_version,
                 class_count=classes,
                 plugin_count=plugins,
                 observer_count=observers,
@@ -395,6 +397,7 @@ async def list_repos(session: AsyncSession = Depends(get_session)) -> list[RepoS
 class OverlapStoreEntry(BaseModel):
     repo_root: str
     current_hash: str | None
+    setup_version: str | None
     enabled: bool | None
 
 
@@ -417,20 +420,27 @@ async def list_module_overlap(session: AsyncSession = Depends(get_session)) -> l
     """
     rows = (
         await session.execute(
-            select(Module.name, Module.composer_name, Module.repo_root, Module.current_hash, Module.enabled)
+            select(
+                Module.name,
+                Module.composer_name,
+                Module.repo_root,
+                Module.current_hash,
+                Module.setup_version,
+                Module.enabled,
+            )
         )
     ).all()
 
     by_name: dict[str, list] = {}
-    for name, composer_name, repo_root, current_hash, enabled in rows:
-        by_name.setdefault(name, []).append((composer_name, repo_root, current_hash, enabled))
+    for name, composer_name, repo_root, current_hash, setup_version, enabled in rows:
+        by_name.setdefault(name, []).append((composer_name, repo_root, current_hash, setup_version, enabled))
 
     entries = []
     for name, group in by_name.items():
-        if len({repo_root for _, repo_root, _, _ in group}) < 2:
+        if len({repo_root for _, repo_root, _, _, _ in group}) < 2:
             continue
-        composer_name = next((c for c, _, _, _ in group if c), None)
-        hashes = {h for _, _, h, _ in group}
+        composer_name = next((c for c, _, _, _, _ in group if c), None)
+        hashes = {h for _, _, h, _, _ in group}
         entries.append(
             ModuleOverlapEntry(
                 name=name,
@@ -438,8 +448,10 @@ async def list_module_overlap(session: AsyncSession = Depends(get_session)) -> l
                 store_count=len(group),
                 version_drift=len(hashes) > 1,
                 stores=[
-                    OverlapStoreEntry(repo_root=repo_root, current_hash=current_hash, enabled=enabled)
-                    for _, repo_root, current_hash, enabled in sorted(group, key=lambda g: g[1])
+                    OverlapStoreEntry(
+                        repo_root=repo_root, current_hash=current_hash, setup_version=setup_version, enabled=enabled
+                    )
+                    for _, repo_root, current_hash, setup_version, enabled in sorted(group, key=lambda g: g[1])
                 ],
             )
         )
@@ -503,6 +515,7 @@ async def get_module(module_id: int, session: AsyncSession = Depends(get_session
         repo_root=module.repo_root,
         enabled=module.enabled,
         state=module.state,
+        setup_version=module.setup_version,
         class_count=len(classes),
         plugin_count=sum(1 for c in classes if c.is_plugin),
         observer_count=sum(1 for c in classes if c.is_observer),
