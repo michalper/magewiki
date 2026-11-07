@@ -246,3 +246,49 @@ async def test_scan_repository_persists_graphql_fields(demo_store_path: Path, db
         await db_session.scalars(select(GraphQlField).where(GraphQlField.module_id == module.id))
     ).all()
     assert len(fields_after_rescan) == 1
+
+
+@pytest.mark.asyncio
+async def test_scan_repository_isolates_an_oserror_in_one_module(
+    demo_store_path: Path, db_session, tmp_path: Path, monkeypatch
+):
+    # A permission error or TOCTOU race reading composer.json/di.xml/events.xml/
+    # schema.graphqls for one module must not abort scanning every other module
+    # in the store — only module_xml's own parse errors were isolated this way
+    # before; this closes the same gap for the other Phase A parsers.
+    repo_root_path = tmp_path / "store"
+    shutil.copytree(demo_store_path, repo_root_path)
+
+    broken_module = repo_root_path / "app/code/Vendor/ModuleTwo"
+    shutil.copytree(repo_root_path / "app/code/Vendor/Module", broken_module)
+    (broken_module / "etc/module.xml").write_text(
+        (broken_module / "etc/module.xml").read_text().replace("Vendor_Module", "Vendor_ModuleTwo"),
+        encoding="utf-8",
+    )
+
+    repo_root = str(repo_root_path.resolve())
+    await delete_module_if_present(db_session, repo_root, "Vendor_Module")
+    await delete_module_if_present(db_session, repo_root, "Vendor_ModuleTwo")
+
+    import app.scanner.orchestrator as orchestrator_module
+
+    real_parse_composer_json = orchestrator_module.parse_composer_json
+
+    def _raise_for_broken_module(path: Path):
+        if "ModuleTwo" in str(path):
+            raise OSError("simulated permission error")
+        return real_parse_composer_json(path)
+
+    monkeypatch.setattr(orchestrator_module, "parse_composer_json", _raise_for_broken_module)
+
+    result = await scan_repository(repo_root, db_session)
+
+    # The broken module's Phase A parse error is recorded as a warning (never
+    # reaches Phase B, so it's not in result.modules) — the healthy module must
+    # still complete normally despite it, proving the error didn't abort the scan.
+    assert any("ModuleTwo" in w for w in result.warnings)
+    statuses = {m.name: m.status for m in result.modules}
+    assert statuses.get("Vendor_Module") == "created"
+
+    module = await db_session.scalar(select(Module).where(Module.repo_root == repo_root, Module.name == "Vendor_Module"))
+    assert module is not None

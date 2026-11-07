@@ -243,10 +243,30 @@ async def _run_scan(root: Path, session: AsyncSession) -> AsyncIterator[dict]:
             }
             continue
 
-        composer = parse_composer_json(d.root / "composer.json")
-        di = parse_di_xml(d.root / "etc" / "di.xml")
-        events = parse_events_xml(d.root / "etc" / "events.xml")
-        graphql = parse_graphql_schema(d.root / "etc" / "schema.graphqls")
+        try:
+            composer = parse_composer_json(d.root / "composer.json")
+            di = parse_di_xml(d.root / "etc" / "di.xml")
+            events = parse_events_xml(d.root / "etc" / "events.xml")
+            graphql = parse_graphql_schema(d.root / "etc" / "schema.graphqls")
+        except OSError as exc:
+            # Each parser already checks .is_file() before reading, but a
+            # permission error or a race (file removed/replaced between that
+            # check and the read) still raises OSError uncaught — without this,
+            # it would abort scanning every remaining module in the store, not
+            # just this one (unlike module_xml's own try/except above, scoped
+            # per-module from the start).
+            message = f"{d.relative_path}: {exc}"
+            result.warnings.append(message)
+            processed += 1
+            yield {
+                "event": "module",
+                "name": str(d.relative_path),
+                "status": "error",
+                "index": processed,
+                "total": len(discovered),
+                "warning": message,
+            }
+            continue
 
         parsed.append(
             _ParsedModule(
