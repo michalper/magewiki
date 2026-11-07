@@ -559,6 +559,29 @@ add composer `scripts`/`autoload`/`config.allow-plugins` in the same pass —
 lower-value, more niche fields for a module catalog's own UI; worth adding
 individually if ever asked for, not speculatively bundled in here.
 
+**Two more PHPStan settings adopted from a battle-tested internal Magento
+scanner (recorded 2026-11-07):** the user asked directly whether php-analyzer
+should be configurable the same way as "modularz" — a separate, independently
+developed internal tool (Cognize's property; referenced here for concepts
+only, per this file's own "nothing here is copied code" rule) that scans
+real Magento modules under the identical constraint (no real
+`vendor/magento/framework` install). Checked its config and adopted two
+things fresh, not copied: (1) `treatPhpDocTypesAsCertain: false` — scanned
+modules are third-party code this sidecar doesn't control, so an
+inaccurate/incomplete `@param`/`@return` (common in real-world modules)
+shouldn't be trusted as ground truth over what the code actually does; (2) a
+non-empty top-level PHPStan JSON `errors` array alongside an empty `files`
+array means PHPStan itself crashed (a config/internal error, not a genuine
+"no findings" result) — modularz hits exactly this from bitexpert/
+phpstan-magento's other autoloader services (Factory/Proxy/
+ExtensionInterface) when `magentoRoot` isn't backed by a real Magento
+install; this sidecar's own two cases (a real `vendor/autoload.php`, and the
+no-op fallback) don't currently trigger it, but the check was added anyway
+as defense against a gap that's real even though not yet hit here. Verified
+against the real Ordo_Automation fixture: 1075 → 1064 `phpstan_error`
+findings, confirming the fix changes real output, not just defensive code
+that never fires.
+
 ## Phase plan
 
 MVP = Phases 0–5. Each phase is done separately: first a plan for approval, then code with tests, then a small commit. Don't skip phases.
