@@ -2,9 +2,10 @@ from app.analyzer.facts import ModuleFacts, known_config_paths, known_sources
 
 
 def _bare_facts(**overrides) -> ModuleFacts:
-    defaults = dict(
-        name="Vendor_Module", composer_name=None, composer_type=None, license=None, enabled=None, setup_version=None
-    )
+    defaults = {
+        "name": "Vendor_Module", "composer_name": None, "composer_type": None,
+        "license": None, "enabled": None, "setup_version": None,
+    }
     defaults.update(overrides)
     return ModuleFacts(**defaults)
 
