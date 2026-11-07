@@ -41,6 +41,7 @@ from app.scanner.dto import (
 from app.scanner.events_xml import parse_events_xml
 from app.scanner.graphql_schema import parse_graphql_schema
 from app.scanner.hashing import aggregate_hash, compute_module_file_hashes, diff_file_hashes
+from app.scanner.installed_versions import parse_installed_versions
 from app.scanner.magento_upgrade import check_magento_upgrade_readiness
 from app.scanner.module_xml import InvalidModuleXmlError, parse_module_xml
 from app.scanner.multi_store import find_store_roots
@@ -215,6 +216,7 @@ async def _run_scan(root: Path, session: AsyncSession) -> AsyncIterator[dict]:
     yield {"event": "discovered", "total": len(discovered)}
 
     config_map = parse_config_php(root / "app" / "etc" / "config.php")
+    installed_versions = parse_installed_versions(root)
 
     # Phase A: parse module.xml/composer.json/di.xml/events.xml for every module,
     # and build global plugin/observer class sets — a plugin's class can live in
@@ -289,7 +291,15 @@ async def _run_scan(root: Path, session: AsyncSession) -> AsyncIterator[dict]:
         try:
             async with session.begin_nested():
                 await _persist_module(
-                    session, root, pm, config_map, all_plugin_classes, all_observer_classes, outcome, module_job_specs
+                    session,
+                    root,
+                    pm,
+                    config_map,
+                    installed_versions,
+                    all_plugin_classes,
+                    all_observer_classes,
+                    outcome,
+                    module_job_specs,
                 )
             await session.commit()
         except Exception as exc:
@@ -385,6 +395,7 @@ async def _persist_module(
     repo_root: Path,
     pm: _ParsedModule,
     config_map: dict[str, bool] | None,
+    installed_versions: dict[str, str],
     all_plugin_classes: set[str],
     all_observer_classes: set[str],
     outcome: ModuleScanOutcome,
@@ -449,7 +460,15 @@ async def _persist_module(
                 )
             )
 
-    module.setup_version = pm.module_xml.setup_version
+    # module.xml's setup_version is optional since Magento 2.3's declarative schema
+    # and frequently absent on modern modules entirely (confirmed against a real
+    # store: Amasty_Base has no setup_version attribute at all) — fall back to
+    # Composer's own resolved version for the package, which is populated for
+    # every genuinely Composer-installed module regardless of whether it declares
+    # setup_version.
+    module.setup_version = pm.module_xml.setup_version or (
+        installed_versions.get(pm.composer.name) if pm.composer and pm.composer.name else None
+    )
     module.composer_name = pm.composer.name if pm.composer else None
     module.composer_type = pm.composer.type if pm.composer else None
     module.license = pm.composer.license if pm.composer else None
