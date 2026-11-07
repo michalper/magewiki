@@ -85,22 +85,21 @@ function sectionSlug(title: string): string {
 // the same way it works for bullet lists.
 const COLLAPSE_THRESHOLD_CHARS = 600;
 
-function ReadmeSectionCard({
+function CollapsibleCard({
   title,
-  body,
-  components,
+  collapsible,
+  children,
 }: {
   title: string;
-  body: string;
-  components: Components;
+  collapsible: boolean;
+  children: ReactNode;
 }) {
   const [expanded, setExpanded] = useState(false);
-  const collapsible = body.length > COLLAPSE_THRESHOLD_CHARS;
   return (
     <div id={sectionSlug(title)} className="rounded-2xl bg-card p-5 shadow-sm scroll-mt-20">
       <h2 className="text-lg font-medium mb-3">{title}</h2>
       <div className={`text-sm relative ${collapsible && !expanded ? "max-h-48 overflow-hidden" : ""}`}>
-        <ReactMarkdown components={components}>{body}</ReactMarkdown>
+        {children}
         {collapsible && !expanded && (
           <div className="absolute bottom-0 inset-x-0 h-16 bg-gradient-to-t from-card to-transparent" />
         )}
@@ -115,6 +114,72 @@ function ReadmeSectionCard({
         </button>
       )}
     </div>
+  );
+}
+
+function ReadmeSectionCard({
+  title,
+  body,
+  components,
+}: {
+  title: string;
+  body: string;
+  components: Components;
+}) {
+  return (
+    <CollapsibleCard title={title} collapsible={body.length > COLLAPSE_THRESHOLD_CHARS}>
+      <ReactMarkdown components={components}>{body}</ReactMarkdown>
+    </CollapsibleCard>
+  );
+}
+
+const COLLAPSE_ITEM_COUNT = 5;
+
+function PluginsSectionCard({
+  plugins,
+}: {
+  plugins: ModuleDetail["plugins"];
+}) {
+  return (
+    <CollapsibleCard title="Plugins" collapsible={plugins.length > COLLAPSE_ITEM_COUNT}>
+      <ul className="space-y-3">
+        {plugins.map((p) => (
+          <li key={p.plugin_name} className="pb-3 border-b border-border/50 last:border-0 last:pb-0">
+            <div className="font-mono text-xs">{p.plugin_name}</div>
+            <div className="text-muted-foreground mt-1">
+              intercepts <span className="font-mono text-xs">{p.intercepted_type}</span>
+            </div>
+            <div className="text-muted-foreground">
+              via <span className="font-mono text-xs">{p.plugin_class}</span>
+            </div>
+          </li>
+        ))}
+      </ul>
+    </CollapsibleCard>
+  );
+}
+
+function ObserversSectionCard({
+  observers,
+}: {
+  observers: ModuleDetail["observers"];
+}) {
+  return (
+    <CollapsibleCard title="Observers" collapsible={observers.length > COLLAPSE_ITEM_COUNT}>
+      <ul className="space-y-3">
+        {observers.map((o) => (
+          <li key={o.observer_name} className="pb-3 border-b border-border/50 last:border-0 last:pb-0">
+            <div className="font-mono text-xs">{o.observer_name}</div>
+            <div className="text-muted-foreground mt-1">
+              listens for <span className="font-mono text-xs">{o.event_name}</span>
+            </div>
+            <div className="text-muted-foreground">
+              via <span className="font-mono text-xs">{o.observer_class}</span>
+            </div>
+          </li>
+        ))}
+      </ul>
+    </CollapsibleCard>
   );
 }
 
@@ -346,7 +411,10 @@ export default function ModuleDetailClient({ id }: { id: string }) {
             )}
             {readmeQuery.data &&
               (() => {
-                const sections = splitReadmeIntoSections(readmeQuery.data);
+                // "## Tags" duplicates the header card's own "Tags:" row
+                // (already rendered from structured data, with real tooltips)
+                // — drop it instead of showing the same tags twice.
+                const sections = splitReadmeIntoSections(readmeQuery.data).filter((s) => s.title !== "Tags");
                 const components = readmeMarkdownComponents(idByName);
                 return (
                   <>
@@ -363,14 +431,28 @@ export default function ModuleDetailClient({ id }: { id: string }) {
                         ))}
                       </div>
                     )}
-                    {sections.map((section) => (
-                      <ReadmeSectionCard
-                        key={section.title}
-                        title={section.title}
-                        body={section.body}
-                        components={components}
-                      />
-                    ))}
+                    {sections.map((section) => {
+                      // Plugins/Observers are AI-written prose duplicating
+                      // structured data (moduleQuery.data.plugins/observers)
+                      // already fetched for this page — rendered from that
+                      // structured data instead of the markdown sentence form
+                      // ("X intercepts Y via Z"), which read poorly once a
+                      // module has more than a couple of entries.
+                      if (section.title === "Plugins" && moduleQuery.data.plugins.length > 0) {
+                        return <PluginsSectionCard key={section.title} plugins={moduleQuery.data.plugins} />;
+                      }
+                      if (section.title === "Observers" && moduleQuery.data.observers.length > 0) {
+                        return <ObserversSectionCard key={section.title} observers={moduleQuery.data.observers} />;
+                      }
+                      return (
+                        <ReadmeSectionCard
+                          key={section.title}
+                          title={section.title}
+                          body={section.body}
+                          components={components}
+                        />
+                      );
+                    })}
                   </>
                 );
               })()}

@@ -33,7 +33,31 @@ Project status: **Phases 0–12b done** — the MVP (v1.0, Phases 0–5) plus cr
 
 Full architecture and phase plan: see `CLAUDE.md`.
 
-## Real-world cost
+## What the AI is for, what it costs, and why you need an API key
+
+MageWiki-AI's **scanner is 100% free and local** — module discovery, every
+XML/composer/PHP parser, the dependency graph, and the entire PHPStan/PHPMD/
+phpcs/Rector + CVE/abandoned-dependency/Magento-upgrade-readiness quality
+toolchain run with no AI involved and no API key at all. You can `docker
+compose up` with every key left blank and still get a fully populated
+Modules/Stats/Repos UI, a dependency graph, and every quality badge — the AI
+only adds two things on top of that:
+
+1. **Per-module documentation** (the README tab on a module's page: summary,
+   features, integrations, risks, PM/dev write-ups) — an LLM call per
+   changed file, plus one per module to synthesize them together.
+2. **The chat agent** (natural-language Q&A with citations) — an LLM call
+   per message, plus a one-time embeddings call per analyzed file/chunk so
+   the agent's hybrid search has something to retrieve from.
+
+Both call a real, paid third-party API via [LiteLLM](https://docs.litellm.ai/)
+(BYOK — bring your own key, no shared/free tier bundled with this project),
+which is why `ANTHROPIC_API_KEY` and `OPENAI_API_KEY` exist in `.env.example`:
+Anthropic Claude for the two write-ups above and the chat agent, OpenAI for
+embeddings. Leave both blank to run the free, AI-less half of the product;
+add them (and optionally lower `LLM_MONTHLY_BUDGET_USD`, default $20) when
+you want generated docs and chat. DeepSeek/Ollama are wired as dormant,
+cheaper/local BYOK alternatives to Anthropic — see `CLAUDE.md`.
 
 Measured against a real 760-module Magento store (not a synthetic benchmark):
 
@@ -43,6 +67,7 @@ Measured against a real 760-module Magento store (not a synthetic benchmark):
 | Module synthesis | `anthropic/claude-haiku-5-5` | ~$0.002/module |
 | Module synthesis | `anthropic/claude-sonnet-5-5` (optional `SYNTHESIS_MODEL` override — see CLAUDE.md) | ~$0.08/module |
 | Embeddings | `openai/text-embedding-3-small` | ~$0.02/million tokens (negligible per module) |
+| Chat | whatever `LLM_MODEL` is configured | one LLM call per message, same budget pool as the above — no separate figure measured yet |
 
 Haiku is the default everywhere — cheap, and reliable enough for per-file summaries.
 At real fleet scale it fails module-level synthesis validation on a meaningful
@@ -53,6 +78,12 @@ store, a one-time full-fleet synthesis backfill on Sonnet cost roughly **$30**
 total — budget accordingly if you enable the override on a large existing
 store rather than a fresh/incremental scan (which only re-synthesizes modules
 whose files actually changed, so ongoing cost is far lower than a backfill).
+
+`LLM_MONTHLY_BUDGET_USD` is a hard safety cap, not just an estimate: every AI
+call checks spend-so-far first, and once the cap is hit, affected modules move
+to a `paused_budget` state (visible on the Modules page) instead of silently
+continuing to spend — see `CLAUDE.md`'s "Scan, cron, and cost control" for how
+it's enforced and how to resume paused modules once you raise it.
 
 ## Roadmap
 
