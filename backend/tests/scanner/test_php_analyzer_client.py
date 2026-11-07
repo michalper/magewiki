@@ -148,3 +148,66 @@ def test_relativize_falls_back_to_the_raw_path_when_outside_module_root(tmp_path
     outside_path = str(Path("/elsewhere/File.php"))
 
     assert _relativize(outside_path, module_root) == outside_path
+
+
+def test_pick_php_binary_falls_back_to_the_default_when_nothing_overlaps():
+    from app.scanner.php_analyzer_client import _pick_php_binary
+
+    # No installed binary (8.3/8.4/8.5) overlaps a constraint requiring 7.4 only.
+    assert _pick_php_binary(">=7.4,<8.0") == "php84"
+
+
+def test_pick_php_binary_picks_the_highest_overlapping_installed_version():
+    from app.scanner.php_analyzer_client import _pick_php_binary
+
+    assert _pick_php_binary(">=8.3.0,<8.4.0") == "php83"
+
+
+@pytest.mark.asyncio
+async def test_check_php_static_analysis_excludes_test_directory_findings(tmp_path, monkeypatch):
+    module_root = tmp_path / "Vendor" / "Module"
+    module_root.mkdir(parents=True)
+    findings_by_tool = {
+        "phpstan": [
+            {"file": str(module_root / "Test" / "Unit" / "FooTest.php"), "line": 1, "message": "mock stuff"},
+            {"file": str(module_root / "Foo.php"), "line": 1, "message": "real finding"},
+        ],
+    }
+    monkeypatch.setattr(
+        "app.scanner.php_analyzer_client.httpx.AsyncClient", lambda *a, **k: _FakeAsyncClient(findings_by_tool)
+    )
+
+    findings = await check_php_static_analysis(module_root, module_root)
+
+    assert len(findings) == 1
+    assert findings[0].message == "real finding"
+
+
+@pytest.mark.asyncio
+async def test_check_php_static_analysis_fails_open_on_a_non_dict_json_response(tmp_path, monkeypatch):
+    class _BareListResponse:
+        def raise_for_status(self) -> None:
+            pass
+
+        def json(self):
+            return ["not", "a", "dict"]
+
+    class _BareListAsyncClient:
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *args):
+            return False
+
+        async def post(self, url, json=None):
+            return _BareListResponse()
+
+    module_root = tmp_path / "Vendor" / "Module"
+    module_root.mkdir(parents=True)
+    monkeypatch.setattr(
+        "app.scanner.php_analyzer_client.httpx.AsyncClient", lambda *a, **k: _BareListAsyncClient()
+    )
+
+    findings = await check_php_static_analysis(module_root, module_root)
+
+    assert findings == []
