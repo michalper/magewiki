@@ -1,7 +1,7 @@
 import re
 from pathlib import Path
 
-from app.scanner.discovery import walk_module_php_files
+from app.scanner.discovery import walk_module_source_files
 from app.scanner.dto import QualityFinding
 
 # Filters out assignments that are obviously placeholders, not real secrets.
@@ -72,7 +72,7 @@ def scan_hardcoded_secrets(module_root: Path) -> list[QualityFinding]:
     """Pure regex over raw source text — no subprocess, no AST. The matched
     secret value is never stored, only a short redacted preview."""
     findings: list[QualityFinding] = []
-    for php_file in walk_module_php_files(module_root):
+    for php_file in walk_module_source_files(module_root):
         relative_file_path = str(php_file.relative_to(module_root))
         try:
             source = php_file.read_text(encoding="utf-8", errors="replace")

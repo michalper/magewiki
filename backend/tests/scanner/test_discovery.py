@@ -2,7 +2,7 @@ import json
 import shutil
 from pathlib import Path
 
-from app.scanner.discovery import find_modules, walk_module_php_files
+from app.scanner.discovery import find_modules, walk_module_source_files
 
 
 def test_find_modules_in_store_root(demo_store_path: Path):
@@ -22,12 +22,22 @@ def test_find_modules_standalone(demo_module_path: Path):
     assert discovered[0].relative_path == Path(".")
 
 
-def test_walk_module_php_files_finds_both_classes(demo_module_path: Path):
-    files = walk_module_php_files(demo_module_path)
+def test_walk_module_source_files_finds_both_classes(demo_module_path: Path):
+    files = walk_module_source_files(demo_module_path)
     names = {f.name for f in files}
 
     assert "SampleCheckoutPlugin.php" in names
     assert "SampleOrderObserver.php" in names
+
+
+def test_walk_module_source_files_also_finds_phtml_templates(tmp_path: Path):
+    (tmp_path / "view/frontend/templates").mkdir(parents=True)
+    template = tmp_path / "view/frontend/templates/widget.phtml"
+    template.write_text("<?= $block->getData('title') ?>", encoding="utf-8")
+
+    files = walk_module_source_files(tmp_path)
+
+    assert template in files
 
 
 def test_find_modules_discovers_a_module_via_a_composer_path_repository(

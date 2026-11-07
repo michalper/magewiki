@@ -16,6 +16,7 @@ from app.models import (
     EventObserver,
     FileAnalysis,
     FileHash,
+    GraphQlField,
     Module,
     ModuleDependency,
     ModuleQualityFinding,
@@ -33,10 +34,12 @@ from app.scanner.dto import (
     DiscoveredModule,
     DiXmlResult,
     EventObserverEntry,
+    GraphQlFieldEntry,
     ModuleXmlResult,
     PendingAnalysisJob,
 )
 from app.scanner.events_xml import parse_events_xml
+from app.scanner.graphql_schema import parse_graphql_schema
 from app.scanner.hashing import aggregate_hash, compute_module_file_hashes, diff_file_hashes
 from app.scanner.magento_upgrade import check_magento_upgrade_readiness
 from app.scanner.module_xml import InvalidModuleXmlError, parse_module_xml
@@ -95,6 +98,7 @@ class _ParsedModule:
     composer: ComposerResult | None
     di: DiXmlResult
     events: list[EventObserverEntry]
+    graphql: list[GraphQlFieldEntry]
 
 
 async def scan_repository(repo_root: str, session: AsyncSession) -> ScanResult:
@@ -242,8 +246,13 @@ async def _run_scan(root: Path, session: AsyncSession) -> AsyncIterator[dict]:
         composer = parse_composer_json(d.root / "composer.json")
         di = parse_di_xml(d.root / "etc" / "di.xml")
         events = parse_events_xml(d.root / "etc" / "events.xml")
+        graphql = parse_graphql_schema(d.root / "etc" / "schema.graphqls")
 
-        parsed.append(_ParsedModule(discovered=d, module_xml=module_xml, composer=composer, di=di, events=events))
+        parsed.append(
+            _ParsedModule(
+                discovered=d, module_xml=module_xml, composer=composer, di=di, events=events, graphql=graphql
+            )
+        )
         all_plugin_classes.update(p.plugin_class for p in di.plugins)
         all_observer_classes.update(e.observer_class for e in events)
 
@@ -388,6 +397,7 @@ async def _persist_module(
         await session.execute(delete(DiPreference).where(DiPreference.module_id == module.id))
         await session.execute(delete(DiPlugin).where(DiPlugin.module_id == module.id))
         await session.execute(delete(EventObserver).where(EventObserver.module_id == module.id))
+        await session.execute(delete(GraphQlField).where(GraphQlField.module_id == module.id))
         await session.execute(delete(FileHash).where(FileHash.module_id == module.id))
         await session.execute(delete(ModuleQualityFinding).where(ModuleQualityFinding.module_id == module.id))
         await session.execute(
@@ -480,6 +490,17 @@ async def _persist_module(
             )
         )
     outcome.observers = len(pm.events)
+
+    for gf in pm.graphql:
+        session.add(
+            GraphQlField(
+                module_id=module.id,
+                operation_type=gf.operation_type,
+                type_name=gf.type_name,
+                field_name=gf.field_name,
+                resolver_class=gf.resolver_class,
+            )
+        )
 
     classes = catalog_module_classes(pm.discovered.root)
     outcome.classes = len(classes)

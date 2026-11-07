@@ -9,6 +9,7 @@ from app.models import (
     DiPreference,
     EventObserver,
     FileHash,
+    GraphQlField,
     Module,
     ModuleDependency,
     ModuleQualityFinding,
@@ -211,3 +212,37 @@ async def test_scan_repository_records_quality_findings_and_replaces_them_on_res
         await db_session.scalars(select(ModuleQualityFinding).where(ModuleQualityFinding.module_id == module.id))
     ).all()
     assert len(findings_after_rescan) == len(findings)
+
+
+@pytest.mark.asyncio
+async def test_scan_repository_persists_graphql_fields(demo_store_path: Path, db_session, tmp_path: Path):
+    repo_copy = tmp_path / "demo-store"
+    shutil.copytree(demo_store_path, repo_copy)
+    repo_root = str(repo_copy.resolve())
+    await delete_module_if_present(db_session, repo_root, "Vendor_Module")
+
+    schema_path = repo_copy / "app/code/Vendor/Module/etc/schema.graphqls"
+    schema_path.write_text(
+        'extend type Query {\n'
+        '    vendorModuleWidget: String @resolver(class: "Vendor\\\\Module\\\\Model\\\\Resolver\\\\Widget")\n'
+        '}\n',
+        encoding="utf-8",
+    )
+
+    await scan_repository(repo_root, db_session)
+
+    module = await db_session.scalar(select(Module).where(Module.repo_root == repo_root, Module.name == "Vendor_Module"))
+    fields = (await db_session.scalars(select(GraphQlField).where(GraphQlField.module_id == module.id))).all()
+
+    assert len(fields) == 1
+    assert fields[0].operation_type == "Query"
+    assert fields[0].type_name == "Query"
+    assert fields[0].field_name == "vendorModuleWidget"
+    assert fields[0].resolver_class == "Vendor\\Module\\Model\\Resolver\\Widget"
+
+    # Re-scan with no changes: delete-then-reinsert must not duplicate rows.
+    await scan_repository(repo_root, db_session)
+    fields_after_rescan = (
+        await db_session.scalars(select(GraphQlField).where(GraphQlField.module_id == module.id))
+    ).all()
+    assert len(fields_after_rescan) == 1

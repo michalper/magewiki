@@ -66,6 +66,12 @@ def build_module_synthesis_prompt(facts: ModuleFacts) -> str:
             for event, name, observer_class in facts.event_observers
         )
 
+    if facts.graphql_fields:
+        lines.append("\nGraphQL fields (from etc/schema.graphqls):")
+        for operation_type, type_name, field_name, resolver_class in facts.graphql_fields:
+            resolver_note = f" (resolved by {resolver_class})" if resolver_class else ""
+            lines.append(f"- {type_name}.{field_name} [{operation_type}]{resolver_note}")
+
     if facts.php_classes:
         lines.append("\nPHP classes discovered in this module:")
         for c in facts.php_classes:
@@ -85,7 +91,8 @@ def build_module_synthesis_prompt(facts: ModuleFacts) -> str:
                 lines.append(f"  notable: {fa.notable_behavior}")
 
     lines.append(
-        "\nUsing ONLY the facts above (never invent events, plugins, dependencies, or classes not listed), "
+        "\nUsing ONLY the facts above (never invent events, plugins, dependencies, GraphQL fields, or classes "
+        "not listed), "
         "produce a structured module description:\n"
         "- summary: one or two sentences.\n"
         "- description: a fuller technical/business description.\n"

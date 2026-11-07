@@ -9,6 +9,7 @@ from app.models import (
     DiPreference,
     EventObserver,
     FileAnalysis,
+    GraphQlField,
     Module,
     ModuleDependency,
     PhpClass,
@@ -49,6 +50,8 @@ class ModuleFacts:
     di_preferences: list[tuple[str, str]] = field(default_factory=list)
     di_plugins: list[tuple[str, str, str]] = field(default_factory=list)  # intercepted_type, plugin_name, plugin_class
     event_observers: list[tuple[str, str, str]] = field(default_factory=list)  # event, observer_name, observer_class
+    # operation_type, type_name, field_name, resolver_class
+    graphql_fields: list[tuple[str, str, str, str | None]] = field(default_factory=list)
     file_analyses: list[FileAnalysisFact] = field(default_factory=list)
 
 
@@ -88,6 +91,9 @@ async def gather_module_facts(session: AsyncSession, module_id: int) -> ModuleFa
     observers = (
         await session.scalars(select(EventObserver).where(EventObserver.module_id == module_id))
     ).all()
+    graphql_fields = (
+        await session.scalars(select(GraphQlField).where(GraphQlField.module_id == module_id))
+    ).all()
 
     file_analysis_rows = (
         await session.execute(
@@ -117,6 +123,9 @@ async def gather_module_facts(session: AsyncSession, module_id: int) -> ModuleFa
         di_preferences=[(p.for_type, p.preference_type) for p in preferences],
         di_plugins=[(p.intercepted_type, p.plugin_name, p.plugin_class) for p in plugins],
         event_observers=[(o.event_name, o.observer_name, o.observer_class) for o in observers],
+        graphql_fields=[
+            (gf.operation_type, gf.type_name, gf.field_name, gf.resolver_class) for gf in graphql_fields
+        ],
         file_analyses=file_analyses,
     )
 

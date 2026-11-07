@@ -3,7 +3,7 @@ from pathlib import Path
 
 from tree_sitter import Node
 
-from app.scanner.discovery import walk_module_php_files
+from app.scanner.discovery import walk_module_source_files
 from app.scanner.dto import QualityFinding
 from app.scanner.php_parser import node_text, parse_php
 
@@ -57,7 +57,7 @@ def _scan_file(path: Path, relative_file_path: str) -> list[QualityFinding]:
 
 def scan_deprecated_annotations(module_root: Path) -> list[QualityFinding]:
     findings: list[QualityFinding] = []
-    for php_file in walk_module_php_files(module_root):
+    for php_file in walk_module_source_files(module_root):
         relative_file_path = str(php_file.relative_to(module_root))
         try:
             findings.extend(_scan_file(php_file, relative_file_path))

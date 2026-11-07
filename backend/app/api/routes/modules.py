@@ -21,6 +21,7 @@ from app.models import (
     DiPlugin,
     DiPreference,
     EventObserver,
+    GraphQlField,
     Module,
     ModuleDependency,
     ModuleDocument,
@@ -140,6 +141,13 @@ class EventObserverSummary(BaseModel):
     disabled: bool
 
 
+class GraphQlFieldSummary(BaseModel):
+    operation_type: str
+    type_name: str
+    field_name: str
+    resolver_class: str | None
+
+
 class QualityFindingResponse(BaseModel):
     check_type: str
     severity: str
@@ -154,6 +162,7 @@ class ModuleDetail(ModuleSummary):
     preferences: list[DiPreferenceSummary]
     plugins: list[DiPluginSummary]
     observers: list[EventObserverSummary]
+    graphql_fields: list[GraphQlFieldSummary] = []
     quality_findings: list[QualityFindingResponse] = []
 
 
@@ -481,6 +490,9 @@ async def get_module(module_id: int, session: AsyncSession = Depends(get_session
     observers = (
         await session.scalars(select(EventObserver).where(EventObserver.module_id == module_id))
     ).all()
+    graphql_fields = (
+        await session.scalars(select(GraphQlField).where(GraphQlField.module_id == module_id))
+    ).all()
     quality_findings = (
         await session.scalars(select(ModuleQualityFinding).where(ModuleQualityFinding.module_id == module_id))
     ).all()
@@ -541,6 +553,13 @@ async def get_module(module_id: int, session: AsyncSession = Depends(get_session
                 disabled=o.disabled,
             )
             for o in observers
+        ],
+        graphql_fields=[
+            GraphQlFieldSummary(
+                operation_type=gf.operation_type, type_name=gf.type_name, field_name=gf.field_name,
+                resolver_class=gf.resolver_class,
+            )
+            for gf in graphql_fields
         ],
         quality_findings=[
             QualityFindingResponse(
