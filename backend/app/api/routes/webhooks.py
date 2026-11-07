@@ -42,7 +42,7 @@ async def webhook_scan(request: Request) -> WebhookScanResponse:
     path = payload.get("path")
     # Same real access-control gate as POST /scan[/stream] — settings.scan_roots was
     # previously only surfaced as UI text, never actually enforced here either.
-    if not path or not os.path.isdir(path) or not settings.is_within_scan_roots(path):
+    if not path or not settings.is_within_scan_roots(path) or not os.path.isdir(path):
         raise HTTPException(status_code=400, detail=f"not a directory: {path}")
 
     pool = await get_arq_pool()

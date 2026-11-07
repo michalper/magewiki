@@ -761,6 +761,28 @@ blocked (version-lag only, no CVE, so not worth the same force-override treatmen
 5.9.3 — `typescript-eslint` requires `<6.1.0` and `openapi-typescript` requires `^5.x`,
 neither has released support for TypeScript 7 yet.
 
+**Code-scanning/Dependabot alert triage (recorded 2026-11-07):** reviewed all 448 open
+GitHub code-scanning alerts and 15 open Dependabot alerts. One real bug found and
+fixed: `_validate_scan_path()` (`app/api/routes/modules.py`) and `webhook_scan()`
+(`app/api/routes/webhooks.py`) both checked `os.path.isdir(path) or not
+is_within_scan_roots(path)` — `isdir()` ran on the raw, unvalidated path before the
+scan-roots containment check, not after it as the comments next to both already
+implied. Swapped the order so containment is checked first; all 21 tests covering
+scan-path/webhook validation still pass. Everything else was noise, not a bug, and
+dismissed on GitHub with an explanatory comment rather than left open: the other 20
+CodeQL `py/path-injection` alerts are downstream of that same already-validated path
+and CodeQL's taint analysis doesn't trace the custom sanitizer across the call graph
+(false positive); all 427 Trivy alerts are in the `magewiki-backend-ci`/
+`magewiki-frontend-ci` images' base-tool layers (pip/poetry/setuptools/virtualenv,
+npm's own bundled deps) rather than the app's runtime dependencies — the same scoping
+gap the CI-tooling note above already named for `pip-audit`/`npm audit` (won't fix);
+and the 13 `filelock` Dependabot alerts are already closed in practice by the
+Dockerfile override above — Dependabot just scans `poetry.lock`, which still shows the
+pre-override `3.32.7` (inaccurate). Left open, no action: the 2 remaining npm alerts
+(`minimatch`, `deepmerge`), both already at the newest version available within their
+locked major via `shadcn`/`openapi-typescript`'s own transitive pins, matching the
+existing accepted-risk note above for frontend dev-tooling deps.
+
 ## Working method
 
 - Start each phase in plan mode; propose a plan and wait for approval before writing code.

@@ -249,7 +249,7 @@ def _validate_scan_path(path: str) -> None:
     share one 400 response/message so a caller can't distinguish "not a directory"
     from "outside the allowed roots" and use that to probe the host filesystem.
     """
-    if not os.path.isdir(path) or not settings.is_within_scan_roots(path):
+    if not settings.is_within_scan_roots(path) or not os.path.isdir(path):
         raise HTTPException(status_code=400, detail=_not_a_directory_detail(path))
 
 
