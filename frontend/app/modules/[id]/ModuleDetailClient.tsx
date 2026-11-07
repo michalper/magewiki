@@ -1,6 +1,6 @@
 "use client";
 
-import type { ReactNode } from "react";
+import { useState, type ReactNode } from "react";
 import Link from "next/link";
 import { useQuery } from "@tanstack/react-query";
 import ReactMarkdown, { type Components } from "react-markdown";
@@ -71,6 +71,50 @@ function splitReadmeIntoSections(markdown: string): { title: string; body: strin
   }
   sections.push({ title, body: body.join("\n").trim() });
   return sections.filter((s) => s.body.length > 0);
+}
+
+function sectionSlug(title: string): string {
+  return `readme-${title.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/(^-|-$)/g, "")}`;
+}
+
+// Long sections (Features/Risks with 20+ items on a real large module) made
+// the page itself a new wall of text once split into cards — collapse
+// anything past a rough height budget behind a "Show more" toggle, rather
+// than counting list items, so it works for prose sections (For developers)
+// the same way it works for bullet lists.
+const COLLAPSE_THRESHOLD_CHARS = 600;
+
+function ReadmeSectionCard({
+  title,
+  body,
+  components,
+}: {
+  title: string;
+  body: string;
+  components: Components;
+}) {
+  const [expanded, setExpanded] = useState(false);
+  const collapsible = body.length > COLLAPSE_THRESHOLD_CHARS;
+  return (
+    <div id={sectionSlug(title)} className="rounded-2xl bg-card p-5 shadow-sm scroll-mt-20">
+      <h2 className="text-lg font-medium mb-3">{title}</h2>
+      <div className={`text-sm relative ${collapsible && !expanded ? "max-h-48 overflow-hidden" : ""}`}>
+        <ReactMarkdown components={components}>{body}</ReactMarkdown>
+        {collapsible && !expanded && (
+          <div className="absolute bottom-0 inset-x-0 h-16 bg-gradient-to-t from-card to-transparent" />
+        )}
+      </div>
+      {collapsible && (
+        <button
+          type="button"
+          onClick={() => setExpanded((v) => !v)}
+          className="text-sm text-primary hover:underline mt-2"
+        >
+          {expanded ? "Show less" : "Show more"}
+        </button>
+      )}
+    </div>
+  );
 }
 
 // No Tailwind typography plugin in this project — style the rendered README
@@ -226,14 +270,35 @@ export default function ModuleDetailClient({ id }: { id: string }) {
               </div>
             )}
             {readmeQuery.data &&
-              splitReadmeIntoSections(readmeQuery.data).map((section) => (
-                <div key={section.title} className="rounded-2xl bg-card p-5 shadow-sm">
-                  <h2 className="text-lg font-medium mb-3">{section.title}</h2>
-                  <div className="text-sm">
-                    <ReactMarkdown components={readmeMarkdownComponents(idByName)}>{section.body}</ReactMarkdown>
-                  </div>
-                </div>
-              ))}
+              (() => {
+                const sections = splitReadmeIntoSections(readmeQuery.data);
+                const components = readmeMarkdownComponents(idByName);
+                return (
+                  <>
+                    {sections.length > 1 && (
+                      <div className="flex flex-wrap gap-1.5">
+                        {sections.map((section) => (
+                          <a
+                            key={section.title}
+                            href={`#${sectionSlug(section.title)}`}
+                            className="text-xs rounded-full border border-border px-2.5 py-1 text-muted-foreground hover:text-foreground hover:border-foreground/40"
+                          >
+                            {section.title}
+                          </a>
+                        ))}
+                      </div>
+                    )}
+                    {sections.map((section) => (
+                      <ReadmeSectionCard
+                        key={section.title}
+                        title={section.title}
+                        body={section.body}
+                        components={components}
+                      />
+                    ))}
+                  </>
+                );
+              })()}
           </div>
 
           {moduleQuery.data.quality_findings.length > 0 && (
