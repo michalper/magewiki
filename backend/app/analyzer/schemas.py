@@ -1,6 +1,9 @@
+import json
 from typing import Literal
 
-from pydantic import BaseModel, Field, ValidationInfo, model_validator
+from pydantic import BaseModel, Field, ValidationInfo, field_validator, model_validator
+
+_MODULE_DOC_LIST_FIELDS = ("features", "integrations", "tags", "config_options", "risks", "rejected_tags")
 
 
 class FileSummary(BaseModel):
@@ -61,6 +64,38 @@ class ModuleDoc(BaseModel):
     pm_text: str
     dev_text: str
     rejected_tags: list[str] = []
+
+    @model_validator(mode="before")
+    @classmethod
+    def _parse_json_string_list_fields(cls, data: object) -> object:
+        # Synthesis occasionally stringifies a whole list field ('[{"name": ...}]')
+        # instead of emitting it as real nested JSON — seen in production as
+        # `features` failing with "Input should be a valid list" even though the
+        # string content was itself well-formed JSON. Recover it before field
+        # validation runs; leave genuinely malformed strings as-is so the real
+        # error still surfaces rather than being silently swallowed here.
+        if not isinstance(data, dict):
+            return data
+        for field_name in _MODULE_DOC_LIST_FIELDS:
+            value = data.get(field_name)
+            if isinstance(value, str):
+                try:
+                    data[field_name] = json.loads(value)
+                except json.JSONDecodeError:
+                    pass
+        return data
+
+    @field_validator("rejected_tags", mode="before")
+    @classmethod
+    def _coerce_rejected_tag_items(cls, value: object) -> object:
+        # Synthesis occasionally emits a rejected tag as the same {name, source,
+        # confidence} object shape used for `tags`, instead of the bare name string
+        # `rejected_tags` actually expects — seen in ~8 real ModuleDoc validation
+        # failures at fleet scale. Extract the name rather than reject a tag the
+        # model clearly meant to record as rejected.
+        if not isinstance(value, list):
+            return value
+        return [item.get("name", str(item)) if isinstance(item, dict) else item for item in value]
 
     @model_validator(mode="after")
     def _validate_sources(self, info: ValidationInfo) -> "ModuleDoc":
