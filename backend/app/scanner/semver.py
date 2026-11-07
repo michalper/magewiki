@@ -108,7 +108,19 @@ def _parse_simple(token: str) -> Interval:
     return Interval(v, True, v, True)
 
 
+_HYPHEN_RANGE_RE = re.compile(r"(\S+)\s+-\s+(\S+)")
+
+
 def _parse_and_group(group: str) -> list[Interval]:
+    # Composer's hyphenated range syntax ("1.0.0 - 2.1.0", meaning >=1.0.0 <=2.1.0)
+    # has no branch of its own below — without this, the plain whitespace tokenizer
+    # splits it into ["1.0.0", "-", "2.1.0"], and the bare "-" token falls through to
+    # the exact-version branch, parsing as version (0,) and producing an
+    # inverted/empty interval that silently reports "no overlap" even when the
+    # ranges genuinely do (a false negative feeding straight into the CVE and
+    # upgrade-readiness checks). The embedded dash in a pre-release suffix (e.g.
+    # "1.0.0-beta") has no surrounding whitespace, so it's unaffected by this.
+    group = _HYPHEN_RANGE_RE.sub(lambda m: f">={m.group(1)} <={m.group(2)}", group)
     tokens = [t for t in re.split(r"[,\s]+", group.strip()) if t]
     return [_parse_simple(t) for t in tokens] or [_UNBOUNDED]
 

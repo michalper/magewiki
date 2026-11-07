@@ -47,3 +47,25 @@ def test_boundary_is_exclusive_on_caret_upper_bound():
 
 def test_unbounded_wildcard_overlaps_everything():
     assert constraints_overlap("*", "1.0.0") is True
+
+
+def test_hyphenated_range_means_inclusive_bounds_on_both_ends():
+    # Composer's officially-supported "1.0.0 - 2.1.0" syntax, equivalent to
+    # ">=1.0.0 <=2.1.0" — previously fell through to the exact-version branch on
+    # the bare "-" token and produced an inverted/empty interval (a false
+    # "no overlap" even when the ranges genuinely did overlap).
+    assert constraints_overlap("1.0.0 - 2.1.0", "2.0.0") is True
+    assert constraints_overlap("1.0.0 - 2.1.0", "2.1.0") is True
+    assert constraints_overlap("1.0.0 - 2.1.0", "2.1.1") is False
+    assert constraints_overlap("1.0.0 - 2.1.0", "0.9.9") is False
+
+
+def test_hyphenated_range_with_short_versions():
+    assert constraints_overlap("1.0 - 2.0", "1.5") is True
+    assert constraints_overlap("1.0 - 2.0", "2.5") is False
+
+
+def test_hyphenated_range_is_unaffected_by_a_prerelease_suffix_dash():
+    # The embedded dash in "1.0.0-beta" has no surrounding whitespace, unlike the
+    # hyphen-range separator, so it must not be mistaken for one.
+    assert constraints_overlap("^1.0.0-beta", ">=1.0.0,<2.0.0") is True
