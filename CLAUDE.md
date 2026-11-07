@@ -34,6 +34,23 @@ One Python backend, one Postgres database with extensions, one `docker compose u
 
 Don't mix model roles: Claude Code is the tool used to *write* the application; in production the application itself uses DeepSeek (cost) or a BYOK model.
 
+**Auto-migration on startup (recorded 2026-11-07):** real production incident — a
+teammate pulled a new version, and `api` crashed every `/modules` request with
+`sqlalchemy.exc.ProgrammingError: column modules.homepage does not exist` (the
+`composer.json` facts migration had never been applied to his DB), surfaced to the
+frontend only as a generic "Failed to load modules." `docker-compose.yml` never ran
+migrations itself — the README documented `docker compose exec api alembic upgrade
+head` as a required manual step, easy to forget on every pull. Fixed with a dedicated
+one-shot `migrate` service (`alembic upgrade head`, then exits) that `api`/`worker`
+both `depends_on` with `condition: service_completed_successfully` — not api/worker
+running it themselves, which would race the two against each other. Verified against
+a real `docker compose up`: `migrate` starts only after `db`/`redis` are healthy, exits
+0, and only then do `api`/`worker` start; `/modules` serves real data (including the
+previously-missing `homepage` column) immediately. This already matched the
+Kubernetes manifests' own pattern (Phase 8's "one-shot migration `Job`") — docker-
+compose was the one place still requiring a manual step. CI's `e2e-smoke` job dropped
+its own now-redundant manual `alembic upgrade head` step for the same reason.
+
 **Phase 8 decision (recorded 2026-11-06):** Kubernetes manifests use **Kustomize**, not Helm — `kubectl` has Kustomize built in (no extra tooling), and plain YAML + a `kustomization.yaml` fits a single-environment (`kind`) demo better than a chart's templating layer. See `k8s/`. The scan `CronJob` is additive to the app's own internal ARQ cron (`cron(nightly_scan_all, ...)` in `app/tasks/worker.py`, already running wherever the worker Deployment runs) — it demonstrates the k8s-native primitive by hitting `POST /scan` against the committed `tests/fixtures/demo-store` fixture, not a replacement for the in-process schedule.
 
 ## Scan, cron, and cost control

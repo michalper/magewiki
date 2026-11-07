@@ -153,15 +153,12 @@ asked about an integration (Klaviyo) the module doesn't have.
 
 ```bash
 cp .env.example .env
-docker compose build
 docker compose up -d
-docker compose exec api alembic upgrade head
 ```
 
-The last step is required — the API container does **not** run migrations on
-startup. Skipping it is the most common first-run issue: the app starts fine
-(it doesn't touch the database until a request comes in), but every scan or
-page load then fails because the tables don't exist yet.
+Migrations run automatically on every `up` — a dedicated `migrate` container
+runs `alembic upgrade head` once and exits before `api`/`worker` start, so a
+new version with a schema change can never run against a stale database.
 
 - API health check: http://localhost:8000/health
 - Web UI: http://localhost:3000

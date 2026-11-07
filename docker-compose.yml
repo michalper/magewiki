@@ -25,6 +25,21 @@ services:
       timeout: 5s
       retries: 5
 
+  # Runs `alembic upgrade head` once, then exits — api/worker both wait for it
+  # to finish before they start, so a new version with a schema change can
+  # never run against a stale DB (the real production failure this closes:
+  # a `column ... does not exist` 500, surfaced to users as a generic
+  # "Cannot load modules"). A dedicated one-shot service, not api/worker
+  # running it themselves, so the two never race trying to migrate at once.
+  migrate:
+    build:
+      context: ./backend
+    env_file: .env
+    depends_on:
+      db:
+        condition: service_healthy
+    command: ["alembic", "upgrade", "head"]
+
   api:
     build:
       context: ./backend
@@ -45,6 +60,8 @@ services:
         condition: service_healthy
       redis:
         condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
     command: ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000", "--reload"]
 
   worker:
@@ -65,6 +82,8 @@ services:
         condition: service_healthy
       redis:
         condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
     command: ["arq", "app.tasks.worker.WorkerSettings"]
 
   php-analyzer:
