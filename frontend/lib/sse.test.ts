@@ -66,6 +66,16 @@ describe("streamSse", () => {
     expect(events).toEqual([{ event: "done" }]);
   });
 
+  it("silently drops a malformed trailing block with no closing blank line", async () => {
+    const events: Ev[] = [];
+    const raw = 'event: token\ndata: {"text":"a"}\n\nevent: done\ndata: {broken';
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(fakeResponse([raw])));
+
+    await streamSse<Ev>("/x", {}, (e) => events.push(e));
+
+    expect(events).toEqual([{ event: "token", text: "a" }]);
+  });
+
   it("best-effort parses a trailing block with no closing blank line", async () => {
     const events: Ev[] = [];
     const raw = 'event: token\ndata: {"text":"a"}\n\nevent: done\ndata: {}';

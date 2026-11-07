@@ -1,5 +1,5 @@
-import { describe, expect, it } from "vitest";
-import { escapeCsvField, toCsv } from "./csv";
+import { afterEach, describe, expect, it, vi } from "vitest";
+import { downloadCsv, escapeCsvField, toCsv } from "./csv";
 
 describe("escapeCsvField", () => {
   it("passes plain text through unchanged", () => {
@@ -36,5 +36,26 @@ describe("escapeCsvField", () => {
 describe("toCsv", () => {
   it("joins headers and rows with commas and newlines", () => {
     expect(toCsv(["a", "b"], [[1, "x"], [2, "y,z"]])).toBe('a,b\n1,x\n2,"y,z"');
+  });
+});
+
+describe("downloadCsv", () => {
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  it("creates an object URL, clicks a download link, then revokes the URL", () => {
+    const createObjectURL = vi.fn().mockReturnValue("blob:fake-url");
+    const revokeObjectURL = vi.fn();
+    vi.stubGlobal("URL", { ...URL, createObjectURL, revokeObjectURL });
+    const clickSpy = vi.spyOn(HTMLAnchorElement.prototype, "click").mockImplementation(() => {});
+
+    downloadCsv("modules.csv", "a,b\n1,2");
+
+    expect(createObjectURL).toHaveBeenCalledTimes(1);
+    expect(clickSpy).toHaveBeenCalledTimes(1);
+    expect(revokeObjectURL).toHaveBeenCalledWith("blob:fake-url");
+
+    vi.unstubAllGlobals();
   });
 });
