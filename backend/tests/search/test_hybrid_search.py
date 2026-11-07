@@ -2,7 +2,7 @@ import uuid
 from datetime import UTC, datetime
 
 import pytest
-from sqlalchemy import delete
+from sqlalchemy import delete, text
 
 from app.models import Chunk, Module, PhpClass
 from app.search.hybrid import hybrid_search
@@ -267,4 +267,116 @@ async def test_identifier_signal_does_not_double_count_two_classes_in_the_same_f
     assert ordered == [single_chunk.id, double_chunk.id]
 
     await db_session.execute(delete(Module).where(Module.id.in_([double_module.id, single_module.id])))
+    await db_session.commit()
+
+
+_IDENTIFIERS_CTE_SQL = text("""
+WITH identifier_hits AS (
+    SELECT m.id AS module_id, NULL::text AS relative_path, similarity(m.name, :query_text) AS sim
+    FROM modules m
+    WHERE similarity(m.name, :query_text) > :trgm_threshold
+    UNION ALL
+    SELECT pc.module_id, pc.file_path,
+           GREATEST(similarity(pc.fqcn, :query_text), similarity(pc.class_name, :query_text)) AS sim
+    FROM php_classes pc
+    WHERE similarity(pc.fqcn, :query_text) > :trgm_threshold
+       OR similarity(pc.class_name, :query_text) > :trgm_threshold
+),
+identifiers AS (
+    SELECT chunk_id, row_number() OVER (ORDER BY sim DESC) AS rnk
+    FROM (
+        SELECT DISTINCT ON (ch.id) ch.id AS chunk_id, ih.sim AS sim
+        FROM identifier_hits ih
+        JOIN chunks ch ON ch.module_id = ih.module_id
+            AND (
+                (ih.relative_path IS NULL AND ch.chunk_type = 'module')
+                OR (ch.relative_path = ih.relative_path AND ch.chunk_type = 'file')
+            )
+        ORDER BY ch.id, ih.sim DESC
+    ) deduped
+)
+SELECT chunk_id, rnk FROM identifiers WHERE chunk_id = ANY(:chunk_ids)
+""")
+
+
+@pytest.mark.asyncio
+async def test_identifier_signal_maps_a_class_hit_only_to_its_file_chunk_not_every_method_chunk(db_session):
+    """Regression test for the identifiers CTE's join condition directly (not the
+    full hybrid_search() pipeline — the semantic/keyword signals' own :topk
+    ranking is global across the whole chunks table, including whatever other
+    tests' chunks are still live in a shared DB, which would make an assertion
+    on the full fused RRF score flaky).
+
+    A class-name hit used to join to every chunk sharing its relative_path — the
+    one 'file' chunk AND every 'method' chunk (one per plugin/observer method in
+    that file). Fanning out across 3 rows instead of 1 in this CTE's globally
+    sim-sorted row_number() sequence pushes every weaker-but-distinct match
+    further down that same sequence (higher rnk = lower eventual RRF score
+    1/(60+rnk)) — not just double-counting onto one chunk, like the test above.
+
+    Similarity verified empirically against this exact Postgres/pg_trgm version:
+    with the query equal to Alpha's own class name (sim=1.0) and Beta's class
+    name sharing Alpha's random suffix (sim≈0.58, still above the 0.3
+    threshold), fixed means Alpha contributes exactly 1 row ahead of Beta, so
+    Beta's rnk is 2 — before the fix, Alpha's file+2 method chunks (all tied at
+    sim=1.0) would occupy rnk 1-3, pushing Beta to rnk=4 instead.
+    """
+    suffix = uuid.uuid4().hex[:8]
+    query = f"ZyzxFanAlpha{suffix}"
+
+    fan_module = await _make_module(db_session, f"fan-{suffix}")
+    db_session.add(
+        PhpClass(
+            module_id=fan_module.id, fqcn=query, namespace=None, class_name=query,
+            kind="class", extends=[], implements=[], file_path="Plugin.php",
+        )
+    )
+    fan_file_chunk = Chunk(
+        module_id=fan_module.id, chunk_type="file", relative_path="Plugin.php",
+        content_hash=f"fan-file-{suffix}", text="irrelevant", embedding=_vector({100: 1.0}),
+    )
+    fan_method_chunk_1 = Chunk(
+        module_id=fan_module.id, chunk_type="method", relative_path="Plugin.php",
+        content_hash=f"fan-method-1-{suffix}", text="irrelevant", embedding=_vector({101: 1.0}),
+    )
+    fan_method_chunk_2 = Chunk(
+        module_id=fan_module.id, chunk_type="method", relative_path="Plugin.php",
+        content_hash=f"fan-method-2-{suffix}", text="irrelevant", embedding=_vector({102: 1.0}),
+    )
+    db_session.add_all([fan_file_chunk, fan_method_chunk_1, fan_method_chunk_2])
+
+    beta_module = await _make_module(db_session, f"beta-{suffix}")
+    db_session.add(
+        PhpClass(
+            module_id=beta_module.id, fqcn=f"ZyzxFanBeta{suffix}", namespace=None,
+            class_name=f"ZyzxFanBeta{suffix}", kind="class", extends=[], implements=[],
+            file_path="Beta.php",
+        )
+    )
+    beta_chunk = Chunk(
+        module_id=beta_module.id, chunk_type="file", relative_path="Beta.php",
+        content_hash=f"beta-{suffix}", text="irrelevant", embedding=_vector({103: 1.0}),
+    )
+    db_session.add(beta_chunk)
+    await db_session.commit()
+
+    rows = (
+        await db_session.execute(
+            _IDENTIFIERS_CTE_SQL,
+            {
+                "query_text": query,
+                "trgm_threshold": 0.3,
+                "chunk_ids": [fan_file_chunk.id, fan_method_chunk_1.id, fan_method_chunk_2.id, beta_chunk.id],
+            },
+        )
+    ).all()
+    rnk_by_chunk_id = {row.chunk_id: row.rnk for row in rows}
+
+    # Exactly 2 rows total (Alpha's file chunk, Beta's file chunk) — the method
+    # chunks must not appear in the identifiers CTE at all.
+    assert set(rnk_by_chunk_id) == {fan_file_chunk.id, beta_chunk.id}
+    assert rnk_by_chunk_id[fan_file_chunk.id] == 1
+    assert rnk_by_chunk_id[beta_chunk.id] == 2
+
+    await db_session.execute(delete(Module).where(Module.id.in_([fan_module.id, beta_module.id])))
     await db_session.commit()

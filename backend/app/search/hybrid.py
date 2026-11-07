@@ -51,6 +51,13 @@ identifiers AS (
     -- both summed into its fused RRF score below, double-counting one signal's
     -- contribution. DISTINCT ON (ch.id) keeps only the best-similarity match
     -- per chunk before ranking, so each chunk contributes at most once.
+    --
+    -- A class-name hit joins only to that file's single 'file'-level chunk, not
+    -- every 'method' chunk sharing the same relative_path (one per plugin/
+    -- observer method in that file) — same reasoning as the module-level case
+    -- above: one identifier match should consume one rank slot, not fan out
+    -- across however many method chunks that file happens to have and dilute
+    -- the :topk identifier rank budget for every other match.
     SELECT chunk_id, row_number() OVER (ORDER BY sim DESC) AS rnk
     FROM (
         SELECT DISTINCT ON (ch.id) ch.id AS chunk_id, ih.sim AS sim
@@ -58,7 +65,7 @@ identifiers AS (
         JOIN chunks ch ON ch.module_id = ih.module_id
             AND (
                 (ih.relative_path IS NULL AND ch.chunk_type = 'module')
-                OR ch.relative_path = ih.relative_path
+                OR (ch.relative_path = ih.relative_path AND ch.chunk_type = 'file')
             )
         ORDER BY ch.id, ih.sim DESC
     ) deduped
