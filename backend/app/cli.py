@@ -56,6 +56,15 @@ async def _resume_modules(modules: Sequence[Module], session) -> None:
                 select(FileHash).where(FileHash.module_id == module.id, FileHash.analyzed.is_(False))
             )
         ).all()
+        # pending_file_count must be reset to exactly what's being (re-)enqueued here,
+        # not left at whatever stale value it already had: analyze_file's own
+        # completion handler triggers synthesize_module only when its decrement lands
+        # on EXACTLY 0 (Module.pending_file_count - 1) — resuming from a stale
+        # nonzero/zero baseline makes that decrement skip past 0 forever, silently
+        # stranding the module in "analyzing" with no job left to move it forward.
+        # Confirmed in production: modules with 0 pending_file_count and 0 actually-
+        # unanalyzed files were still stuck in "analyzing" with no module_docs row
+        # and no job in the queue, after an earlier resume cycle.
         if file_hashes:
             for fh in file_hashes:
                 job_id = f"analyze:{module.id}:{fh.relative_path}:{fh.content_hash}"
@@ -86,7 +95,7 @@ async def _resume_modules(modules: Sequence[Module], session) -> None:
         await session.execute(
             update(Module)
             .where(Module.id == module.id, Module.current_hash == module.current_hash)
-            .values(state="analyzing")
+            .values(state="analyzing", pending_file_count=len(file_hashes))
         )
     await session.commit()
 
@@ -123,6 +132,29 @@ async def _run_resume_failed(repo_root: str | None) -> int:
     return 0
 
 
+async def _run_resume_stuck(repo_root: str | None) -> int:
+    """Modules sitting in 'analyzing'/'embedding' are mid-pipeline by design while
+    their jobs are queued — but the pending_file_count-desync bug _resume_modules
+    now guards against could already have stranded some with no job left in the
+    queue at all before that fix existed. _resume_modules is idempotent either way
+    (re-enqueuing a job ARQ already has queued is a harmless no-op via its job_id),
+    so this is safe to run speculatively even on modules that are actually fine.
+    """
+    async with async_session_factory() as session:
+        query = select(Module).where(Module.state.in_(("analyzing", "embedding")))
+        if repo_root:
+            query = query.where(Module.repo_root == str(Path(repo_root).resolve()))
+        modules = (await session.scalars(query)).all()
+
+        if not modules:
+            print("No modules in analyzing/embedding state.")
+            return 0
+
+        await _resume_modules(modules, session)
+
+    return 0
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(prog="app.cli")
     subparsers = parser.add_subparsers(dest="command", required=True)
@@ -140,6 +172,13 @@ def main(argv: list[str] | None = None) -> int:
     )
     resume_failed_parser.add_argument("repo_root", nargs="?", help="Limit to modules under this repo root")
 
+    resume_stuck_parser = subparsers.add_parser(
+        "resume-stuck",
+        help="Re-enqueue analysis for modules in analyzing/embedding with no job actually left in the queue "
+        "(e.g. stranded by a since-fixed pending_file_count desync) — safe to run speculatively",
+    )
+    resume_stuck_parser.add_argument("repo_root", nargs="?", help="Limit to modules under this repo root")
+
     args = parser.parse_args(argv)
 
     if args.command == "scan":
@@ -148,6 +187,8 @@ def main(argv: list[str] | None = None) -> int:
         return asyncio.run(_run_resume_budget(args.repo_root))
     if args.command == "resume-failed":
         return asyncio.run(_run_resume_failed(args.repo_root))
+    if args.command == "resume-stuck":
+        return asyncio.run(_run_resume_stuck(args.repo_root))
 
     return 1
 
