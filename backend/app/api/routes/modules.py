@@ -539,28 +539,15 @@ async def get_module(module_id: int, session: AsyncSession = Depends(get_session
         finding_counts=dict(Counter(f.check_type for f in quality_findings)),
         dependencies=[d.depends_on_name for d in dependencies],
         classes=class_summaries,
-        preferences=[DiPreferenceSummary(for_type=p.for_type, preference_type=p.preference_type) for p in preferences],
-        plugins=[
-            DiPluginSummary(
-                intercepted_type=p.intercepted_type, plugin_name=p.plugin_name, plugin_class=p.plugin_class,
-                sort_order=p.sort_order, disabled=p.disabled,
-            )
-            for p in plugins
-        ],
-        observers=[
-            EventObserverSummary(
-                event_name=o.event_name, observer_name=o.observer_name, observer_class=o.observer_class,
-                disabled=o.disabled,
-            )
-            for o in observers
-        ],
-        graphql_fields=[
-            GraphQlFieldSummary(
-                operation_type=gf.operation_type, type_name=gf.type_name, field_name=gf.field_name,
-                resolver_class=gf.resolver_class,
-            )
-            for gf in graphql_fields
-        ],
+        # Each Summary's field names already match its ORM row's attributes exactly
+        # (confirmed for all four) — model_validate(..., from_attributes=True) stays
+        # correct automatically as fields are added, instead of a hand-written
+        # field-by-field constructor call per entity type (4 near-identical copies
+        # before this).
+        preferences=[DiPreferenceSummary.model_validate(p, from_attributes=True) for p in preferences],
+        plugins=[DiPluginSummary.model_validate(p, from_attributes=True) for p in plugins],
+        observers=[EventObserverSummary.model_validate(o, from_attributes=True) for o in observers],
+        graphql_fields=[GraphQlFieldSummary.model_validate(gf, from_attributes=True) for gf in graphql_fields],
         quality_findings=[
             QualityFindingResponse(
                 check_type=f.check_type, severity=f.severity, file_path=f.file_path, line=f.line, message=f.message
