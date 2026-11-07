@@ -22,6 +22,27 @@ def test_parse_composer_json_missing_file(tmp_path: Path):
     assert parse_composer_json(tmp_path / "composer.json") is None
 
 
+def test_parse_composer_json_with_a_string_license(tmp_path: Path):
+    (tmp_path / "composer.json").write_text('{"license": "MIT"}', encoding="utf-8")
+    result = parse_composer_json(tmp_path / "composer.json")
+    assert result.license == ["MIT"]
+
+
+def test_parse_composer_json_returns_none_for_malformed_json(tmp_path: Path):
+    (tmp_path / "composer.json").write_text("{not valid json", encoding="utf-8")
+    assert parse_composer_json(tmp_path / "composer.json") is None
+
+
+def test_parse_composer_json_authors_skips_non_dict_entries_and_blank_names(tmp_path: Path):
+    (tmp_path / "composer.json").write_text(
+        '{"authors": ["not a dict", {"name": ""}, {"email": "no-name@example.com"}, '
+        '{"name": "Real Author", "email": "real@example.com"}, {"name": "No Email Author"}]}',
+        encoding="utf-8",
+    )
+    result = parse_composer_json(tmp_path / "composer.json")
+    assert result.authors == ["Real Author <real@example.com>", "No Email Author"]
+
+
 def test_composer_completeness_findings_flags_only_whats_actually_missing(demo_module_path: Path):
     result = parse_composer_json(demo_module_path / "composer.json")
     findings = composer_completeness_findings(result)
