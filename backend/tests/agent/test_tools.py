@@ -4,7 +4,7 @@ from decimal import Decimal
 from pathlib import Path
 
 import pytest
-from sqlalchemy import delete
+from sqlalchemy import delete, update
 
 from app.agent.tools import (
     find_by_class,
@@ -170,6 +170,12 @@ async def test_get_dependencies_used_by(db_session):
 
 
 @pytest.mark.asyncio
+async def test_get_dependencies_not_found(db_session):
+    result = await get_dependencies(db_session, module_id=999999999)
+    assert result == {"found": False}
+
+
+@pytest.mark.asyncio
 async def test_find_by_event_matches_demo_store_observer(demo_store_path: Path, db_session):
     module = await scan_demo_store(demo_store_path, db_session)
 
@@ -265,4 +271,49 @@ async def test_list_modules_filters_by_status_and_tags(db_session):
     assert untagged.name not in names
 
     await db_session.execute(delete(Module).where(Module.id.in_([tagged.id, untagged.id])))
+    await db_session.commit()
+
+
+@pytest.mark.asyncio
+async def test_list_modules_filters_by_enabled_and_integration(db_session):
+    suffix = uuid.uuid4().hex[:8]
+    enabled_module = await _make_bare_module(db_session, f"{suffix}-enabled", name=f"Enabled_{suffix}")
+    disabled_module = await _make_bare_module(db_session, f"{suffix}-disabled", name=f"Disabled_{suffix}")
+    await db_session.execute(update(Module).where(Module.id == disabled_module.id).values(enabled=False))
+
+    cache = AnalysisCache(
+        content_hash=f"doc-{suffix}",
+        model="seeded",
+        prompt_version=MODULE_SYNTHESIS_PROMPT_VERSION,
+        kind="module_synthesis",
+        response={},
+        tokens_in=0,
+        tokens_out=0,
+        cost_usd=Decimal(0),
+    )
+    db_session.add(cache)
+    await db_session.flush()
+    db_session.add(
+        ModuleDocument(
+            module_id=enabled_module.id,
+            content_hash=f"doc-{suffix}",
+            model="seeded",
+            prompt_version=MODULE_SYNTHESIS_PROMPT_VERSION,
+            cache_id=cache.id,
+            doc={"tags": [], "integrations": [{"name": "Klaviyo"}]},
+        )
+    )
+    await db_session.commit()
+
+    by_enabled = await list_modules(db_session, enabled=True)
+    enabled_names = {m["name"] for m in by_enabled["modules"]}
+    assert enabled_module.name in enabled_names
+    assert disabled_module.name not in enabled_names
+
+    by_integration = await list_modules(db_session, integration="klaviyo")
+    integration_names = {m["name"] for m in by_integration["modules"]}
+    assert enabled_module.name in integration_names
+    assert disabled_module.name not in integration_names
+
+    await db_session.execute(delete(Module).where(Module.id.in_([enabled_module.id, disabled_module.id])))
     await db_session.commit()
