@@ -784,6 +784,24 @@ Frontend has no unit-test runner at all yet (only Playwright e2e), so closing
 this gap on the frontend side means adding one (vitest, most likely) before
 any frontend file can count toward the 100%.
 
+**Frontend unit-test runner added: vitest (recorded 2026-11-07):** a full-repo
+code review ahead of the public release flagged `frontend/lib/sse.ts` (SSE
+parsing, shared by chat and scan streaming) as risky, untested logic — the
+frontend previously had no unit-test runner at all, only Playwright e2e.
+Picked vitest over jest for zero-config TypeScript/ESM support matching this
+project's existing tooling (Vite-free Next.js app, but vitest needs no bundler
+coupling to work). While adding tests, fixed two real gaps in `sse.ts` itself:
+`parseSseBlock` took only the first "data: " line, not spec-compliant for
+multi-line data (latent, since the only real producer, `format_sse()`, never
+emits multi-line data); and a single malformed event's `JSON.parse` threw
+uncaught, killing the whole stream over one bad frame instead of skipping it.
+Also best-effort parses a trailing block with no closing blank line at stream
+end, previously dropped silently. Wired `npm run test:unit` into the
+`frontend` CI job, after lint and before build. This is also step one of the
+"require 100% CI coverage" backlog item above — the frontend side of that
+needed a unit-test runner to exist before any frontend file could count
+toward it.
+
 **Code-scanning/Dependabot alert triage (recorded 2026-11-07):** reviewed all 448 open
 GitHub code-scanning alerts and 15 open Dependabot alerts. One real bug found and
 fixed: `_validate_scan_path()` (`app/api/routes/modules.py`) and `webhook_scan()`

@@ -301,6 +301,57 @@ async def test_run_agent_stops_after_max_tool_rounds(db_session, monkeypatch):
 
 
 @pytest.mark.asyncio
+async def test_run_agent_rechecks_budget_before_the_final_streaming_turn(db_session, monkeypatch):
+    """Regression test: the tool loop rechecks the budget every round, but once
+    it exits with no more tool calls, the mandatory final streaming turn used to
+    run unconditionally — a budget crossing its limit in exactly that window let
+    one more real, billed call through. Simulate the limit being crossed only
+    after the tool-calling round and confirm the streaming call never happens.
+    """
+    suffix = uuid.uuid4().hex[:8]
+    module = await _make_module(db_session, suffix)
+
+    non_streaming_call_count = 0
+
+    async def _exceeded_after_the_tool_round(session):
+        # Must stay False through both non-streaming rounds (the tool call, then
+        # the no-more-tool-calls answer that breaks the loop) and only become
+        # True in the check added right after the loop, or the loop's own
+        # mid-round check would catch this case instead of the new one.
+        return non_streaming_call_count >= 2
+
+    monkeypatch.setattr(loop_module, "is_budget_exceeded", _exceeded_after_the_tool_round)
+
+    async def fake_list_modules(session, **kwargs):
+        return {"total": 1, "modules": [{"module_id": module.id, "name": module.name}]}
+
+    monkeypatch.setitem(loop_module.TOOL_FUNCTIONS, "list_modules", fake_list_modules)
+
+    calls = []
+
+    async def fake_acompletion(**kwargs):
+        nonlocal non_streaming_call_count
+        calls.append(kwargs)
+        if kwargs.get("stream"):
+            raise AssertionError("the final streaming call must not run once the budget is exceeded")
+        non_streaming_call_count += 1
+        if non_streaming_call_count == 1:
+            return _tool_call_response("list_modules", {})
+        return _direct_answer_response()
+
+    monkeypatch.setattr(loop_module.litellm, "acompletion", fake_acompletion)
+
+    events = [e async for e in run_agent(db_session, [{"role": "user", "content": "list modules"}], "dev")]
+
+    assert not any(c.get("stream") for c in calls)
+    assert any(e["event"] == "error" for e in events)
+    assert events[-1]["event"] == "done"
+
+    await db_session.execute(delete(Module).where(Module.id == module.id))
+    await db_session.commit()
+
+
+@pytest.mark.asyncio
 async def test_run_agent_rechecks_budget_mid_loop_not_just_once_before_it(db_session, monkeypatch):
     """Regression test: up to MAX_TOOL_ROUNDS rounds each make a real, billed LLM
     call, but the budget used to be checked only once before the loop started —

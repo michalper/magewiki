@@ -189,6 +189,17 @@ async def run_agent(session: AsyncSession, messages: list[dict], audience: str) 
 
     yield {"event": "sources", "sources": [vars(s) for s in sources.values()]}
 
+    # The tool loop rechecks the budget every round, but once it exits (via
+    # `break`, with no more tool calls) this mandatory final streaming turn ran
+    # unconditionally — a budget that crossed its limit in exactly that window
+    # still let one more real, billed call through uncounted.
+    if await is_budget_exceeded(session):
+        yield {"event": "error", "detail": "Monthly LLM budget exceeded — cannot answer right now."}
+        await _persist_chat_cost(session, llm_config.model, tokens_in_total, tokens_out_total, cost_total)
+        yield {"event": "done", "tokens_in": tokens_in_total, "tokens_out": tokens_out_total,
+               "cost_usd": str(cost_total)}
+        return
+
     history.append({"role": "user", "content": FINAL_ANSWER_INSTRUCTION})
     final_turn_kwargs = {}
     if llm_config.model.startswith("anthropic/"):
