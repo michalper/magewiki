@@ -84,6 +84,9 @@ async def test_resume_failed_requeues_embedding_once_a_module_doc_exists(demo_st
     queued_ids = {job.job_id for job in await pool.queued_jobs()}
     assert f"embed:{module.id}:{module.current_hash}" in queued_ids
 
+    await db_session.refresh(module)
+    assert module.state == "embedding"
+
 
 @pytest.mark.asyncio
 async def test_resume_failed_reports_when_nothing_is_failed(db_session):

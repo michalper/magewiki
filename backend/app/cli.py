@@ -77,6 +77,7 @@ async def _resume_modules(modules: Sequence[Module], session) -> None:
                     _job_id=job_id,
                 )
             print(f"  resumed {module.name}: re-enqueued {len(file_hashes)} file(s)")
+            next_state = "analyzing"
         else:
             doc_exists = await session.scalar(
                 select(ModuleDocument.id).where(
@@ -87,15 +88,17 @@ async def _resume_modules(modules: Sequence[Module], session) -> None:
                 job_id = f"embed:{module.id}:{module.current_hash}"
                 await pool.enqueue_job("embed_chunks", module.id, module.current_hash, _job_id=job_id)
                 print(f"  resumed {module.name}: re-enqueued embedding")
+                next_state = "embedding"
             else:
                 job_id = f"synthesize:{module.id}:{module.current_hash}"
                 await pool.enqueue_job("synthesize_module", module.id, module.current_hash, _job_id=job_id)
                 print(f"  resumed {module.name}: re-enqueued synthesis")
+                next_state = "analyzing"
 
         await session.execute(
             update(Module)
             .where(Module.id == module.id, Module.current_hash == module.current_hash)
-            .values(state="analyzing", pending_file_count=len(file_hashes))
+            .values(state=next_state, pending_file_count=len(file_hashes))
         )
     await session.commit()
 
