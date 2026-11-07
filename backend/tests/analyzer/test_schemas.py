@@ -1,7 +1,7 @@
 import pytest
 from pydantic import ValidationError
 
-from app.analyzer.schemas import Feature, FileSummary, ModuleDoc, Tag
+from app.analyzer.schemas import Feature, FileSummary, Integration, ModuleDoc, Tag
 
 
 def _valid_doc_payload(source: str) -> dict:
@@ -129,5 +129,38 @@ def test_module_doc_leaves_a_non_json_string_list_field_as_is():
     # not be silently swallowed by the recovery attempt.
     payload = _valid_doc_payload("anything.php")
     payload["features"] = "not valid json"
+    with pytest.raises(ValidationError):
+        ModuleDoc.model_validate(payload)
+
+
+def test_module_doc_rejects_an_unknown_integration_source():
+    known = {"Plugin/SampleCheckoutPlugin.php"}
+    payload = _valid_doc_payload("Plugin/SampleCheckoutPlugin.php")
+    payload["integrations"] = [{"name": "Klaviyo", "description": "Sends events.", "source": "Some/Made/Up/File.php"}]
+    with pytest.raises(ValidationError):
+        ModuleDoc.model_validate(payload, context={"known_sources": known})
+
+
+def test_module_doc_accepts_an_integration_with_no_source():
+    known = {"Plugin/SampleCheckoutPlugin.php"}
+    payload = _valid_doc_payload("Plugin/SampleCheckoutPlugin.php")
+    payload["integrations"] = [{"name": "Klaviyo", "description": "Sends events."}]
+    doc = ModuleDoc.model_validate(payload, context={"known_sources": known})
+    assert doc.integrations == [Integration(name="Klaviyo", description="Sends events.", source=None)]
+
+
+def test_module_doc_parse_json_string_list_fields_guard_passes_through_a_non_dict():
+    # The model_validator(mode="before") that recovers stringified list fields
+    # must leave a non-dict input alone and let Pydantic's own type check raise
+    # its normal error, rather than crashing on e.g. `.get()` against a list.
+    with pytest.raises(ValidationError):
+        ModuleDoc.model_validate(["not", "a", "dict"])
+
+
+def test_module_doc_rejects_rejected_tags_given_as_null():
+    # _coerce_rejected_tag_items's own "not a list -> pass through unchanged"
+    # guard still lets Pydantic's own list[str] type check reject a null value.
+    payload = _valid_doc_payload("anything.php")
+    payload["rejected_tags"] = None
     with pytest.raises(ValidationError):
         ModuleDoc.model_validate(payload)

@@ -145,3 +145,65 @@ async def test_synthesize_module_doc_retries_when_pm_text_and_dev_text_are_missi
 
     assert doc.pm_text == complete["pm_text"]
     assert doc.dev_text == complete["dev_text"]
+
+
+@pytest.mark.asyncio
+async def test_summarize_file_falls_back_to_plain_json_when_the_provider_rejects_tool_use(monkeypatch):
+    """Some providers reject the tools/tool_choice kwargs entirely -- _call_tool_use
+    must return None (not raise) so _call_llm falls through to the plain-JSON
+    prompting style instead of failing the whole file.
+    """
+    async def fake_acompletion(**kwargs):
+        if "tools" in kwargs:
+            raise RuntimeError("this provider does not support tool_choice")
+        return _plain_json_response({"file_summary": "Handles checkout totals.", "notable_behavior": None})
+
+    monkeypatch.setattr("app.analyzer.client.litellm.acompletion", fake_acompletion)
+    monkeypatch.setattr("app.analyzer.client.litellm.completion_cost", lambda **k: 0.001)
+
+    summary, _result = await summarize_file(
+        "Model/Total.php", "<?php class Total {}", model="some/other-model", api_key="test-key"
+    )
+
+    assert summary.file_summary == "Handles checkout totals."
+
+
+@pytest.mark.asyncio
+async def test_summarize_file_falls_back_to_plain_json_on_malformed_tool_call_arguments(monkeypatch):
+    async def fake_acompletion(**kwargs):
+        if "tools" in kwargs:
+            tool_call = SimpleNamespace(function=SimpleNamespace(arguments="not valid json"))
+            message = SimpleNamespace(tool_calls=[tool_call], content=None)
+            return SimpleNamespace(
+                choices=[SimpleNamespace(message=message)],
+                usage=SimpleNamespace(prompt_tokens=100, completion_tokens=50),
+            )
+        return _plain_json_response({"file_summary": "Handles checkout totals.", "notable_behavior": None})
+
+    monkeypatch.setattr("app.analyzer.client.litellm.acompletion", fake_acompletion)
+    monkeypatch.setattr("app.analyzer.client.litellm.completion_cost", lambda **k: 0.001)
+
+    summary, _result = await summarize_file(
+        "Model/Total.php", "<?php class Total {}", model="anthropic/claude-haiku-5-5", api_key="test-key"
+    )
+
+    assert summary.file_summary == "Handles checkout totals."
+
+
+@pytest.mark.asyncio
+async def test_summarize_file_falls_back_to_computed_cost_when_litellm_cost_fails(monkeypatch):
+    async def fake_acompletion(**kwargs):
+        return _tool_use_response({"file_summary": "Handles checkout totals.", "notable_behavior": None})
+
+    def _raising_cost(**kwargs):
+        raise RuntimeError("no pricing data for this model")
+
+    monkeypatch.setattr("app.analyzer.client.litellm.acompletion", fake_acompletion)
+    monkeypatch.setattr("app.analyzer.client.litellm.completion_cost", _raising_cost)
+    monkeypatch.setattr("app.analyzer.client.compute_cost_usd", lambda model, tin, tout: Decimal("0.0007"))
+
+    _summary, result = await summarize_file(
+        "Model/Total.php", "<?php class Total {}", model="anthropic/claude-haiku-5-5", api_key="test-key"
+    )
+
+    assert result.cost_usd == Decimal("0.0007")
