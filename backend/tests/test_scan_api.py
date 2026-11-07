@@ -8,10 +8,16 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.main import app
 from app.models import AnalysisCache, Module, ModuleDocument
+from tests.conftest import delete_module_if_present
 
 
 @pytest.mark.asyncio
 async def test_scan_and_list_modules(demo_store_path: Path, db_session: AsyncSession):
+    # This test creates its own ModuleDocument below, assuming none already exists
+    # for this module — true by construction only if nothing else left one behind
+    # for the same (repo_root, name); enforce that rather than assume it.
+    await delete_module_if_present(db_session, str(demo_store_path.resolve()), "Vendor_Module")
+
     transport = ASGITransport(app=app)
     async with AsyncClient(transport=transport, base_url="http://test") as client:
         scan_response = await client.post("/scan", json={"path": str(demo_store_path.resolve())})
