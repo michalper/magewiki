@@ -23,3 +23,9 @@ if (!window.matchMedia) {
     dispatchEvent: () => false,
   }) as unknown as MediaQueryList;
 }
+
+// jsdom doesn't implement Element.scrollTo -- the Modules page's scan-log
+// auto-scroll effect calls it directly on a real DOM node ref.
+if (!Element.prototype.scrollTo) {
+  Element.prototype.scrollTo = () => {};
+}
