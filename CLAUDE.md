@@ -46,6 +46,12 @@ Re-analysis by AI runs only for files whose hash changed — a scan with no chan
 - **Idempotency**: `job_id = analyze:{file}:{hash}`, plus a Postgres advisory lock for the whole scan — two overlapping scans never duplicate work.
 - **Cache**: `analysis_cache` table keyed by `(content_hash, model, prompt_version)`; changing the prompt invalidates the cache, and reverting a file costs nothing.
 - **Budget**: `LLM_MONTHLY_BUDGET_USD` is checked before every LLM call; once exceeded, jobs move to `paused_budget`.
+  This check (`is_budget_exceeded`) is a plain read with no locking — a soft, not a hard, limit: with several
+  ARQ jobs running concurrently, each can read "under budget" before any of them commits its own cost, so real
+  spend can briefly overshoot by roughly (concurrent jobs × per-call cost) before the next check catches it and
+  moves things to `paused_budget`. Flagged by a full-repo code review ahead of the public release and accepted
+  as-is rather than built out into real reservation accounting — a bigger architectural change than this
+  single-user, budget-capped-at-$20/month tool currently needs.
 - **Cron and webhook**: a nightly differential scan (e.g. `0 3 * * *`) is the safety net; a webhook from CI/CD (HMAC-signed, stable `_job_id` as debounce) gives speed. Both call the same `scan_repository` function.
 
 **Generic scan roots decision (recorded 2026-11-06):** `POST /scan`/`POST /webhooks/scan`
