@@ -5,7 +5,7 @@ export function TagBadge({ tag }: { tag: string }) {
   return (
     <Tooltip>
       <TooltipTrigger className="inline-flex">
-        <Badge variant="outline">Tag: {tag}</Badge>
+        <Badge variant="outline">{tag}</Badge>
       </TooltipTrigger>
       <TooltipContent>Tag: assigned from MageWiki&apos;s controlled tag vocabulary.</TooltipContent>
     </Tooltip>

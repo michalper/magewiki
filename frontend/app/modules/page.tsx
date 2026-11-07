@@ -146,7 +146,8 @@ function ModuleCard({ module }: { module: ModuleSummary }) {
       </div>
       <QualityBadges findingCounts={module.finding_counts} />
       {module.tags.length > 0 && (
-        <div className="flex flex-wrap gap-1">
+        <div className="flex flex-wrap items-center gap-1">
+          <span className="text-xs text-muted-foreground">Tags:</span>
           {module.tags.map((tag) => (
             <TagBadge key={tag} tag={tag} />
           ))}

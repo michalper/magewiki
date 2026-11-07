@@ -226,9 +226,6 @@ export default function ModuleDetailClient({ id }: { id: string }) {
             <div className="flex flex-wrap items-center gap-1.5">
               <EnabledBadge enabled={moduleQuery.data.enabled} />
               <StateBadge state={moduleQuery.data.state} />
-              {moduleQuery.data.tags.map((tag) => (
-                <TagBadge key={tag} tag={tag} />
-              ))}
               <Tooltip>
                 <TooltipTrigger className="inline-flex">
                   <SeverityBadge severity={moduleQuery.data.has_readme ? "ok" : "none"}>
@@ -254,6 +251,15 @@ export default function ModuleDetailClient({ id }: { id: string }) {
                 </TooltipContent>
               </Tooltip>
             </div>
+
+            {moduleQuery.data.tags.length > 0 && (
+              <div className="flex flex-wrap items-center gap-1.5">
+                <span className="text-sm text-muted-foreground">Tags:</span>
+                {moduleQuery.data.tags.map((tag) => (
+                  <TagBadge key={tag} tag={tag} />
+                ))}
+              </div>
+            )}
 
             <dl className="grid grid-cols-[auto_1fr] gap-x-4 gap-y-1.5 text-sm pt-1 border-t border-border/50">
               <dt className="text-muted-foreground pt-1.5">Composer</dt>
