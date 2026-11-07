@@ -71,7 +71,7 @@ async def _reach_embedding_state(demo_store_path: Path, session, monkeypatch) ->
 
     fake_doc = _fake_doc()
 
-    async def _fake_synthesize(facts, known_sources, **kwargs):
+    async def _fake_synthesize(facts, known_sources, known_config_paths, **kwargs):
         result = LlmCallResult(
             response_json=fake_doc.model_dump(mode="json"), tokens_in=500, tokens_out=100, cost_usd=Decimal("0.01")
         )

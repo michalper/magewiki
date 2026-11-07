@@ -15,7 +15,7 @@ from app.analyzer.embeddings import (
     embed_text,
     hash_text,
 )
-from app.analyzer.facts import gather_module_facts, known_sources
+from app.analyzer.facts import gather_module_facts, known_config_paths, known_sources
 from app.analyzer.prompts import (
     EMBEDDING_PROMPT_VERSION,
     FILE_SUMMARY_PROMPT_VERSION,
@@ -235,9 +235,11 @@ async def synthesize_module(ctx: dict | None, module_id: int, module_current_has
 
                 facts = await gather_module_facts(session, module_id)
                 sources = known_sources(facts)
+                config_paths = known_config_paths(facts)
                 doc, result = await synthesize_module_doc(
                     facts,
                     sources,
+                    config_paths,
                     model=llm_config.model,
                     api_key=llm_config.api_key,
                     api_base=llm_config.api_base,

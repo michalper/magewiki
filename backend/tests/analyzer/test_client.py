@@ -140,7 +140,7 @@ async def test_synthesize_module_doc_retries_when_pm_text_and_dev_text_are_missi
     )
 
     doc, _ = await synthesize_module_doc(
-        facts, known_sources=set(), model="anthropic/claude-haiku-5-5", api_key="test-key"
+        facts, known_sources=set(), known_config_paths=set(), model="anthropic/claude-haiku-5-5", api_key="test-key"
     )
 
     assert doc.pm_text == complete["pm_text"]

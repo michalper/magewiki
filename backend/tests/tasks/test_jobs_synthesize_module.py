@@ -58,7 +58,7 @@ async def test_synthesize_module_writes_doc_and_marks_up_to_date(demo_store_path
     call_log: list[str] = []
     fake_doc = _fake_doc()
 
-    async def _fake_synthesize(facts, known_sources, **kwargs):
+    async def _fake_synthesize(facts, known_sources, known_config_paths, **kwargs):
         call_log.append("called")
         result = LlmCallResult(
             response_json=fake_doc.model_dump(mode="json"), tokens_in=500, tokens_out=100, cost_usd=Decimal("0.01")
@@ -99,7 +99,7 @@ async def test_synthesize_module_pauses_on_budget_exceeded(demo_store_path: Path
 
     call_log: list[str] = []
 
-    async def _fake_synthesize(facts, known_sources, **kwargs):
+    async def _fake_synthesize(facts, known_sources, known_config_paths, **kwargs):
         call_log.append("called")
         raise AssertionError("should not be called when budget is exceeded")
 
@@ -132,7 +132,7 @@ async def test_synthesize_module_failure_does_not_clobber_a_newer_scan_generatio
     await db_session.execute(delete(AnalysisCache).where(AnalysisCache.content_hash == original_hash))
     await db_session.commit()
 
-    async def _race_then_fail(facts, known_sources, **kwargs):
+    async def _race_then_fail(facts, known_sources, known_config_paths, **kwargs):
         await db_session.execute(
             update(Module).where(Module.id == module.id).values(current_hash="newer-generation-hash", state="up_to_date")
         )

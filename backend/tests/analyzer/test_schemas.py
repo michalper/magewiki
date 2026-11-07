@@ -53,6 +53,31 @@ def test_module_doc_rejects_any_source_when_known_sources_is_empty():
         ModuleDoc.model_validate(_valid_doc_payload("anything.php"), context={"known_sources": set()})
 
 
+def test_module_doc_accepts_a_known_config_option_path():
+    payload = _valid_doc_payload("anything.php")
+    payload["config_options"] = [{"path": "section/group/field", "label": "Enabled"}]
+    doc = ModuleDoc.model_validate(payload, context={"known_config_paths": {"section/group/field"}})
+    assert doc.config_options[0].path == "section/group/field"
+
+
+def test_module_doc_rejects_a_hallucinated_config_option_path():
+    # config_options is documented as "keys from system.xml" — a parser fact, not
+    # an AI claim — same anti-hallucination contract as features/integrations.
+    payload = _valid_doc_payload("anything.php")
+    payload["config_options"] = [{"path": "made/up/field", "label": "Not real"}]
+    with pytest.raises(ValidationError):
+        ModuleDoc.model_validate(payload, context={"known_config_paths": {"section/group/field"}})
+
+
+def test_module_doc_skips_config_option_validation_when_key_absent():
+    # known_sources alone (without known_config_paths) must not enforce the
+    # config_options check — each key opts into its own check independently.
+    payload = _valid_doc_payload("anything.php")
+    payload["config_options"] = [{"path": "made/up/field", "label": "Not real"}]
+    doc = ModuleDoc.model_validate(payload, context={"known_sources": {"anything.php"}})
+    assert doc.config_options[0].path == "made/up/field"
+
+
 def test_tag_coerces_a_bare_string_into_an_ai_sourced_tag():
     tag = Tag.model_validate("payments")
     assert tag == Tag(name="payments", source="ai", confidence=0.5)

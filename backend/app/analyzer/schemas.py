@@ -104,20 +104,36 @@ class ModuleDoc(BaseModel):
         # from "context passed with zero known sources" (a module with no
         # PHP classes/file analyses) — the latter must still reject every
         # claimed source, not skip validation, or a config-only module could
-        # have any hallucinated source sail through uncontested.
-        if info.context is None or "known_sources" not in info.context:
+        # have any hallucinated source sail through uncontested. Each of
+        # known_sources/known_config_paths is checked independently of the
+        # other being present, so a caller can opt into either check alone.
+        if info.context is None:
             return self
-        known_sources: set[str] = info.context["known_sources"]
 
-        for feature in self.features:
-            if feature.source not in known_sources:
-                raise ValueError(
-                    f"feature {feature.name!r}: source {feature.source!r} is not a known file/class of this module"
-                )
-        for integration in self.integrations:
-            if integration.source is not None and integration.source not in known_sources:
-                raise ValueError(
-                    f"integration {integration.name!r}: source {integration.source!r} is not a known "
-                    "file/class of this module"
-                )
+        known_sources: set[str] | None = info.context.get("known_sources")
+        if known_sources is not None:
+            for feature in self.features:
+                if feature.source not in known_sources:
+                    raise ValueError(
+                        f"feature {feature.name!r}: source {feature.source!r} is not a known "
+                        "file/class of this module"
+                    )
+            for integration in self.integrations:
+                if integration.source is not None and integration.source not in known_sources:
+                    raise ValueError(
+                        f"integration {integration.name!r}: source {integration.source!r} is not a known "
+                        "file/class of this module"
+                    )
+
+        # config_options is documented (CLAUDE.md) as "keys from system.xml" — a
+        # parser fact, not an AI claim — but unlike features/integrations, nothing
+        # enforced that: a model could invent a config path and it would pass
+        # validation and render in the README.
+        known_config_paths: set[str] | None = info.context.get("known_config_paths")
+        if known_config_paths is not None:
+            for option in self.config_options:
+                if option.path not in known_config_paths:
+                    raise ValueError(
+                        f"config_option {option.path!r} is not a known system.xml field of this module"
+                    )
         return self

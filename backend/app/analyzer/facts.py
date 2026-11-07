@@ -175,3 +175,7 @@ def known_sources(facts: ModuleFacts) -> set[str]:
     sources.update(c.fqcn for c in facts.php_classes)
     sources.update(c.file_path for c in facts.php_classes)
     return sources
+
+
+def known_config_paths(facts: ModuleFacts) -> set[str]:
+    return {path for path, _label in facts.config_fields}

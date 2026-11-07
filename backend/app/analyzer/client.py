@@ -224,12 +224,20 @@ async def summarize_file(
 
 
 async def synthesize_module_doc(
-    facts: ModuleFacts, known_sources: set[str], *, model: str, api_key: str | None, api_base: str | None = None
+    facts: ModuleFacts,
+    known_sources: set[str],
+    known_config_paths: set[str],
+    *,
+    model: str,
+    api_key: str | None,
+    api_base: str | None = None,
 ) -> tuple[ModuleDoc, LlmCallResult]:
     prompt = build_module_synthesis_prompt(facts)
 
     def _validate(data: dict) -> ModuleDoc:
-        return ModuleDoc.model_validate(data, context={"known_sources": known_sources})
+        return ModuleDoc.model_validate(
+            data, context={"known_sources": known_sources, "known_config_paths": known_config_paths}
+        )
 
     return await _call_llm(
         prompt, ModuleDoc.model_json_schema(), model, api_key, api_base, _validate, max_tokens=16000
