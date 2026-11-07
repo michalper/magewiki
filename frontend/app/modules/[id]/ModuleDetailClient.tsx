@@ -10,6 +10,7 @@ import { StateBadge } from "@/components/state-badge";
 import { Button } from "@/components/ui/button";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import { TagBadge } from "@/components/tag-badge";
+import { FindingMessage } from "@/components/finding-message";
 import { apiFetch, apiUrl } from "@/lib/api";
 import { downloadCsv, toCsv } from "@/lib/csv";
 import type { components } from "@/lib/api-types";
@@ -532,13 +533,15 @@ export default function ModuleDetailClient({ id }: { id: string }) {
                   .sort((a, b) => SEVERITY_ORDER[a.severity as Severity] - SEVERITY_ORDER[b.severity as Severity])
                   .slice(0, PREVIEW_FINDING_COUNT)
                   .map((f, i) => (
-                    <li key={i} className="flex items-center gap-2 overflow-x-auto">
-                      <SeverityBadge severity={f.severity as Severity}>{f.severity}</SeverityBadge>
-                      <span className="font-mono text-muted-foreground shrink-0 whitespace-nowrap">
-                        {f.file_path}
-                        {f.line ? `:${f.line}` : ""}
-                      </span>
-                      <span className="whitespace-nowrap">{f.message}</span>
+                    <li key={i} className="space-y-0.5">
+                      <div className="flex items-center gap-2">
+                        <SeverityBadge severity={f.severity as Severity}>{f.severity}</SeverityBadge>
+                        <span className="font-mono text-muted-foreground whitespace-nowrap">
+                          {f.file_path}
+                          {f.line ? `:${f.line}` : ""}
+                        </span>
+                      </div>
+                      <div><FindingMessage message={f.message} /></div>
                     </li>
                   ))}
                 {moduleQuery.data.quality_findings.length > PREVIEW_FINDING_COUNT && (

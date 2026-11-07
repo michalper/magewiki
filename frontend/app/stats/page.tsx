@@ -199,7 +199,7 @@ function TopFindingsBar({ modules }: { modules: ModuleSummary[] }) {
             allowDecimals={false}
             tick={{ fill: palette.ink.muted, fontSize: 12 }}
           />
-          <YAxis type="category" dataKey="name" width={160} tick={{ fill: palette.ink.muted, fontSize: 12 }} />
+          <YAxis type="category" dataKey="name" width={210} tick={{ fill: palette.ink.muted, fontSize: 12 }} />
           <Tooltip />
           <Bar dataKey="total" fill={palette.sequential} radius={[0, 4, 4, 0]} maxBarSize={24}>
             <LabelList dataKey="total" position="right" fill={palette.ink.muted} fontSize={12} />
