@@ -51,6 +51,20 @@ Kubernetes manifests' own pattern (Phase 8's "one-shot migration `Job`") — doc
 compose was the one place still requiring a manual step. CI's `e2e-smoke` job dropped
 its own now-redundant manual `alembic upgrade head` step for the same reason.
 
+Two follow-ups, same session, same spirit (user: "co jeszcze można poprawić żeby było
+lepiej zautomatyzowane i łatwiejsze?"): (1) `GET /health` (`app/api/routes/health.py`)
+now also reports `schema: "ok" | "stale" | "unknown"` by comparing the DB's real
+`alembic_version` row against the code's own Alembic head revision (read once at
+import time via `ScriptDirectory.from_config`, not per request) — defense-in-depth
+for any future deploy path that doesn't go through the compose `migrate` service (a
+raw `docker compose up -d api`, a different orchestrator, a human skipping steps),
+so a schema mismatch is a clear `/health` field instead of another cryptic 500 on the
+first real query. (2) A root `Makefile` (`make up`) wraps `cp -n .env.example .env
+&& docker compose up -d` into one command — `cp -n` (no-clobber) so re-running it
+never overwrites an already-configured `.env`. The GitHub Wiki was checked and needs
+no change: its Home page already explicitly defers all installation instructions to
+the README rather than duplicating them.
+
 **Phase 8 decision (recorded 2026-11-06):** Kubernetes manifests use **Kustomize**, not Helm — `kubectl` has Kustomize built in (no extra tooling), and plain YAML + a `kustomization.yaml` fits a single-environment (`kind`) demo better than a chart's templating layer. See `k8s/`. The scan `CronJob` is additive to the app's own internal ARQ cron (`cron(nightly_scan_all, ...)` in `app/tasks/worker.py`, already running wherever the worker Deployment runs) — it demonstrates the k8s-native primitive by hitting `POST /scan` against the committed `tests/fixtures/demo-store` fixture, not a replacement for the in-process schedule.
 
 ## Scan, cron, and cost control

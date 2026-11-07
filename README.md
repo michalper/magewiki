@@ -152,13 +152,17 @@ asked about an integration (Klaviyo) the module doesn't have.
 ## Quickstart
 
 ```bash
-cp .env.example .env
-docker compose up -d
+make up
 ```
+
+(or, without `make`: `cp .env.example .env && docker compose up -d`)
 
 Migrations run automatically on every `up` — a dedicated `migrate` container
 runs `alembic upgrade head` once and exits before `api`/`worker` start, so a
 new version with a schema change can never run against a stale database.
+`GET /health` reports `schema: "stale"` if a container ever does end up
+running against an unmigrated database, instead of failing only on the
+first real query.
 
 - API health check: http://localhost:8000/health
 - Web UI: http://localhost:3000
