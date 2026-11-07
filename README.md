@@ -33,6 +33,27 @@ Project status: **Phases 0–12b done** — the MVP (v1.0, Phases 0–5) plus cr
 
 Full architecture and phase plan: see `CLAUDE.md`.
 
+## Real-world cost
+
+Measured against a real 760-module Magento store (not a synthetic benchmark):
+
+| Step | Model | Cost |
+|---|---|---|
+| Per-file summary | `anthropic/claude-haiku-5-5` | ~$0.002/file |
+| Module synthesis | `anthropic/claude-haiku-5-5` | ~$0.002/module |
+| Module synthesis | `anthropic/claude-sonnet-5-5` (optional `SYNTHESIS_MODEL` override — see CLAUDE.md) | ~$0.08/module |
+| Embeddings | `openai/text-embedding-3-small` | ~$0.02/million tokens (negligible per module) |
+
+Haiku is the default everywhere — cheap, and reliable enough for per-file summaries.
+At real fleet scale it fails module-level synthesis validation on a meaningful
+share of modules (a much larger, stricter JSON object than a file summary); the
+optional `SYNTHESIS_MODEL` override trades ~40x the per-module cost for
+materially higher reliability on that one step only. For the full 760-module
+store, a one-time full-fleet synthesis backfill on Sonnet cost roughly **$30**
+total — budget accordingly if you enable the override on a large existing
+store rather than a fresh/incremental scan (which only re-synthesizes modules
+whose files actually changed, so ongoing cost is far lower than a backfill).
+
 ## Roadmap
 
 - [x] **Phase 0** — Repo skeleton, docker-compose, migrations
