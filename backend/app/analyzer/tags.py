@@ -12,6 +12,22 @@ ALLOWED_TAGS = frozenset(
         "admin-tools",
         "performance",
         "b2b",
+        # Expanded 2026-11-07 from CLAUDE.md's "starter tag vocabulary" — the
+        # original 10 under-categorized a real 760-module fleet (lots of
+        # inventory/catalog/customer/cms/graphql/api modules had no tag that
+        # actually fit).
+        "inventory",
+        "catalog",
+        "customer",
+        "cms",
+        "graphql",
+        "api",
+        "analytics",
+        "security",
+        "multi-store",
+        "theme",
+        "pwa",
+        "cron",
     }
 )
 
@@ -29,7 +45,6 @@ _DEPENDENCY_TAG_SIGNALS: dict[str, str] = {
     "Magento_CatalogSearch": "search",
     "Magento_Elasticsearch": "search",
     "Magento_Search": "search",
-    "Magento_Cms": "seo",
     "Magento_UrlRewrite": "seo",
     "Magento_AdminGws": "admin-tools",
     "Magento_Backend": "admin-tools",
@@ -37,6 +52,27 @@ _DEPENDENCY_TAG_SIGNALS: dict[str, str] = {
     "Magento_Amqp": "performance",
     "Magento_NegotiableQuote": "b2b",
     "Magento_Company": "b2b",
+    "Magento_Inventory": "inventory",
+    "Magento_InventoryApi": "inventory",
+    "Magento_InventorySales": "inventory",
+    "Magento_Catalog": "catalog",
+    "Magento_CatalogInventory": "catalog",
+    "Magento_Customer": "customer",
+    "Magento_Cms": "cms",
+    "Magento_PageBuilder": "cms",
+    "Magento_GraphQl": "graphql",
+    "Magento_GraphQlServer": "graphql",
+    "Magento_Webapi": "api",
+    "Magento_WebapiAsync": "api",
+    "Magento_Analytics": "analytics",
+    "Magento_Authorization": "security",
+    "Magento_Security": "security",
+    "Magento_TwoFactorAuth": "security",
+    "Magento_Store": "multi-store",
+    "Magento_Directory": "multi-store",
+    "Magento_Theme": "theme",
+    "Magento_Swatches": "theme",
+    "Magento_Cron": "cron",
 }
 
 

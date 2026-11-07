@@ -51,10 +51,19 @@ def test_merge_tags_dedupes_by_name_preferring_parser_source():
     assert by_name["marketing"].source == "ai"
 
 
-def test_allowed_tags_matches_claude_md_starter_vocabulary():
+def test_allowed_tags_matches_claude_md_vocabulary():
     assert ALLOWED_TAGS == frozenset(
         {
             "payments", "shipping", "marketing", "erp", "search",
             "seo", "checkout", "admin-tools", "performance", "b2b",
+            "inventory", "catalog", "customer", "cms", "graphql",
+            "api", "analytics", "security", "multi-store", "theme",
+            "pwa", "cron",
         }
     )
+
+
+def test_derive_parser_tags_matches_newly_expanded_vocabulary_dependencies():
+    tags = derive_parser_tags(["Magento_Inventory", "Magento_Customer", "Magento_GraphQl", "Magento_Cron"])
+    names = {t.name for t in tags}
+    assert names == {"inventory", "customer", "graphql", "cron"}
