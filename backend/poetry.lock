@@ -1441,6 +1441,18 @@ test-full = ["adlfs", "aiohttp (!=4.0.0a0,!=4.0.0a1)", "backports-zstd ; python_
 tqdm = ["tqdm"]
 
 [[package]]
+name = "graphql-core"
+version = "3.3.2"
+description = "GraphQL-core is a Python port of GraphQL.js, the JavaScript reference implementation for GraphQL."
+optional = false
+python-versions = ">=3.10"
+groups = ["main"]
+files = [
+    {file = "graphql_core-3.3.2-py3-none-any.whl", hash = "sha256:d83f49ee18d2db89fb575dab6ffefa8aa1bf5f60dff8a6781db6f63420041348"},
+    {file = "graphql_core-3.3.2.tar.gz", hash = "sha256:15d6eee7d4364fbc202833bc6bd0d504004d8ae7c0aaf620fa884d8e437622f2"},
+]
+
+[[package]]
 name = "greenlet"
 version = "3.5.6"
 description = "Lightweight in-process concurrent programming"
@@ -5599,4 +5611,4 @@ type = ["pytest-mypy (>=1.0.1) ; platform_python_implementation != \"PyPy\""]
 [metadata]
 lock-version = "2.1"
 python-versions = ">=3.11,<3.15"
-content-hash = "189bb1f94ddcfb25d226f18e8173b9b012c6991fd0c89ff9e0f74638f8fd01eb"
+content-hash = "0dd89b288bb03d5f8e9e28115f89ae57e5c1b7488ab3eae50b795080d9d93d37"

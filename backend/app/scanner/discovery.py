@@ -76,12 +76,19 @@ def find_modules(repo_root: Path) -> list[DiscoveredModule]:
     return deduped
 
 
-def walk_module_php_files(module_root: Path) -> list[Path]:
-    """List all .php files under a module root, excluding nested vendor/ and .git."""
-    php_files: list[Path] = []
+_SOURCE_FILE_SUFFIXES = (".php", ".phtml")
+
+
+def walk_module_source_files(module_root: Path) -> list[Path]:
+    """List all .php/.phtml files under a module root, excluding nested vendor/ and
+    .git. Used for both per-file hashing/LLM analysis (hashing.py) and PHP class
+    cataloging (php_classes.py) — .phtml templates have no top-level class to
+    extract, so tree-sitter just finds zero classes for them there, harmlessly.
+    """
+    source_files: list[Path] = []
     for dirpath, dirnames, filenames in os.walk(module_root, topdown=True):
         dirnames[:] = [d for d in dirnames if d not in (_PRUNE_ALWAYS | {"vendor"})]
         for filename in filenames:
-            if filename.endswith(".php"):
-                php_files.append(Path(dirpath) / filename)
-    return php_files
+            if filename.endswith(_SOURCE_FILE_SUFFIXES):
+                source_files.append(Path(dirpath) / filename)
+    return source_files

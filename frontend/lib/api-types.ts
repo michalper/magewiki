@@ -352,6 +352,17 @@ export interface components {
             /** Module Id */
             module_id: number | null;
         };
+        /** GraphQlFieldSummary */
+        GraphQlFieldSummary: {
+            /** Operation Type */
+            operation_type: string;
+            /** Type Name */
+            type_name: string;
+            /** Field Name */
+            field_name: string;
+            /** Resolver Class */
+            resolver_class: string | null;
+        };
         /** HTTPValidationError */
         HTTPValidationError: {
             /** Detail */
@@ -464,6 +475,11 @@ export interface components {
             plugins: components["schemas"]["DiPluginSummary"][];
             /** Observers */
             observers: components["schemas"]["EventObserverSummary"][];
+            /**
+             * Graphql Fields
+             * @default []
+             */
+            graphql_fields: components["schemas"]["GraphQlFieldSummary"][];
             /**
              * Quality Findings
              * @default []

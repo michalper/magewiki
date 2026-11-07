@@ -74,6 +74,9 @@ class Module(Base):
     event_observers: Mapped[list["EventObserver"]] = relationship(
         back_populates="module", cascade="all, delete-orphan"
     )
+    graphql_fields: Mapped[list["GraphQlField"]] = relationship(
+        back_populates="module", cascade="all, delete-orphan"
+    )
     file_hashes: Mapped[list["FileHash"]] = relationship(
         back_populates="module", cascade="all, delete-orphan"
     )
@@ -171,6 +174,19 @@ class EventObserver(Base):
     disabled: Mapped[bool] = mapped_column(Boolean, default=False)
 
     module: Mapped[Module] = relationship(back_populates="event_observers")
+
+
+class GraphQlField(Base):
+    __tablename__ = "graphql_fields"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    module_id: Mapped[int] = mapped_column(ForeignKey("modules.id", ondelete="CASCADE"))
+    operation_type: Mapped[str] = mapped_column(Text)
+    type_name: Mapped[str] = mapped_column(Text, index=True)
+    field_name: Mapped[str] = mapped_column(Text)
+    resolver_class: Mapped[str | None] = mapped_column(Text, index=True)
+
+    module: Mapped[Module] = relationship(back_populates="graphql_fields")
 
 
 class FileHash(Base):

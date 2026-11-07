@@ -2,9 +2,9 @@ import hashlib
 from dataclasses import dataclass, field
 from pathlib import Path
 
-from app.scanner.discovery import walk_module_php_files
+from app.scanner.discovery import walk_module_source_files
 
-_FIXED_FILES = ("etc/module.xml", "composer.json", "etc/di.xml", "etc/events.xml")
+_FIXED_FILES = ("etc/module.xml", "composer.json", "etc/di.xml", "etc/events.xml", "etc/schema.graphqls")
 
 
 def _sha256_file(path: Path) -> str:
@@ -19,7 +19,7 @@ def compute_module_file_hashes(module_root: Path) -> dict[str, str]:
         if path.is_file():
             hashes[relative] = _sha256_file(path)
 
-    for php_file in walk_module_php_files(module_root):
+    for php_file in walk_module_source_files(module_root):
         relative_path = str(php_file.relative_to(module_root))
         hashes[relative_path] = _sha256_file(php_file)
 

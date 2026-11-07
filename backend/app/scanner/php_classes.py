@@ -2,7 +2,7 @@ from pathlib import Path
 
 from tree_sitter import Node
 
-from app.scanner.discovery import walk_module_php_files
+from app.scanner.discovery import walk_module_source_files
 from app.scanner.dto import PhpClassEntry, PhpMethodEntry
 from app.scanner.php_parser import find_all, node_text, parse_php
 
@@ -112,7 +112,7 @@ def parse_php_file(path: Path, relative_file_path: str) -> list[PhpClassEntry]:
 
 def catalog_module_classes(module_root: Path) -> list[PhpClassEntry]:
     entries: list[PhpClassEntry] = []
-    for php_file in walk_module_php_files(module_root):
+    for php_file in walk_module_source_files(module_root):
         relative_file_path = str(php_file.relative_to(module_root))
         try:
             entries.extend(parse_php_file(php_file, relative_file_path))

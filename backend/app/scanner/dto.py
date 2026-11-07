@@ -78,6 +78,14 @@ class EventObserverEntry:
 
 
 @dataclass
+class GraphQlFieldEntry:
+    operation_type: str  # "Query" | "Mutation" | "Subscription" | "type" (a plain custom type/input definition)
+    type_name: str  # the GraphQL type this field belongs to, e.g. "Query" or a custom "CustomOrderOutput"
+    field_name: str
+    resolver_class: str | None  # from @resolver(class: "...") — Magento's convention for the backing PHP class
+
+
+@dataclass
 class PhpMethodEntry:
     name: str
     start_line: int | None
