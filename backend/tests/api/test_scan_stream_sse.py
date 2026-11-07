@@ -74,6 +74,31 @@ async def test_scan_stream_relays_already_in_progress_as_an_error_event(tmp_path
 
 
 @pytest.mark.asyncio
+async def test_scan_stream_relays_an_unexpected_exception_as_an_error_event(tmp_path, monkeypatch):
+    # Previously, any exception other than ScanAlreadyInProgressError just dropped
+    # the connection silently — the UI stayed on "Scanning..." forever with no
+    # indication anything failed, defeating the whole point of this SSE redesign.
+    async def fake_scan_repository_events(repo_root, session):
+        yield {"event": "discovered", "total": 1}
+        raise RuntimeError("boom")
+
+    monkeypatch.setattr("app.scanner.orchestrator.scan_repository_events", fake_scan_repository_events)
+
+    transport = ASGITransport(app=app)
+    async with (
+        AsyncClient(transport=transport, base_url="http://test") as client,
+        client.stream("POST", "/scan/stream", json={"path": str(tmp_path)}) as response,
+    ):
+        raw_text = ""
+        async for chunk in response.aiter_text():
+            raw_text += chunk
+
+    events = _parse_sse(raw_text)
+    assert [e[0] for e in events] == ["discovered", "error"]
+    assert "unexpectedly" in events[1][1]
+
+
+@pytest.mark.asyncio
 async def test_scan_stream_rejects_a_path_outside_any_mounted_scan_root():
     transport = ASGITransport(app=app)
     async with AsyncClient(transport=transport, base_url="http://test") as client:

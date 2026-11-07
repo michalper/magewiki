@@ -72,6 +72,36 @@ async def test_chat_streams_error_event_on_budget_exceeded(monkeypatch):
 
 
 @pytest.mark.asyncio
+async def test_chat_streams_an_error_event_on_an_unexpected_exception(monkeypatch):
+    # Previously, any exception other than the ones run_agent itself converts
+    # into an {"event": "error"} just dropped the connection silently — the
+    # chat UI never saw an error or a done event and was left looking like it
+    # was still streaming indefinitely.
+    async def fake_run_agent(session, messages, audience):
+        yield {"event": "token", "text": "partial answer"}
+        raise RuntimeError("boom")
+
+    monkeypatch.setattr("app.api.routes.chat.run_agent", fake_run_agent)
+
+    transport = ASGITransport(app=app)
+    async with (
+        AsyncClient(transport=transport, base_url="http://test") as client,
+        client.stream(
+            "POST",
+            "/chat",
+            json={"messages": [{"role": "user", "content": "hi"}], "audience": "dev"},
+        ) as response,
+    ):
+        raw_text = ""
+        async for chunk in response.aiter_text():
+            raw_text += chunk
+
+    events = _parse_sse(raw_text)
+    assert [e[0] for e in events] == ["token", "error"]
+    assert "unexpectedly" in events[1][1]
+
+
+@pytest.mark.asyncio
 async def test_chat_rejects_unknown_audience_falls_back_to_dev(monkeypatch):
     seen_audience = {}
 

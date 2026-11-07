@@ -1,3 +1,4 @@
+import logging
 import os
 import time
 from collections import Counter
@@ -43,6 +44,7 @@ from app.scanner.orchestrator import (
 )
 
 router = APIRouter()
+logger = logging.getLogger(__name__)
 
 
 class ScanRequest(BaseModel):
@@ -303,6 +305,15 @@ async def _scan_sse_stream(path: str, session: AsyncSession) -> AsyncIterator[st
                 yield format_sse(event)
     except ScanAlreadyInProgressError as exc:
         yield format_sse({"event": "error", "detail": str(exc)})
+    except Exception:
+        # Whatever the whole-scan point of this SSE redesign was for — real
+        # feedback instead of a silent hang — an uncaught exception here used to
+        # defeat it just the same: the async generator simply stopped, the
+        # StreamingResponse connection closed, and the UI stayed on "Scanning..."
+        # forever with no indication anything failed. Log the real exception
+        # server-side and still tell the client, rather than leaking internals.
+        logger.exception("unexpected error during a streaming scan of %s", path)
+        yield format_sse({"event": "error", "detail": "scan failed unexpectedly — check server logs"})
 
 
 @router.post("/scan/stream")

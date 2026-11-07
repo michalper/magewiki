@@ -1,3 +1,4 @@
+import logging
 from collections.abc import AsyncIterator
 
 from fastapi import APIRouter, Depends
@@ -11,6 +12,7 @@ from app.api.sse import format_sse
 from app.db import get_session
 
 router = APIRouter()
+logger = logging.getLogger(__name__)
 
 
 class ChatMessage(BaseModel):
@@ -24,8 +26,16 @@ class ChatRequest(BaseModel):
 
 
 async def _sse_stream(session: AsyncSession, messages: list[dict], audience: str) -> AsyncIterator[str]:
-    async for event in run_agent(session, messages, audience):
-        yield format_sse(event)
+    try:
+        async for event in run_agent(session, messages, audience):
+            yield format_sse(event)
+    except Exception:
+        # Without this, an exception from run_agent (a DB hiccup, an LLM call
+        # erroring deep in the tool loop) just drops the connection — the async
+        # generator stops, the chat UI never sees an "error"/"done" event, and
+        # the message is left looking like it's still streaming indefinitely.
+        logger.exception("unexpected error during chat streaming")
+        yield format_sse({"event": "error", "detail": "chat failed unexpectedly — check server logs"})
 
 
 @router.post("/chat")
