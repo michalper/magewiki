@@ -1,6 +1,7 @@
 import uuid
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
+from decimal import Decimal
 
 import pytest
 from sqlalchemy import delete, select
@@ -430,3 +431,154 @@ async def test_run_agent_errors_on_budget_exceeded(db_session, monkeypatch):
         {"event": "done", "tokens_in": 0, "tokens_out": 0, "cost_usd": "0"},
     ]
     assert called is False
+
+
+@pytest.mark.asyncio
+async def test_run_agent_falls_back_to_empty_args_on_malformed_tool_call_json(db_session, monkeypatch):
+    async def _never_exceeded(session):
+        return False
+
+    monkeypatch.setattr(loop_module, "is_budget_exceeded", _never_exceeded)
+
+    calls = []
+    seen_tool_results: list[str] = []
+
+    async def fake_acompletion(**kwargs):
+        calls.append(kwargs)
+        if kwargs.get("stream"):
+            return _fake_stream(["ok"])
+        if len(calls) == 1:
+            return FakeResponse(
+                choices=[
+                    FakeChoice(
+                        message=FakeMessage(
+                            tool_calls=[FakeToolCall(id="call_1", function=FakeFunction("list_modules", "not valid json"))]
+                        )
+                    )
+                ]
+            )
+        for m in kwargs["messages"]:
+            if m.get("role") == "tool":
+                seen_tool_results.append(m["content"])
+        return _direct_answer_response()
+
+    monkeypatch.setattr(loop_module.litellm, "acompletion", fake_acompletion)
+
+    events = [e async for e in run_agent(db_session, [{"role": "user", "content": "list modules"}], "dev")]
+
+    assert any(e["event"] == "done" for e in events)
+    # list_modules(session) tolerates empty kwargs -- the malformed-JSON fallback
+    # (args = {}) let the call through rather than crashing the whole chat, and
+    # it didn't come back as an {"error": ...} tool result.
+    assert seen_tool_results and all('"error"' not in r for r in seen_tool_results)
+
+
+@pytest.mark.asyncio
+async def test_run_agent_surfaces_an_unknown_tool_name_as_an_error_result(db_session, monkeypatch):
+    async def _never_exceeded(session):
+        return False
+
+    monkeypatch.setattr(loop_module, "is_budget_exceeded", _never_exceeded)
+
+    calls = []
+    seen_tool_results: list[str] = []
+
+    async def fake_acompletion(**kwargs):
+        calls.append(kwargs)
+        if kwargs.get("stream"):
+            return _fake_stream(["ok"])
+        if len(calls) == 1:
+            return _tool_call_response("some_tool_that_does_not_exist", {})
+        for m in kwargs["messages"]:
+            if m.get("role") == "tool":
+                seen_tool_results.append(m["content"])
+        return _direct_answer_response()
+
+    monkeypatch.setattr(loop_module.litellm, "acompletion", fake_acompletion)
+
+    events = [e async for e in run_agent(db_session, [{"role": "user", "content": "hi"}], "dev")]
+
+    assert any(e["event"] == "done" for e in events)
+    assert any("unknown tool some_tool_that_does_not_exist" in r for r in seen_tool_results)
+
+
+@pytest.mark.asyncio
+async def test_run_agent_surfaces_a_tool_exception_as_an_error_result(db_session, monkeypatch):
+    async def _never_exceeded(session):
+        return False
+
+    monkeypatch.setattr(loop_module, "is_budget_exceeded", _never_exceeded)
+
+    async def _raising_list_modules(session, **kwargs):
+        raise RuntimeError("boom")
+
+    monkeypatch.setitem(loop_module.TOOL_FUNCTIONS, "list_modules", _raising_list_modules)
+
+    calls = []
+    seen_tool_results: list[str] = []
+
+    async def fake_acompletion(**kwargs):
+        calls.append(kwargs)
+        if kwargs.get("stream"):
+            return _fake_stream(["ok"])
+        if len(calls) == 1:
+            return _tool_call_response("list_modules", {})
+        for m in kwargs["messages"]:
+            if m.get("role") == "tool":
+                seen_tool_results.append(m["content"])
+        return _direct_answer_response()
+
+    monkeypatch.setattr(loop_module.litellm, "acompletion", fake_acompletion)
+
+    events = [e async for e in run_agent(db_session, [{"role": "user", "content": "hi"}], "dev")]
+
+    assert any(e["event"] == "done" for e in events)
+    assert any('"error": "boom"' in r for r in seen_tool_results)
+
+
+@pytest.mark.asyncio
+async def test_run_agent_falls_back_to_computed_cost_when_the_final_stream_reports_none(db_session, monkeypatch):
+    suffix = uuid.uuid4().hex[:8]
+    module = await _make_module(db_session, suffix)
+
+    async def _never_exceeded(session):
+        return False
+
+    monkeypatch.setattr(loop_module, "is_budget_exceeded", _never_exceeded)
+    # Deterministic cost for the one tool-calling round, isolating this test to
+    # only the final stream's own fallback (the thing under test).
+    monkeypatch.setattr(loop_module.litellm, "completion_cost", lambda **k: 0.0001)
+
+    async def fake_list_modules(session, **kwargs):
+        return {"total": 1, "modules": [{"module_id": module.id, "name": module.name}]}
+
+    monkeypatch.setitem(loop_module.TOOL_FUNCTIONS, "list_modules", fake_list_modules)
+
+    async def _stream_with_no_cost():
+        yield FakeStreamChunk(choices=[FakeChunkChoice("hi")])
+        yield FakeStreamChunk(choices=[], usage=FakeUsage(prompt_tokens=50, completion_tokens=20, cost=None))
+
+    calls = []
+
+    async def fake_acompletion(**kwargs):
+        calls.append(kwargs)
+        if kwargs.get("stream"):
+            return _stream_with_no_cost()
+        if len(calls) == 1:
+            return _tool_call_response("list_modules", {})
+        return _direct_answer_response()
+
+    monkeypatch.setattr(loop_module.litellm, "acompletion", fake_acompletion)
+    monkeypatch.setattr(loop_module, "compute_cost_usd", lambda model, tin, tout: Decimal("0.0003"))
+
+    events = [e async for e in run_agent(db_session, [{"role": "user", "content": "hi"}], "dev")]
+
+    done_event = next(e for e in events if e["event"] == "done")
+    # Decimal("0.0001") from each of the two non-streaming rounds (the tool call,
+    # then the no-more-tool-calls round that breaks the loop; completion_cost is
+    # mocked) + Decimal("0.0003") from the final stream's own fallback (usage.cost
+    # is None there, forcing compute_cost_usd).
+    assert done_event["cost_usd"] == "0.0005"
+
+    await db_session.execute(delete(Module).where(Module.id == module.id))
+    await db_session.commit()
