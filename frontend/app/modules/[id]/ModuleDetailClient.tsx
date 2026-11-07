@@ -213,77 +213,101 @@ export default function ModuleDetailClient({ id }: { id: string }) {
 
       {moduleQuery.data && (
         <>
-          <div className="flex items-center gap-3">
-            <h1 className="text-2xl font-semibold tracking-tight">{moduleQuery.data.name}</h1>
-            <EnabledBadge enabled={moduleQuery.data.enabled} />
-            <StateBadge state={moduleQuery.data.state} />
-            {moduleQuery.data.tags.map((tag) => (
-              <Badge key={tag} variant="outline">
-                {tag}
-              </Badge>
-            ))}
-            <SeverityBadge severity={moduleQuery.data.has_readme ? "ok" : "none"}>
-              {moduleQuery.data.has_readme ? "README" : "no README"}
-            </SeverityBadge>
-            <SeverityBadge severity={moduleQuery.data.has_tests ? "ok" : "none"}>
-              {moduleQuery.data.has_tests ? "tests" : "no tests"}
-            </SeverityBadge>
-          </div>
-          <Link href={`/modules/${id}/graph`} className="text-sm text-primary hover:underline self-start">
-            View dependency graph →
-          </Link>
-          <p className="text-sm text-muted-foreground">
-            Last scanned {new Date(moduleQuery.data.last_scanned_at).toLocaleString()} — composer:{" "}
-            {moduleQuery.data.composer_name ?? "—"} — version: {moduleQuery.data.setup_version ?? "—"}
-            {moduleQuery.data.license && moduleQuery.data.license.length > 0 && (
-              <> — license: {moduleQuery.data.license.join(", ")}</>
-            )}
-          </p>
+          <div className="rounded-2xl bg-card p-5 shadow-sm flex flex-col gap-4">
+            <div className="flex flex-wrap items-start justify-between gap-3">
+              <h1 className="text-2xl font-semibold tracking-tight">{moduleQuery.data.name}</h1>
+              <Link href={`/modules/${id}/graph`} className="text-sm text-primary hover:underline whitespace-nowrap">
+                View dependency graph →
+              </Link>
+            </div>
 
-          {(moduleQuery.data.homepage || moduleQuery.data.authors.length > 0) && (
-            <p className="text-sm text-muted-foreground">
-              {moduleQuery.data.homepage && (
-                <a
-                  href={moduleQuery.data.homepage}
-                  target="_blank"
-                  rel="noreferrer"
-                  className="text-primary hover:underline"
-                >
-                  {moduleQuery.data.homepage}
-                </a>
+            <div className="flex flex-wrap items-center gap-1.5">
+              <EnabledBadge enabled={moduleQuery.data.enabled} />
+              <StateBadge state={moduleQuery.data.state} />
+              {moduleQuery.data.tags.map((tag) => (
+                <Badge key={tag} variant="outline">
+                  {tag}
+                </Badge>
+              ))}
+              <SeverityBadge severity={moduleQuery.data.has_readme ? "ok" : "none"}>
+                {moduleQuery.data.has_readme ? "README" : "no README"}
+              </SeverityBadge>
+              <SeverityBadge severity={moduleQuery.data.has_tests ? "ok" : "none"}>
+                {moduleQuery.data.has_tests ? "tests" : "no tests"}
+              </SeverityBadge>
+            </div>
+
+            <dl className="grid grid-cols-[auto_1fr] gap-x-4 gap-y-1.5 text-sm pt-1 border-t border-border/50">
+              <dt className="text-muted-foreground pt-1.5">Composer</dt>
+              <dd className="pt-1.5">{moduleQuery.data.composer_name ?? "—"}</dd>
+
+              <dt className="text-muted-foreground pt-1.5">Version</dt>
+              <dd className="pt-1.5">{moduleQuery.data.setup_version ?? "—"}</dd>
+
+              {moduleQuery.data.license && moduleQuery.data.license.length > 0 && (
+                <>
+                  <dt className="text-muted-foreground pt-1.5">License</dt>
+                  <dd className="pt-1.5">{moduleQuery.data.license.join(", ")}</dd>
+                </>
               )}
-              {moduleQuery.data.homepage && moduleQuery.data.authors.length > 0 && " — "}
-              {moduleQuery.data.authors.length > 0 && moduleQuery.data.authors.join(", ")}
-            </p>
-          )}
 
-          {moduleQuery.data.php_extensions.length > 0 && (
-            <div className="text-sm flex flex-wrap items-center gap-x-1">
-              <span className="font-medium">Requires PHP extensions:</span>
-              <span className="font-mono text-muted-foreground">{moduleQuery.data.php_extensions.join(", ")}</span>
-            </div>
-          )}
+              {moduleQuery.data.homepage && (
+                <>
+                  <dt className="text-muted-foreground pt-1.5">Homepage</dt>
+                  <dd className="pt-1.5">
+                    <a
+                      href={moduleQuery.data.homepage}
+                      target="_blank"
+                      rel="noreferrer"
+                      className="text-primary hover:underline"
+                    >
+                      {moduleQuery.data.homepage}
+                    </a>
+                  </dd>
+                </>
+              )}
 
-          {moduleQuery.data.dependencies.length > 0 && (
-            <div className="text-sm flex flex-wrap items-center gap-x-1">
-              <span className="font-medium">Depends on:</span>
-              {moduleQuery.data.dependencies.map((dep, i) => {
-                const depId = idByName.get(dep);
-                return (
-                  <span key={dep}>
-                    {depId !== undefined ? (
-                      <Link href={`/modules/${depId}`} className="text-primary hover:underline">
-                        {dep}
-                      </Link>
-                    ) : (
-                      <span className="text-muted-foreground">{dep}</span>
-                    )}
-                    {i < moduleQuery.data.dependencies.length - 1 ? "," : ""}
-                  </span>
-                );
-              })}
-            </div>
-          )}
+              {moduleQuery.data.authors.length > 0 && (
+                <>
+                  <dt className="text-muted-foreground pt-1.5">Author{moduleQuery.data.authors.length > 1 ? "s" : ""}</dt>
+                  <dd className="pt-1.5">{moduleQuery.data.authors.join(", ")}</dd>
+                </>
+              )}
+
+              {moduleQuery.data.php_extensions.length > 0 && (
+                <>
+                  <dt className="text-muted-foreground pt-1.5">PHP extensions</dt>
+                  <dd className="pt-1.5 font-mono text-xs">{moduleQuery.data.php_extensions.join(", ")}</dd>
+                </>
+              )}
+
+              {moduleQuery.data.dependencies.length > 0 && (
+                <>
+                  <dt className="text-muted-foreground pt-1.5">Depends on</dt>
+                  <dd className="pt-1.5 flex flex-wrap items-center gap-x-1">
+                    {moduleQuery.data.dependencies.map((dep, i) => {
+                      const depId = idByName.get(dep);
+                      return (
+                        <span key={dep}>
+                          {depId !== undefined ? (
+                            <Link href={`/modules/${depId}`} className="text-primary hover:underline">
+                              {dep}
+                            </Link>
+                          ) : (
+                            <span className="text-muted-foreground">{dep}</span>
+                          )}
+                          {i < moduleQuery.data.dependencies.length - 1 ? "," : ""}
+                        </span>
+                      );
+                    })}
+                  </dd>
+                </>
+              )}
+
+              <dt className="text-muted-foreground pt-1.5">Last scanned</dt>
+              <dd className="pt-1.5">{new Date(moduleQuery.data.last_scanned_at).toLocaleString()}</dd>
+            </dl>
+          </div>
 
           <div id="readme" className="flex flex-col gap-4 scroll-mt-20">
             {readmeQuery.isLoading && (
