@@ -349,6 +349,41 @@ object. Fixed both without redesigning the retry machinery:
    `OPENAI_API_KEY` account has no credits remaining; that's an external billing
    issue for the operator to resolve, not a code bug.
 
+**Scanner coverage: `.phtml` templates and GraphQL schemas (recorded 2026-11-07):**
+flagged by a user comparing a module's synthesized `features` against what it
+actually does — the scanner only ever discovered `.php` files
+(`discovery.py`'s file walk, literally `.php`-suffix only). XML config has its
+own dedicated structural parsers, but `.phtml` templates and
+`etc/schema.graphqls` fell into neither category and were completely invisible
+to the whole pipeline. `walk_module_php_files` → `walk_module_source_files`
+now also matches `.phtml`, feeding the same per-file LLM-summary pipeline
+(`hashing.py`) and PHP class cataloging (`php_classes.py`, which harmlessly
+finds zero classes in a template file) — also benefits the deprecated-
+annotation and hardcoded-secret scanners, which can equally find either
+inside a `.phtml` file. New `app/scanner/graphql_schema.py` (`graphql-core`
+dependency) parses `etc/schema.graphqls` into structured facts the same way
+`di.xml`/`events.xml` already do: Query/Mutation/Subscription fields a module
+adds or extends, plus custom type definitions, with the backing PHP resolver
+class from Magento's `@resolver(class: "...")` convention when present (new
+`graphql_fields` table, migration `0014`; wired into `ModuleFacts`/the
+synthesis prompt and exposed on `ModuleDetail`).
+**Known one-time cost, accepted deliberately:** widening file discovery means
+every already-scanned module's `.phtml` files look "newly added" against the
+old `FileHash` rows on the *next* rescan of an existing store — a real,
+billable `analyze_file` job per `.phtml` file, fleet-wide, in that one scan.
+This is the correct, necessary cost of actually closing the coverage gap (the
+whole point is for the LLM to see `.phtml` content it never saw before), not
+a bug — flagging it here so it isn't a surprise against `LLM_MONTHLY_BUDGET_USD`
+the next time the real store is rescanned. Ongoing cost afterward is normal
+(only files that actually change get re-analyzed, same as everything else).
+Also hardened while in there: Phase A's parsing of `composer.json`/`di.xml`/
+`events.xml`/`schema.graphqls` for each module had no `try/except` at all
+(unlike `module.xml`'s, scoped per-module from the start) — an `OSError` from
+any of them (a permission error, or a TOCTOU race between each parser's own
+`.is_file()` check and its actual read) would abort scanning every remaining
+module in the store, not just the one with the bad file. Now isolated the
+same way `module.xml`'s own parse errors already were.
+
 ## Phase plan
 
 MVP = Phases 0–5. Each phase is done separately: first a plan for approval, then code with tests, then a small commit. Don't skip phases.
