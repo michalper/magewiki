@@ -112,10 +112,26 @@ function run_phpcs(string $root, string $modulePath): array
     if ($reportFile === false) {
         return [];
     }
+    // A module's own phpcs.xml.dist/phpcs.xml (if it ships one) wins over the
+    // bare Magento2 ruleset — confirmed against a real case: a module can
+    // deliberately exclude specific rule families as a documented style
+    // decision (e.g. typed native PHP signatures instead of exhaustive
+    // docblocks), and its own CI respects that; re-flagging those same rules
+    // here produced findings the module's own maintainers already decided
+    // aren't real problems, not genuine noise in MageWiki's own config this
+    // time.
+    $ownRuleset = null;
+    foreach (['phpcs.xml.dist', 'phpcs.xml'] as $candidate) {
+        if (is_file($modulePath . '/' . $candidate)) {
+            $ownRuleset = $modulePath . '/' . $candidate;
+            break;
+        }
+    }
     try {
         run_command([
-            ...with_memory_limit($root . '/vendor/bin/phpcs'), '--standard=Magento2', '--report=json',
-            '--report-file=' . $reportFile, '--extensions=php', '--ignore=*/vendor/*', $modulePath,
+            ...with_memory_limit($root . '/vendor/bin/phpcs'), '--standard=' . ($ownRuleset ?? 'Magento2'),
+            '--report=json', '--report-file=' . $reportFile, '--extensions=php',
+            '--ignore=*/vendor/*,*/Test/*', $modulePath,
         ]);
         $data = json_decode((string) file_get_contents($reportFile), true);
     } finally {

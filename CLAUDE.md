@@ -453,6 +453,38 @@ fresh timeout window starting when it actually begins running, plus added
 pure silent data loss, impossible to distinguish from "this tool genuinely
 found nothing."
 
+**A scanned module's own phpcs ruleset wins over a bare `--standard=Magento2`
+(recorded 2026-11-07):** after the two fixes above, the real Ordo_Automation
+module still showed 4707 findings — flagged by the user as still too many.
+Root cause, found via the project's own author checking Ordo's own repo
+directly: `phpcs_violation` was over 60% of the total (2842), and
+`php-analyzer/public/index.php`'s `run_phpcs()` always ran a bare
+`--standard=Magento2`, ignoring the scanned module's own `phpcs.xml.dist` —
+Ordo's own ruleset deliberately excludes three whole rule families (comment-
+block-on-every-typed-signature, property PHPDoc formatting, method-annotation
+structure) as a documented style decision (typed native PHP signatures
+instead of exhaustive docblocks), and Ordo's own CI respects that and passes
+clean. MageWiki was re-flagging, as violations, exactly what the module's own
+maintainers already decided aren't real problems — not noise in MageWiki's
+config this time, a real gap in respecting the target project's own config.
+Fixed: `run_phpcs()` now uses the module's own `phpcs.xml.dist`/`phpcs.xml`
+when present (checked at the module root), falling back to the bare
+`Magento2` ruleset only when neither exists.
+
+While fixing this, also closed a second real gap found by directly checking:
+phpcs/phpmd/rector weren't excluding `*/Test/*` at all (only `*/vendor/*`) —
+phpstan.neon already excluded it (recorded above) but that fix never
+propagated to the other three tools. `phpcs`'s `--ignore` and `rector.php`'s
+`skip()` took the added pattern cleanly; `phpmd`'s own `--exclude` flag did
+not — confirmed directly that combining `vendor/*,Test/*` (or even `Test/*`
+alone) into one pattern silently excluded everything, not just Test/, rather
+than erroring. Reverted phpmd's own flag to just `vendor/*` and instead added
+the Test/ filter centrally in `php_analyzer_client.py`, after collecting all
+four tools' results — this is now the one place the policy is guaranteed
+correct regardless of any individual tool's own exclude-flag quirks. Verified
+end-to-end against the real Ordo_Automation fixture: `phpcs_violation` 2842
+→ 0 (legitimately clean against its own ruleset), total findings 4707 → 1736.
+
 ## Phase plan
 
 MVP = Phases 0–5. Each phase is done separately: first a plan for approval, then code with tests, then a small commit. Don't skip phases.

@@ -72,6 +72,17 @@ async def check_php_static_analysis(module_root: Path) -> list[QualityFinding]:
     results = [await _call_tool(tool, str(module_root)) for tool, _check_type in tools]
     for (_tool, check_type), items in zip(tools, results, strict=True):
         for item in items:
+            # Every tool is asked to exclude Test/ at its own CLI level too
+            # (cheaper — it skips analysing those files at all), but phpmd's
+            # own --exclude pattern matching proved unreliable combining
+            # multiple patterns (confirmed directly: a combined pattern
+            # silently excluded everything, not just Test/) — this is the one
+            # place the policy is guaranteed correct regardless of any one
+            # tool's own exclude-flag quirks. PHPUnit mock/stub code is a
+            # different quality concern than the production code these
+            # checks are meant to flag.
+            if "/Test/" in item.get("file", ""):
+                continue
             findings.append(
                 QualityFinding(
                     check_type=check_type,
