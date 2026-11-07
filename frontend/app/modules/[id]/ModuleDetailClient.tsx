@@ -402,14 +402,20 @@ export default function ModuleDetailClient({ id }: { id: string }) {
                 <>
                   <dt className="text-muted-foreground pt-1.5">Homepage</dt>
                   <dd className="pt-1.5">
-                    <a
-                      href={moduleQuery.data.homepage}
-                      target="_blank"
-                      rel="noreferrer"
-                      className="text-primary hover:underline"
-                    >
-                      {moduleQuery.data.homepage}
-                    </a>
+                    {/* homepage comes verbatim from a scanned (often third-party) composer.json —
+                        only render it as a clickable link for http(s), never e.g. javascript: */}
+                    {/^https?:\/\//i.test(moduleQuery.data.homepage) ? (
+                      <a
+                        href={moduleQuery.data.homepage}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="text-primary hover:underline"
+                      >
+                        {moduleQuery.data.homepage}
+                      </a>
+                    ) : (
+                      moduleQuery.data.homepage
+                    )}
                   </dd>
                 </>
               )}
