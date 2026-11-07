@@ -8,20 +8,20 @@ packages = [{ include = "app" }]
 
 [tool.poetry.dependencies]
 python = ">=3.11,<3.15"
-fastapi = "^0.115"
+fastapi = "^0.162"
 uvicorn = { extras = ["standard"], version = ">=0.32,<0.55" }
 pydantic = "^2.9"
 pydantic-settings = "^2.6"
 sqlalchemy = { extras = ["asyncio"], version = "^2.0" }
-asyncpg = "^0.30"
+asyncpg = "^0.32"
 alembic = "^1.13"
 tree-sitter = ">=0.25,<0.27"
-tree-sitter-php = "^0.24"
+tree-sitter-php = "^0.25"
 lxml = "^6.1"
 arq = "^0.28"
 redis = "^5.2"
 litellm = "^1.108"
-mcp = "^1.1"  # litellm's tool-calling path imports this internally; not declared as its own dependency.
+mcp = "^2.3"  # litellm's tool-calling path imports this internally; not declared as its own dependency.
 # litellm.acompletion/completion eagerly imports litellm.responses.mcp.* whenever `tools` is passed,
 # even for plain function-calling with no MCP tools involved — pass `_skip_mcp_handler=True` on every
 # acompletion()/completion() call that uses `tools=` to avoid that path (and its brittle mcp-package-
@@ -34,7 +34,7 @@ httpx = "^0.28"
 # Testing (RAG eval):        ragas
 
 [tool.poetry.group.dev.dependencies]
-pytest = "^8.3"
+pytest = "^9.2"
 pytest-asyncio = "^1.0"
 pytest-cov = ">=6,<8"
 ruff = "^0.17"
