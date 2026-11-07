@@ -370,8 +370,10 @@ export default function ModulesPage() {
   }, []);
 
   async function startScan() {
+    // No guard here against a blank path or an already-running scan -- the
+    // submit button is `disabled` in exactly those two conditions, and this
+    // is its only caller.
     const trimmed = path.trim();
-    if (!trimmed || scanStatus === "running") return;
 
     setScanStatus("running");
     setScanLog([]);

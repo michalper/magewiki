@@ -14,5 +14,13 @@ export default defineConfig({
     include: ["**/*.test.{ts,tsx}"],
     exclude: ["node_modules", "tests/e2e", ".next"],
     setupFiles: ["./vitest.setup.ts"],
+    coverage: {
+      provider: "v8",
+      reporter: ["text", "lcov"],
+      reportsDirectory: "./coverage",
+      // test-utils.tsx is a test helper, not app code; config files have no
+      // meaningful runtime coverage of their own.
+      exclude: ["test-utils.tsx", "*.config.*", "lib/api-types.ts"],
+    },
   },
 });

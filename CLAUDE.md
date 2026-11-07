@@ -825,13 +825,34 @@ re-checked PyPI directly: litellm's latest published release (1.108.2, same as
 installed) still requires `filelock<4.0,>=3.16.1`. Revisit once a newer litellm relaxes
 that pin.
 
-**Open: require 100% coverage in CI (flagged 2026-11-07, not yet done):** real
-coverage today is 82%. Plan, per explicit user decision: write tests to close
-the gap to 100% first, then raise Codecov's enforced threshold to 100% —
-not the other way around, which would just fail every PR immediately.
-Frontend has no unit-test runner at all yet (only Playwright e2e), so closing
-this gap on the frontend side means adding one (vitest, most likely) before
-any frontend file can count toward the 100%.
+**100% coverage required in CI (recorded 2026-11-07):** closes the item above —
+tests were written to close the real gap first (backend: 100% lines, 453/453 tests;
+frontend: 100% statements/lines/functions, 97%+ branches, 192/192 tests across 28
+files, using the vitest runner added below), *then* the gate was raised, not the
+other way around. Two small real cleanups fell out of chasing the last few points:
+`frontend/app/modules/page.tsx`'s `startScan()` had a redundant internal
+`if (!trimmed || scanStatus === "running") return` guard — provably dead code, since
+its only caller is a submit button already `disabled` in exactly those two
+conditions — removed rather than tested or pragma'd. `frontend/components/ui/table.tsx`'s
+vendored `TableFooter`/`TableCaption` and a standalone `frontend/lib/utils.ts`
+(a one-line `cn` re-export nothing imported — everything imports `cn` straight from
+the `"cn"` package instead) were genuinely unused and deleted outright, same
+principle. The remaining ~3% of frontend *branch* coverage (two optional-chaining/
+nested-markdown edge cases) was left as-is — branch coverage was never the metric
+this project's "100%" bar has tracked (backend's own coverage.py config doesn't even
+instrument branches, only lines, per the `concurrency` note above), and line/
+statement/function coverage is genuinely 100% on both sides.
+
+Root `codecov.yml` now sets `project` (per `backend`/`frontend` flag) and `patch`
+targets to 100% with `threshold: 0%` — validated against Codecov's own `/validate`
+endpoint before committing. CI's `frontend` job switched from `npm run test:unit` to
+a new `npm run test:coverage` (`vitest run --coverage`, lcov reporter) and gained its
+own `codecov/codecov-action` upload step (`flags: frontend`) — previously only the
+`backend` job uploaded anything, so frontend coverage was invisible to Codecov
+entirely, not just unenforced. The backend upload step gained `flags: backend` to
+match. `frontend/eslint.config.mjs` also needed `coverage/**` added to its ignores —
+latent gap (lint happens to run before the coverage dir exists in CI today, but not
+when run locally after a coverage run).
 
 **Frontend unit-test runner added: vitest (recorded 2026-11-07):** a full-repo
 code review ahead of the public release flagged `frontend/lib/sse.ts` (SSE

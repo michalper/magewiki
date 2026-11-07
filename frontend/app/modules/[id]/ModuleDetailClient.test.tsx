@@ -228,6 +228,20 @@ describe("ModuleDetailClient", () => {
       expect(screen.getByRole("link", { name: "Description" })).toHaveAttribute("href", "#readme-description");
     });
 
+    it("renders ordinary bold text as plain <strong>, not a risk-severity badge, when it has nested markup", async () => {
+      // "**bold _and_ text**" gives react-markdown's strong renderer an array
+      // of children (text + an <em> element), not a single string -- distinct
+      // from the "[high]"-style risk tag case above, which is always a lone
+      // string child.
+      mockApis({ readme: "A paragraph with **bold _and_ text** in it." });
+      renderWithQueryClient(<ModuleDetailClient id="1" />);
+
+      await waitFor(() => expect(screen.getByText("and", { exact: false })).toBeInTheDocument());
+      const strongEl = screen.getByText("bold", { exact: false }).closest("strong");
+      expect(strongEl).toBeInTheDocument();
+      expect(strongEl).toHaveClass("font-semibold");
+    });
+
     it("hides the section nav chips when there is only one section", async () => {
       mockApis({ readme: "Just one paragraph, no headings." });
       renderWithQueryClient(<ModuleDetailClient id="1" />);

@@ -50,6 +50,7 @@ jobs:
         with:
           token: ${{ secrets.CODECOV_TOKEN }}
           files: backend/coverage.xml
+          flags: backend
           fail_ci_if_error: false
       - name: pip-audit (dependency vulnerability scan)
         # Non-blocking for now: 2 of today's 3 findings (starlette, filelock) are
@@ -74,7 +75,13 @@ jobs:
           node-version: "26"
       - run: npm install
       - run: npm run lint
-      - run: npm run test:unit
+      - run: npm run test:coverage
+      - uses: codecov/codecov-action@v7
+        with:
+          token: ${{ secrets.CODECOV_TOKEN }}
+          files: frontend/coverage/lcov.info
+          flags: frontend
+          fail_ci_if_error: false
       - run: npm run build
       - run: npm audit --audit-level=high
 
