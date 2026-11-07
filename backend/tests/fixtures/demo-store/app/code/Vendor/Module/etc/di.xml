@@ -4,4 +4,5 @@
     <type name="Magento\Quote\Model\Quote\Address\Total\Collector">
         <plugin name="vendor_module_sample_checkout_plugin" type="Vendor\Module\Plugin\SampleCheckoutPlugin" sortOrder="10"/>
     </type>
+    <virtualType name="Vendor\Module\SampleCollectionFactory" type="Vendor\Module\Model\ResourceModel\Sample\CollectionFactory"/>
 </config>

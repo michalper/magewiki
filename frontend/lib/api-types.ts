@@ -290,6 +290,39 @@ export interface components {
              */
             audience: string;
         };
+        /** ConfigFieldSummary */
+        ConfigFieldSummary: {
+            /** Section Id */
+            section_id: string;
+            /** Group Id */
+            group_id: string;
+            /** Field Id */
+            field_id: string;
+            /** Label */
+            label: string | null;
+            /** Field Type */
+            field_type: string | null;
+        };
+        /** CronJobSummary */
+        CronJobSummary: {
+            /** Job Name */
+            job_name: string;
+            /** Instance Class */
+            instance_class: string;
+            /** Method */
+            method: string;
+            /** Schedule */
+            schedule: string | null;
+        };
+        /** DbTableSummary */
+        DbTableSummary: {
+            /** Table Name */
+            table_name: string;
+            /** Comment */
+            comment: string | null;
+            /** Column Count */
+            column_count: number;
+        };
         /** DependencyGraphResponse */
         DependencyGraphResponse: {
             /** Center Module Id */
@@ -320,6 +353,13 @@ export interface components {
             for_type: string;
             /** Preference Type */
             preference_type: string;
+        };
+        /** DiVirtualTypeSummary */
+        DiVirtualTypeSummary: {
+            /** Name */
+            name: string;
+            /** Virtual Type */
+            virtual_type: string;
         };
         /** EventObserverSummary */
         EventObserverSummary: {
@@ -473,6 +513,11 @@ export interface components {
             preferences: components["schemas"]["DiPreferenceSummary"][];
             /** Plugins */
             plugins: components["schemas"]["DiPluginSummary"][];
+            /**
+             * Virtual Types
+             * @default []
+             */
+            virtual_types: components["schemas"]["DiVirtualTypeSummary"][];
             /** Observers */
             observers: components["schemas"]["EventObserverSummary"][];
             /**
@@ -480,6 +525,31 @@ export interface components {
              * @default []
              */
             graphql_fields: components["schemas"]["GraphQlFieldSummary"][];
+            /**
+             * Cron Jobs
+             * @default []
+             */
+            cron_jobs: components["schemas"]["CronJobSummary"][];
+            /**
+             * Webapi Routes
+             * @default []
+             */
+            webapi_routes: components["schemas"]["WebapiRouteSummary"][];
+            /**
+             * Config Fields
+             * @default []
+             */
+            config_fields: components["schemas"]["ConfigFieldSummary"][];
+            /**
+             * Db Tables
+             * @default []
+             */
+            db_tables: components["schemas"]["DbTableSummary"][];
+            /**
+             * Queue Bindings
+             * @default []
+             */
+            queue_bindings: components["schemas"]["QueueBindingSummary"][];
             /**
              * Quality Findings
              * @default []
@@ -622,6 +692,19 @@ export interface components {
             /** Message */
             message: string;
         };
+        /** QueueBindingSummary */
+        QueueBindingSummary: {
+            /** Topic */
+            topic: string;
+            /** Destination */
+            destination: string | null;
+            /** Consumer Name */
+            consumer_name: string | null;
+            /** Handler Class */
+            handler_class: string | null;
+            /** Handler Method */
+            handler_method: string | null;
+        };
         /**
          * RepoSummary
          * @description Phase 11: aggregate health across every repo MageWiki has scanned.
@@ -719,6 +802,19 @@ export interface components {
             input?: unknown;
             /** Context */
             ctx?: Record<string, never>;
+        };
+        /** WebapiRouteSummary */
+        WebapiRouteSummary: {
+            /** Url */
+            url: string;
+            /** Http Method */
+            http_method: string;
+            /** Service Class */
+            service_class: string;
+            /** Service Method */
+            service_method: string;
+            /** Acl Resource */
+            acl_resource: string | null;
         };
         /** WebhookScanResponse */
         WebhookScanResponse: {

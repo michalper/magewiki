@@ -11,8 +11,12 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.db import engine
 from app.models import (
     ComposerPackageRequirement,
+    ConfigField,
+    CronJob,
+    DbTable,
     DiPlugin,
     DiPreference,
+    DiVirtualType,
     EventObserver,
     FileAnalysis,
     FileHash,
@@ -22,21 +26,30 @@ from app.models import (
     ModuleQualityFinding,
     PhpClass,
     PhpClassMethod,
+    QueueBinding,
+    WebapiRoute,
 )
 from app.scanner.abandoned_dependencies import check_abandoned_outdated
 from app.scanner.composer_json import composer_completeness_findings, parse_composer_json
 from app.scanner.config_php import parse_config_php
+from app.scanner.crontab_xml import parse_crontab_xml
+from app.scanner.db_schema_xml import parse_db_schema_xml
 from app.scanner.deprecated_scanner import scan_deprecated_annotations
 from app.scanner.di_xml import parse_di_xml
 from app.scanner.discovery import find_modules
 from app.scanner.dto import (
     ComposerResult,
+    ConfigFieldEntry,
+    CronJobEntry,
+    DbTableEntry,
     DiscoveredModule,
     DiXmlResult,
     EventObserverEntry,
     GraphQlFieldEntry,
     ModuleXmlResult,
     PendingAnalysisJob,
+    QueueBindingEntry,
+    WebapiRouteEntry,
 )
 from app.scanner.events_xml import parse_events_xml
 from app.scanner.graphql_schema import parse_graphql_schema
@@ -47,10 +60,13 @@ from app.scanner.module_xml import InvalidModuleXmlError, parse_module_xml
 from app.scanner.multi_store import find_store_roots
 from app.scanner.php_analyzer_client import check_php_static_analysis
 from app.scanner.php_classes import catalog_module_classes
+from app.scanner.queue_config import parse_queue_config
 from app.scanner.readme_check import has_readme
 from app.scanner.secrets_scanner import scan_hardcoded_secrets
 from app.scanner.security_advisories import check_security_advisories
+from app.scanner.system_xml import parse_system_xml
 from app.scanner.test_presence import has_tests
+from app.scanner.webapi_xml import parse_webapi_xml
 from app.tasks.queue import get_arq_pool
 
 logger = logging.getLogger(__name__)
@@ -100,6 +116,11 @@ class _ParsedModule:
     di: DiXmlResult
     events: list[EventObserverEntry]
     graphql: list[GraphQlFieldEntry]
+    cron_jobs: list[CronJobEntry]
+    webapi_routes: list[WebapiRouteEntry]
+    config_fields: list[ConfigFieldEntry]
+    db_tables: list[DbTableEntry]
+    queue_bindings: list[QueueBindingEntry]
 
 
 async def scan_repository(repo_root: str, session: AsyncSession) -> ScanResult:
@@ -218,7 +239,7 @@ async def _run_scan(root: Path, session: AsyncSession) -> AsyncIterator[dict]:
     config_map = parse_config_php(root / "app" / "etc" / "config.php")
     installed_versions = parse_installed_versions(root)
 
-    # Phase A: parse module.xml/composer.json/di.xml/events.xml for every module,
+    # Phase A: parse module.xml/composer.json/di.xml/events.xml/crontab.xml for every module,
     # and build global plugin/observer class sets — a plugin's class can live in
     # a different module than the one declaring it in di.xml. This has to finish
     # for every module before Phase B persists any of them, so it can't be folded
@@ -250,6 +271,15 @@ async def _run_scan(root: Path, session: AsyncSession) -> AsyncIterator[dict]:
             di = parse_di_xml(d.root / "etc" / "di.xml")
             events = parse_events_xml(d.root / "etc" / "events.xml")
             graphql = parse_graphql_schema(d.root / "etc" / "schema.graphqls")
+            cron_jobs = parse_crontab_xml(d.root / "etc" / "crontab.xml")
+            webapi_routes = parse_webapi_xml(d.root / "etc" / "webapi.xml")
+            config_fields = parse_system_xml(d.root / "etc" / "adminhtml" / "system.xml")
+            db_tables = parse_db_schema_xml(d.root / "etc" / "db_schema.xml")
+            queue_bindings = parse_queue_config(
+                d.root / "etc" / "communication.xml",
+                d.root / "etc" / "queue_topology.xml",
+                d.root / "etc" / "queue_consumer.xml",
+            )
         except OSError as exc:
             # Each parser already checks .is_file() before reading, but a
             # permission error or a race (file removed/replaced between that
@@ -272,7 +302,17 @@ async def _run_scan(root: Path, session: AsyncSession) -> AsyncIterator[dict]:
 
         parsed.append(
             _ParsedModule(
-                discovered=d, module_xml=module_xml, composer=composer, di=di, events=events, graphql=graphql
+                discovered=d,
+                module_xml=module_xml,
+                composer=composer,
+                di=di,
+                events=events,
+                graphql=graphql,
+                cron_jobs=cron_jobs,
+                webapi_routes=webapi_routes,
+                config_fields=config_fields,
+                db_tables=db_tables,
+                queue_bindings=queue_bindings,
             )
         )
         all_plugin_classes.update(p.plugin_class for p in di.plugins)
@@ -369,7 +409,18 @@ async def _run_scan(root: Path, session: AsyncSession) -> AsyncIterator[dict]:
     yield {"event": "done", "result": result}
 
 
-_ModuleChildModel = type[DiPreference] | type[DiPlugin] | type[EventObserver] | type[GraphQlField]
+_ModuleChildModel = (
+    type[DiPreference]
+    | type[DiPlugin]
+    | type[DiVirtualType]
+    | type[EventObserver]
+    | type[GraphQlField]
+    | type[CronJob]
+    | type[WebapiRoute]
+    | type[ConfigField]
+    | type[DbTable]
+    | type[QueueBinding]
+)
 
 
 async def _sync_module_children(
@@ -446,8 +497,9 @@ async def _persist_module(
         outcome.status = "updated"
         await session.execute(delete(ModuleDependency).where(ModuleDependency.module_id == module.id))
         await session.execute(delete(PhpClass).where(PhpClass.module_id == module.id))
-        # DiPreference/DiPlugin/EventObserver/GraphQlField are deleted together with
-        # their reinsertion in _sync_module_children below, not here.
+        # DiPreference/DiPlugin/DiVirtualType/EventObserver/GraphQlField/CronJob are
+        # deleted together with their reinsertion in _sync_module_children below,
+        # not here.
         await session.execute(delete(FileHash).where(FileHash.module_id == module.id))
         await session.execute(delete(ModuleQualityFinding).where(ModuleQualityFinding.module_id == module.id))
         await session.execute(
@@ -533,9 +585,15 @@ async def _persist_module(
     await _sync_module_children(session, module.id, DiPreference, pm.di.preferences)
     await _sync_module_children(session, module.id, DiPlugin, pm.di.plugins)
     outcome.plugins = len(pm.di.plugins)
+    await _sync_module_children(session, module.id, DiVirtualType, pm.di.virtual_types)
     await _sync_module_children(session, module.id, EventObserver, pm.events)
     outcome.observers = len(pm.events)
     await _sync_module_children(session, module.id, GraphQlField, pm.graphql)
+    await _sync_module_children(session, module.id, CronJob, pm.cron_jobs)
+    await _sync_module_children(session, module.id, WebapiRoute, pm.webapi_routes)
+    await _sync_module_children(session, module.id, ConfigField, pm.config_fields)
+    await _sync_module_children(session, module.id, DbTable, pm.db_tables)
+    await _sync_module_children(session, module.id, QueueBinding, pm.queue_bindings)
 
     classes = catalog_module_classes(pm.discovered.root)
     outcome.classes = len(classes)

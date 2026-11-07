@@ -71,10 +71,28 @@ class Module(Base):
     di_plugins: Mapped[list["DiPlugin"]] = relationship(
         back_populates="module", cascade="all, delete-orphan"
     )
+    di_virtual_types: Mapped[list["DiVirtualType"]] = relationship(
+        back_populates="module", cascade="all, delete-orphan"
+    )
     event_observers: Mapped[list["EventObserver"]] = relationship(
         back_populates="module", cascade="all, delete-orphan"
     )
     graphql_fields: Mapped[list["GraphQlField"]] = relationship(
+        back_populates="module", cascade="all, delete-orphan"
+    )
+    cron_jobs: Mapped[list["CronJob"]] = relationship(
+        back_populates="module", cascade="all, delete-orphan"
+    )
+    webapi_routes: Mapped[list["WebapiRoute"]] = relationship(
+        back_populates="module", cascade="all, delete-orphan"
+    )
+    config_fields: Mapped[list["ConfigField"]] = relationship(
+        back_populates="module", cascade="all, delete-orphan"
+    )
+    db_tables: Mapped[list["DbTable"]] = relationship(
+        back_populates="module", cascade="all, delete-orphan"
+    )
+    queue_bindings: Mapped[list["QueueBinding"]] = relationship(
         back_populates="module", cascade="all, delete-orphan"
     )
     file_hashes: Mapped[list["FileHash"]] = relationship(
@@ -163,6 +181,17 @@ class DiPlugin(Base):
     module: Mapped[Module] = relationship(back_populates="di_plugins")
 
 
+class DiVirtualType(Base):
+    __tablename__ = "di_virtual_types"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    module_id: Mapped[int] = mapped_column(ForeignKey("modules.id", ondelete="CASCADE"))
+    name: Mapped[str] = mapped_column(Text, index=True)
+    virtual_type: Mapped[str] = mapped_column(Text)
+
+    module: Mapped[Module] = relationship(back_populates="di_virtual_types")
+
+
 class EventObserver(Base):
     __tablename__ = "event_observers"
 
@@ -187,6 +216,73 @@ class GraphQlField(Base):
     resolver_class: Mapped[str | None] = mapped_column(Text, index=True)
 
     module: Mapped[Module] = relationship(back_populates="graphql_fields")
+
+
+class CronJob(Base):
+    __tablename__ = "cron_jobs"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    module_id: Mapped[int] = mapped_column(ForeignKey("modules.id", ondelete="CASCADE"))
+    job_name: Mapped[str] = mapped_column(Text, index=True)
+    instance_class: Mapped[str] = mapped_column(Text)
+    method: Mapped[str] = mapped_column(Text)
+    schedule: Mapped[str | None] = mapped_column(Text)
+
+    module: Mapped[Module] = relationship(back_populates="cron_jobs")
+
+
+class WebapiRoute(Base):
+    __tablename__ = "webapi_routes"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    module_id: Mapped[int] = mapped_column(ForeignKey("modules.id", ondelete="CASCADE"))
+    url: Mapped[str] = mapped_column(Text, index=True)
+    http_method: Mapped[str] = mapped_column(Text)
+    service_class: Mapped[str] = mapped_column(Text)
+    service_method: Mapped[str] = mapped_column(Text)
+    acl_resource: Mapped[str | None] = mapped_column(Text)
+
+    module: Mapped[Module] = relationship(back_populates="webapi_routes")
+
+
+class ConfigField(Base):
+    __tablename__ = "config_fields"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    module_id: Mapped[int] = mapped_column(ForeignKey("modules.id", ondelete="CASCADE"))
+    section_id: Mapped[str] = mapped_column(Text, index=True)
+    group_id: Mapped[str] = mapped_column(Text)
+    field_id: Mapped[str] = mapped_column(Text)
+    label: Mapped[str | None] = mapped_column(Text)
+    field_type: Mapped[str | None] = mapped_column(Text)
+
+    module: Mapped[Module] = relationship(back_populates="config_fields")
+
+
+class DbTable(Base):
+    __tablename__ = "db_tables"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    module_id: Mapped[int] = mapped_column(ForeignKey("modules.id", ondelete="CASCADE"))
+    table_name: Mapped[str] = mapped_column(Text, index=True)
+    comment: Mapped[str | None] = mapped_column(Text)
+    column_count: Mapped[int] = mapped_column(Integer, default=0)
+
+    module: Mapped[Module] = relationship(back_populates="db_tables")
+
+
+class QueueBinding(Base):
+    __tablename__ = "queue_bindings"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    module_id: Mapped[int] = mapped_column(ForeignKey("modules.id", ondelete="CASCADE"))
+    topic: Mapped[str] = mapped_column(Text, index=True)
+    destination: Mapped[str | None] = mapped_column(Text)
+    consumer_name: Mapped[str | None] = mapped_column(Text)
+    handler_class: Mapped[str | None] = mapped_column(Text)
+    handler_method: Mapped[str | None] = mapped_column(Text)
+
+    module: Mapped[Module] = relationship(back_populates="queue_bindings")
 
 
 class FileHash(Base):

@@ -5,8 +5,12 @@ import pytest
 from sqlalchemy import select, update
 
 from app.models import (
+    ConfigField,
+    CronJob,
+    DbTable,
     DiPlugin,
     DiPreference,
+    DiVirtualType,
     EventObserver,
     FileHash,
     GraphQlField,
@@ -14,6 +18,8 @@ from app.models import (
     ModuleDependency,
     ModuleQualityFinding,
     PhpClass,
+    QueueBinding,
+    WebapiRoute,
 )
 from app.scanner.orchestrator import scan_repository
 from tests.conftest import delete_module_if_present
@@ -246,6 +252,215 @@ async def test_scan_repository_persists_graphql_fields(demo_store_path: Path, db
         await db_session.scalars(select(GraphQlField).where(GraphQlField.module_id == module.id))
     ).all()
     assert len(fields_after_rescan) == 1
+
+
+@pytest.mark.asyncio
+async def test_scan_repository_persists_di_virtual_types(demo_store_path: Path, db_session):
+    # <virtualType> was previously invisible — only <preference>/<plugin> were
+    # parsed from the same di.xml.
+    repo_root = str(demo_store_path.resolve())
+    await delete_module_if_present(db_session, repo_root, "Vendor_Module")
+
+    await scan_repository(repo_root, db_session)
+
+    module = await db_session.scalar(select(Module).where(Module.repo_root == repo_root, Module.name == "Vendor_Module"))
+    virtual_types = (
+        await db_session.scalars(select(DiVirtualType).where(DiVirtualType.module_id == module.id))
+    ).all()
+
+    assert len(virtual_types) == 1
+    assert virtual_types[0].name == "Vendor\\Module\\SampleCollectionFactory"
+    assert virtual_types[0].virtual_type == "Vendor\\Module\\Model\\ResourceModel\\Sample\\CollectionFactory"
+
+
+@pytest.mark.asyncio
+async def test_scan_repository_persists_cron_jobs(demo_store_path: Path, db_session, tmp_path: Path):
+    repo_copy = tmp_path / "demo-store"
+    shutil.copytree(demo_store_path, repo_copy)
+    repo_root = str(repo_copy.resolve())
+    await delete_module_if_present(db_session, repo_root, "Vendor_Module")
+
+    crontab_path = repo_copy / "app/code/Vendor/Module/etc/crontab.xml"
+    crontab_path.write_text(
+        '<?xml version="1.0"?>\n'
+        '<config><group id="default">'
+        '<job name="vendor_module_sample_job" instance="Vendor\\Module\\Cron\\SampleJob" method="execute">'
+        "<schedule>0 2 * * *</schedule></job>"
+        "</group></config>",
+        encoding="utf-8",
+    )
+
+    await scan_repository(repo_root, db_session)
+
+    module = await db_session.scalar(select(Module).where(Module.repo_root == repo_root, Module.name == "Vendor_Module"))
+    jobs = (await db_session.scalars(select(CronJob).where(CronJob.module_id == module.id))).all()
+
+    assert len(jobs) == 1
+    assert jobs[0].job_name == "vendor_module_sample_job"
+    assert jobs[0].instance_class == "Vendor\\Module\\Cron\\SampleJob"
+    assert jobs[0].schedule == "0 2 * * *"
+
+    # Re-scan with no changes: delete-then-reinsert must not duplicate rows.
+    await scan_repository(repo_root, db_session)
+    jobs_after_rescan = (await db_session.scalars(select(CronJob).where(CronJob.module_id == module.id))).all()
+    assert len(jobs_after_rescan) == 1
+
+
+@pytest.mark.asyncio
+async def test_scan_repository_persists_webapi_routes(demo_store_path: Path, db_session, tmp_path: Path):
+    repo_copy = tmp_path / "demo-store"
+    shutil.copytree(demo_store_path, repo_copy)
+    repo_root = str(repo_copy.resolve())
+    await delete_module_if_present(db_session, repo_root, "Vendor_Module")
+
+    webapi_path = repo_copy / "app/code/Vendor/Module/etc/webapi.xml"
+    webapi_path.write_text(
+        '<?xml version="1.0"?>\n'
+        '<routes><route url="/V1/vendor-module/samples" method="GET">'
+        '<service class="Vendor\\Module\\Api\\SampleRepositoryInterface" method="getList"/>'
+        '<resources><resource ref="Vendor_Module::samples"/></resources>'
+        "</route></routes>",
+        encoding="utf-8",
+    )
+
+    await scan_repository(repo_root, db_session)
+
+    module = await db_session.scalar(select(Module).where(Module.repo_root == repo_root, Module.name == "Vendor_Module"))
+    routes = (await db_session.scalars(select(WebapiRoute).where(WebapiRoute.module_id == module.id))).all()
+
+    assert len(routes) == 1
+    assert routes[0].url == "/V1/vendor-module/samples"
+    assert routes[0].service_class == "Vendor\\Module\\Api\\SampleRepositoryInterface"
+    assert routes[0].acl_resource == "Vendor_Module::samples"
+
+    # Re-scan with no changes: delete-then-reinsert must not duplicate rows.
+    await scan_repository(repo_root, db_session)
+    routes_after_rescan = (
+        await db_session.scalars(select(WebapiRoute).where(WebapiRoute.module_id == module.id))
+    ).all()
+    assert len(routes_after_rescan) == 1
+
+
+@pytest.mark.asyncio
+async def test_scan_repository_persists_config_fields(demo_store_path: Path, db_session, tmp_path: Path):
+    repo_copy = tmp_path / "demo-store"
+    shutil.copytree(demo_store_path, repo_copy)
+    repo_root = str(repo_copy.resolve())
+    await delete_module_if_present(db_session, repo_root, "Vendor_Module")
+
+    system_xml_dir = repo_copy / "app/code/Vendor/Module/etc/adminhtml"
+    system_xml_dir.mkdir(parents=True, exist_ok=True)
+    (system_xml_dir / "system.xml").write_text(
+        '<?xml version="1.0"?>\n'
+        "<config><system>"
+        '<section id="vendor_module"><label>Vendor Module</label>'
+        '<group id="general"><label>General</label>'
+        '<field id="enabled" type="select"><label>Enabled</label></field>'
+        "</group></section>"
+        "</system></config>",
+        encoding="utf-8",
+    )
+
+    await scan_repository(repo_root, db_session)
+
+    module = await db_session.scalar(select(Module).where(Module.repo_root == repo_root, Module.name == "Vendor_Module"))
+    fields = (await db_session.scalars(select(ConfigField).where(ConfigField.module_id == module.id))).all()
+
+    assert len(fields) == 1
+    assert fields[0].section_id == "vendor_module"
+    assert fields[0].group_id == "general"
+    assert fields[0].field_id == "enabled"
+    assert fields[0].label == "Enabled"
+
+    # Re-scan with no changes: delete-then-reinsert must not duplicate rows.
+    await scan_repository(repo_root, db_session)
+    fields_after_rescan = (
+        await db_session.scalars(select(ConfigField).where(ConfigField.module_id == module.id))
+    ).all()
+    assert len(fields_after_rescan) == 1
+
+
+@pytest.mark.asyncio
+async def test_scan_repository_persists_db_tables(demo_store_path: Path, db_session, tmp_path: Path):
+    repo_copy = tmp_path / "demo-store"
+    shutil.copytree(demo_store_path, repo_copy)
+    repo_root = str(repo_copy.resolve())
+    await delete_module_if_present(db_session, repo_root, "Vendor_Module")
+
+    db_schema_path = repo_copy / "app/code/Vendor/Module/etc/db_schema.xml"
+    db_schema_path.write_text(
+        '<?xml version="1.0"?>\n'
+        '<schema xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">'
+        '<table name="vendor_module_sample" comment="Sample table">'
+        '<column xsi:type="int" name="entity_id"/>'
+        '<column xsi:type="varchar" name="name"/>'
+        "</table></schema>",
+        encoding="utf-8",
+    )
+
+    await scan_repository(repo_root, db_session)
+
+    module = await db_session.scalar(select(Module).where(Module.repo_root == repo_root, Module.name == "Vendor_Module"))
+    tables = (await db_session.scalars(select(DbTable).where(DbTable.module_id == module.id))).all()
+
+    assert len(tables) == 1
+    assert tables[0].table_name == "vendor_module_sample"
+    assert tables[0].comment == "Sample table"
+    assert tables[0].column_count == 2
+
+    # Re-scan with no changes: delete-then-reinsert must not duplicate rows.
+    await scan_repository(repo_root, db_session)
+    tables_after_rescan = (await db_session.scalars(select(DbTable).where(DbTable.module_id == module.id))).all()
+    assert len(tables_after_rescan) == 1
+
+
+@pytest.mark.asyncio
+async def test_scan_repository_persists_queue_bindings(demo_store_path: Path, db_session, tmp_path: Path):
+    repo_copy = tmp_path / "demo-store"
+    shutil.copytree(demo_store_path, repo_copy)
+    repo_root = str(repo_copy.resolve())
+    await delete_module_if_present(db_session, repo_root, "Vendor_Module")
+
+    etc_dir = repo_copy / "app/code/Vendor/Module/etc"
+    (etc_dir / "communication.xml").write_text(
+        '<?xml version="1.0"?>\n'
+        '<config><topic name="vendor.module.sample.dispatch" is_synchronous="false" request="string">'
+        '<handler name="h" type="Vendor\\Module\\Model\\Queue\\SampleConsumer" method="execute"/>'
+        "</topic></config>",
+        encoding="utf-8",
+    )
+    (etc_dir / "queue_topology.xml").write_text(
+        '<?xml version="1.0"?>\n'
+        '<config><exchange name="magento">'
+        '<binding id="X" topic="vendor.module.sample.dispatch" destination="vendor.module.sample.dispatch"/>'
+        "</exchange></config>",
+        encoding="utf-8",
+    )
+    (etc_dir / "queue_consumer.xml").write_text(
+        '<?xml version="1.0"?>\n'
+        '<config><consumer name="vendor.module.sample.dispatch" queue="vendor.module.sample.dispatch" '
+        'handler="Vendor\\Module\\Model\\Queue\\SampleConsumer::execute"/></config>',
+        encoding="utf-8",
+    )
+
+    await scan_repository(repo_root, db_session)
+
+    module = await db_session.scalar(select(Module).where(Module.repo_root == repo_root, Module.name == "Vendor_Module"))
+    bindings = (
+        await db_session.scalars(select(QueueBinding).where(QueueBinding.module_id == module.id))
+    ).all()
+
+    assert len(bindings) == 1
+    assert bindings[0].topic == "vendor.module.sample.dispatch"
+    assert bindings[0].consumer_name == "vendor.module.sample.dispatch"
+    assert bindings[0].handler_class == "Vendor\\Module\\Model\\Queue\\SampleConsumer"
+
+    # Re-scan with no changes: delete-then-reinsert must not duplicate rows.
+    await scan_repository(repo_root, db_session)
+    bindings_after_rescan = (
+        await db_session.scalars(select(QueueBinding).where(QueueBinding.module_id == module.id))
+    ).all()
+    assert len(bindings_after_rescan) == 1
 
 
 @pytest.mark.asyncio

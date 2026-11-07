@@ -18,9 +18,15 @@ def test_parse_di_xml(demo_module_path: Path):
     assert plugin.sort_order == 10
     assert plugin.disabled is False
 
+    assert len(result.virtual_types) == 1
+    virtual_type = result.virtual_types[0]
+    assert virtual_type.name == "Vendor\\Module\\SampleCollectionFactory"
+    assert virtual_type.virtual_type == "Vendor\\Module\\Model\\ResourceModel\\Sample\\CollectionFactory"
+
 
 def test_parse_di_xml_missing_file(tmp_path: Path):
     result = parse_di_xml(tmp_path / "di.xml")
 
     assert result.preferences == []
     assert result.plugins == []
+    assert result.virtual_types == []

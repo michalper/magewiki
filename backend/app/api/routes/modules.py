@@ -18,8 +18,12 @@ from app.api.sse import format_sse
 from app.config import settings
 from app.db import get_session
 from app.models import (
+    ConfigField,
+    CronJob,
+    DbTable,
     DiPlugin,
     DiPreference,
+    DiVirtualType,
     EventObserver,
     GraphQlField,
     Module,
@@ -28,6 +32,8 @@ from app.models import (
     ModuleQualityFinding,
     PhpClass,
     PhpClassMethod,
+    QueueBinding,
+    WebapiRoute,
 )
 from app.scanner.orchestrator import (
     ScanAlreadyInProgressError,
@@ -134,6 +140,11 @@ class DiPluginSummary(BaseModel):
     disabled: bool
 
 
+class DiVirtualTypeSummary(BaseModel):
+    name: str
+    virtual_type: str
+
+
 class EventObserverSummary(BaseModel):
     event_name: str
     observer_name: str
@@ -146,6 +157,43 @@ class GraphQlFieldSummary(BaseModel):
     type_name: str
     field_name: str
     resolver_class: str | None
+
+
+class CronJobSummary(BaseModel):
+    job_name: str
+    instance_class: str
+    method: str
+    schedule: str | None
+
+
+class WebapiRouteSummary(BaseModel):
+    url: str
+    http_method: str
+    service_class: str
+    service_method: str
+    acl_resource: str | None
+
+
+class ConfigFieldSummary(BaseModel):
+    section_id: str
+    group_id: str
+    field_id: str
+    label: str | None
+    field_type: str | None
+
+
+class DbTableSummary(BaseModel):
+    table_name: str
+    comment: str | None
+    column_count: int
+
+
+class QueueBindingSummary(BaseModel):
+    topic: str
+    destination: str | None
+    consumer_name: str | None
+    handler_class: str | None
+    handler_method: str | None
 
 
 class QualityFindingResponse(BaseModel):
@@ -161,8 +209,14 @@ class ModuleDetail(ModuleSummary):
     classes: list[PhpClassSummary]
     preferences: list[DiPreferenceSummary]
     plugins: list[DiPluginSummary]
+    virtual_types: list[DiVirtualTypeSummary] = []
     observers: list[EventObserverSummary]
     graphql_fields: list[GraphQlFieldSummary] = []
+    cron_jobs: list[CronJobSummary] = []
+    webapi_routes: list[WebapiRouteSummary] = []
+    config_fields: list[ConfigFieldSummary] = []
+    db_tables: list[DbTableSummary] = []
+    queue_bindings: list[QueueBindingSummary] = []
     quality_findings: list[QualityFindingResponse] = []
 
 
@@ -487,11 +541,25 @@ async def get_module(module_id: int, session: AsyncSession = Depends(get_session
     plugins = (
         await session.scalars(select(DiPlugin).where(DiPlugin.module_id == module_id))
     ).all()
+    virtual_types = (
+        await session.scalars(select(DiVirtualType).where(DiVirtualType.module_id == module_id))
+    ).all()
     observers = (
         await session.scalars(select(EventObserver).where(EventObserver.module_id == module_id))
     ).all()
     graphql_fields = (
         await session.scalars(select(GraphQlField).where(GraphQlField.module_id == module_id))
+    ).all()
+    cron_jobs = (await session.scalars(select(CronJob).where(CronJob.module_id == module_id))).all()
+    webapi_routes = (
+        await session.scalars(select(WebapiRoute).where(WebapiRoute.module_id == module_id))
+    ).all()
+    config_fields = (
+        await session.scalars(select(ConfigField).where(ConfigField.module_id == module_id))
+    ).all()
+    db_tables = (await session.scalars(select(DbTable).where(DbTable.module_id == module_id))).all()
+    queue_bindings = (
+        await session.scalars(select(QueueBinding).where(QueueBinding.module_id == module_id))
     ).all()
     quality_findings = (
         await session.scalars(select(ModuleQualityFinding).where(ModuleQualityFinding.module_id == module_id))
@@ -546,8 +614,14 @@ async def get_module(module_id: int, session: AsyncSession = Depends(get_session
         # before this).
         preferences=[DiPreferenceSummary.model_validate(p, from_attributes=True) for p in preferences],
         plugins=[DiPluginSummary.model_validate(p, from_attributes=True) for p in plugins],
+        virtual_types=[DiVirtualTypeSummary.model_validate(vt, from_attributes=True) for vt in virtual_types],
         observers=[EventObserverSummary.model_validate(o, from_attributes=True) for o in observers],
         graphql_fields=[GraphQlFieldSummary.model_validate(gf, from_attributes=True) for gf in graphql_fields],
+        cron_jobs=[CronJobSummary.model_validate(cj, from_attributes=True) for cj in cron_jobs],
+        webapi_routes=[WebapiRouteSummary.model_validate(wr, from_attributes=True) for wr in webapi_routes],
+        config_fields=[ConfigFieldSummary.model_validate(cf, from_attributes=True) for cf in config_fields],
+        db_tables=[DbTableSummary.model_validate(t, from_attributes=True) for t in db_tables],
+        queue_bindings=[QueueBindingSummary.model_validate(qb, from_attributes=True) for qb in queue_bindings],
         quality_findings=[
             QualityFindingResponse(
                 check_type=f.check_type, severity=f.severity, file_path=f.file_path, line=f.line, message=f.message

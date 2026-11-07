@@ -540,6 +540,46 @@ newest tag as a GitHub "prerelease" even though its own stability flag says alph
 a bug to fix now (this is exactly what "the latest tagged release in the public repo" means today);
 worth revisiting with an explicit stable-tag filter if it turns out to matter in practice.
 
+**Phase 14 built, plus two extra categories (recorded 2026-11-07):** done in full
+(`webapi.xml`, `crontab.xml`, `db_schema.xml`, `system.xml`), plus two more structural
+facts identified in the same review: `di.xml`'s `<virtualType>` (only `<preference>`/
+`<plugin>` were parsed from that same file before — a common pattern composing UI
+Component data providers and collections with preset filters) and the message-queue
+topology spread across `communication.xml`/`queue_topology.xml`/`queue_consumer.xml`
+(merged by topic/queue name into one `queue_bindings` fact per binding, since real
+modules — e.g. Ordo_Automation — describe the same queue from three different angles
+across those three files). `system.xml` directly closes a real gap: `config_options`
+in the synthesis prompt previously asked the LLM to guess "system.xml-style
+configuration keys evident from the facts above" — it now transcribes real parsed
+facts instead. `db_schema.xml` scope is table-level (name/comment/column count), not
+a full column-by-column breakdown — already a real fact for synthesis, with a column
+child table as a natural later extension if ever needed.
+
+None of the six get a dedicated UI card on the module page — checked first, and
+`di_preferences`/`di_plugins`/`event_observers`/`graphql_fields` (already-exposed,
+structurally identical cases) don't have one either; the established pattern is
+parsed fact -> synthesis prompt -> AI-written prose in the README's "For developers"
+section, with the raw structured data available over the API for the agent's SQL
+tools (`find_by_event` etc.), not for a redundant UI card duplicating the prose.
+`Module` lost nothing: all six attach as new child tables via the existing generic
+`_sync_module_children` helper, same pattern as the four cases above.
+
+Caught and fixed one process gap while building this: a new Alembic migration was
+applied to the ephemeral pytest database (via `tests/conftest.py`'s own
+`alembic upgrade head`) but not to the real dev database, since those are separate
+databases — the live app crashed ("Failed to load module") the moment the orchestrator
+code started querying tables that didn't exist yet outside the test DB. Fixed by
+running `alembic upgrade head` against the dev database immediately after each new
+migration from then on, not batched at the end.
+
+Verified end-to-end against the real Ordo_Automation fixture (not just unit tests):
+a real rescan populated `cron_jobs` (19), `webapi_routes` (57), `config_fields` (57),
+`db_tables` (36), and `queue_bindings` (3) with real data; `di_virtual_types` needed a
+real core Magento module instead (Ordo's own `di.xml` declares none) — verified
+against `vendor/magento/module-catalog`'s real `di.xml`, then that one-off
+verification module was deleted again (not something the user asked to add to the
+catalog).
+
 ### Backlog: porting ideas from v1
 
 The author previously built a PHP tool for his employer Cognize — the predecessor MageWiki-AI (the open-source Python rewrite) succeeds, referred to here only as "v1" since it's Cognize's property. Phases 9–12 above come from a curated review of what v1 does in production; the full inventory (what's ported, what's skipped as Cognize-internal, and the detailed CVE-check design) lives in `docs/v1-port-roadmap.md`. Nothing here is copied code — concepts only, per the "no client-confidential code" rule below.

@@ -2,7 +2,7 @@ from pathlib import Path
 
 from lxml import etree
 
-from app.scanner.dto import DiPluginEntry, DiPreferenceEntry, DiXmlResult
+from app.scanner.dto import DiPluginEntry, DiPreferenceEntry, DiVirtualTypeEntry, DiXmlResult
 
 
 def parse_di_xml(path: Path) -> DiXmlResult:
@@ -18,6 +18,17 @@ def parse_di_xml(path: Path) -> DiXmlResult:
         DiPreferenceEntry(for_type=for_type, preference_type=preference_type)
         for el in root.findall("preference")
         if (for_type := el.get("for")) and (preference_type := el.get("type"))
+    ]
+
+    # <virtualType name="X" type="Y"> composes a new "class" from an existing
+    # one with different constructor arguments — a very common pattern (UI
+    # Component data providers, collections with preset filters) that was
+    # previously invisible: only <preference>/<plugin> were parsed from this
+    # same file.
+    virtual_types = [
+        DiVirtualTypeEntry(name=name, virtual_type=virtual_type)
+        for el in root.findall("virtualType")
+        if (name := el.get("name")) and (virtual_type := el.get("type"))
     ]
 
     plugins: list[DiPluginEntry] = []
@@ -41,4 +52,4 @@ def parse_di_xml(path: Path) -> DiXmlResult:
                 )
             )
 
-    return DiXmlResult(preferences=preferences, plugins=plugins)
+    return DiXmlResult(preferences=preferences, plugins=plugins, virtual_types=virtual_types)

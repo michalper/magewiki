@@ -71,9 +71,16 @@ class DiPluginEntry:
 
 
 @dataclass
+class DiVirtualTypeEntry:
+    name: str
+    virtual_type: str
+
+
+@dataclass
 class DiXmlResult:
     preferences: list[DiPreferenceEntry] = field(default_factory=list)
     plugins: list[DiPluginEntry] = field(default_factory=list)
+    virtual_types: list[DiVirtualTypeEntry] = field(default_factory=list)
 
 
 @dataclass
@@ -82,6 +89,48 @@ class EventObserverEntry:
     observer_name: str
     observer_class: str
     disabled: bool
+
+
+@dataclass
+class CronJobEntry:
+    job_name: str
+    instance_class: str
+    method: str
+    schedule: str | None
+
+
+@dataclass
+class WebapiRouteEntry:
+    url: str
+    http_method: str
+    service_class: str
+    service_method: str
+    acl_resource: str | None
+
+
+@dataclass
+class ConfigFieldEntry:
+    section_id: str
+    group_id: str
+    field_id: str
+    label: str | None
+    field_type: str | None
+
+
+@dataclass
+class DbTableEntry:
+    table_name: str
+    comment: str | None
+    column_count: int
+
+
+@dataclass
+class QueueBindingEntry:
+    topic: str
+    destination: str | None
+    consumer_name: str | None
+    handler_class: str | None
+    handler_method: str | None
 
 
 @dataclass

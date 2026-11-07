@@ -59,6 +59,10 @@ def build_module_synthesis_prompt(facts: ModuleFacts) -> str:
             for intercepted, name, plugin_class in facts.di_plugins
         )
 
+    if facts.di_virtual_types:
+        lines.append("\nVirtual types (composed classes, from di.xml):")
+        lines.extend(f"- {name} composes {virtual_type}" for name, virtual_type in facts.di_virtual_types)
+
     if facts.event_observers:
         lines.append("\nEvent observers (from events.xml):")
         lines.extend(
@@ -71,6 +75,38 @@ def build_module_synthesis_prompt(facts: ModuleFacts) -> str:
         for operation_type, type_name, field_name, resolver_class in facts.graphql_fields:
             resolver_note = f" (resolved by {resolver_class})" if resolver_class else ""
             lines.append(f"- {type_name}.{field_name} [{operation_type}]{resolver_note}")
+
+    if facts.config_fields:
+        lines.append("\nAdmin config fields (from etc/adminhtml/system.xml):")
+        lines.extend(
+            f"- {path}" + (f" ({label})" if label else "") for path, label in facts.config_fields
+        )
+
+    if facts.queue_bindings:
+        lines.append("\nMessage queue bindings (from communication.xml/queue_topology.xml/queue_consumer.xml):")
+        for topic, destination, consumer_name, handler_class, handler_method in facts.queue_bindings:
+            dest_note = f" -> queue {destination}" if destination and destination != topic else ""
+            handler_note = f" consumed by {handler_class}::{handler_method}" if handler_class else ""
+            consumer_note = f" (consumer: {consumer_name})" if consumer_name else ""
+            lines.append(f"- {topic}{dest_note}{handler_note}{consumer_note}")
+
+    if facts.db_tables:
+        lines.append("\nDatabase tables (from etc/db_schema.xml):")
+        for name, comment, column_count in facts.db_tables:
+            comment_note = f" — {comment}" if comment else ""
+            lines.append(f"- {name} ({column_count} columns){comment_note}")
+
+    if facts.cron_jobs:
+        lines.append("\nScheduled cron jobs (from etc/crontab.xml):")
+        for name, instance_class, method, schedule in facts.cron_jobs:
+            schedule_note = f" [{schedule}]" if schedule else ""
+            lines.append(f"- {name} runs {instance_class}::{method}{schedule_note}")
+
+    if facts.webapi_routes:
+        lines.append("\nREST endpoints (from etc/webapi.xml):")
+        for url, http_method, service_class, service_method, acl_resource in facts.webapi_routes:
+            acl_note = f" (ACL: {acl_resource})" if acl_resource else ""
+            lines.append(f"- {http_method} {url} -> {service_class}::{service_method}{acl_note}")
 
     if facts.php_classes:
         lines.append("\nPHP classes discovered in this module:")
@@ -102,7 +138,8 @@ def build_module_synthesis_prompt(facts: ModuleFacts) -> str:
         "marketing platforms), if any are evident from the facts above; omit source if not file-specific.\n"
         f"- tags: zero or more tags chosen EXACTLY from this fixed vocabulary: {sorted(ALLOWED_TAGS)}. "
         "Do not invent new tags.\n"
-        "- config_options: any system.xml-style configuration keys evident from the facts above (often empty).\n"
+        "- config_options: one entry per admin config field listed above under \"Admin config fields\" "
+        "(path and label exactly as given there); empty if none were listed.\n"
         "- risks: anything that looks risky or fragile, with a severity.\n"
         "- confidence: your confidence (0-1) in this description given the available facts.\n"
         "- pm_text: a business-language paragraph with no class names, for a product manager.\n"
