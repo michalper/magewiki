@@ -15,13 +15,13 @@ def _bare_facts(**overrides) -> ModuleFacts:
 
 
 def _bare_doc(**overrides) -> ModuleDoc:
-    defaults = dict(
-        summary="A summary.",
-        description="A description.",
-        confidence=0.9,
-        pm_text="PM text.",
-        dev_text="Dev text.",
-    )
+    defaults = {
+        "summary": "A summary.",
+        "description": "A description.",
+        "confidence": 0.9,
+        "pm_text": "PM text.",
+        "dev_text": "Dev text.",
+    }
     defaults.update(overrides)
     return ModuleDoc(**defaults)
 

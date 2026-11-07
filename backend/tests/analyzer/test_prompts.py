@@ -1,5 +1,9 @@
 from app.analyzer.facts import FileAnalysisFact, ModuleFacts, PhpClassFact
-from app.analyzer.prompts import MAX_FILE_CONTENT_CHARS, build_file_summary_prompt, build_module_synthesis_prompt
+from app.analyzer.prompts import (
+    MAX_FILE_CONTENT_CHARS,
+    build_file_summary_prompt,
+    build_module_synthesis_prompt,
+)
 
 
 def _bare_facts(**overrides) -> ModuleFacts:
@@ -21,7 +25,7 @@ def test_build_file_summary_prompt_includes_the_full_content_when_short():
 def test_build_file_summary_prompt_truncates_long_content():
     content = "x" * (MAX_FILE_CONTENT_CHARS + 100)
     prompt = build_file_summary_prompt("Big.php", content)
-    assert f"truncated, 100 more characters omitted" in prompt
+    assert "truncated, 100 more characters omitted" in prompt
     assert content not in prompt
 
 

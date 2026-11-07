@@ -82,7 +82,7 @@ def test_running_the_module_as_a_script_exits_cleanly_without_the_fixture():
     env = {k: v for k, v in os.environ.items() if k != run_eval.ORDO_FIXTURE_ENV}
     result = subprocess.run(
         [sys.executable, "-m", "app.evaluation.run_eval"],
-        capture_output=True, text=True, timeout=30, env=env,
+        capture_output=True, text=True, timeout=30, env=env, check=False,
     )
     assert result.returncode != 0
     assert run_eval.ORDO_FIXTURE_ENV in result.stderr

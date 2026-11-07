@@ -79,7 +79,7 @@ def test_running_the_module_as_a_script_invokes_main():
     """
     result = subprocess.run(
         [sys.executable, "-m", "app.evaluation.run_ci_eval"],
-        capture_output=True, text=True, timeout=60,
+        capture_output=True, text=True, timeout=60, check=False,
     )
     assert result.returncode == 0, result.stderr
     assert "## RAG eval (synthetic CI corpus)" in result.stdout
