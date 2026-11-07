@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo } from "react";
+import { useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { useQuery } from "@tanstack/react-query";
@@ -23,9 +23,13 @@ const RELATION_COLORS: Record<string, string> = {
 const SIZE = 640;
 const CENTER = SIZE / 2;
 const RADIUS = 230;
+// Beyond this, nodes placed evenly around the circle start overlapping and the
+// graph becomes unreadable — a real module in this project's own test fleet
+// (Magento_Backend) has 50+ dependents. The rest still reach every module,
+// just as a plain list below the graph instead of crammed onto it.
+const MAX_CIRCLE_NODES = 16;
 
-function layout(nodes: GraphNode[], centerId: string): Record<string, { x: number; y: number }> {
-  const neighbors = nodes.filter((n) => n.id !== centerId);
+function layout(centerId: string, neighbors: GraphNode[]): Record<string, { x: number; y: number }> {
   const positions: Record<string, { x: number; y: number }> = {
     [centerId]: { x: CENTER, y: CENTER },
   };
@@ -41,13 +45,20 @@ function layout(nodes: GraphNode[], centerId: string): Record<string, { x: numbe
 
 export default function GraphClient({ id }: { id: string }) {
   const router = useRouter();
+  const [showOverflow, setShowOverflow] = useState(false);
 
   const graphQuery = useQuery({ queryKey: ["module-graph", id], queryFn: () => fetchGraph(id) });
 
   const centerId = graphQuery.data ? `module:${graphQuery.data.center_module_id}` : "";
-  const positions = useMemo(
-    () => (graphQuery.data ? layout(graphQuery.data.nodes, centerId) : {}),
+  const allNeighbors = useMemo(
+    () => (graphQuery.data ? graphQuery.data.nodes.filter((n) => n.id !== centerId) : []),
     [graphQuery.data, centerId],
+  );
+  const visibleNeighbors = allNeighbors.slice(0, MAX_CIRCLE_NODES);
+  const overflowNeighbors = allNeighbors.slice(MAX_CIRCLE_NODES);
+  const positions = useMemo(
+    () => (graphQuery.data ? layout(centerId, visibleNeighbors) : {}),
+    [graphQuery.data, centerId, visibleNeighbors],
   );
 
   return (
@@ -122,13 +133,27 @@ export default function GraphClient({ id }: { id: string }) {
                   {node.label}
                 </div>
               );
+              const navigate = () => router.push(`/modules/${node.module_id}/graph`);
 
               return (
                 <div
                   key={node.id}
-                  className="absolute"
+                  className={clickable ? "absolute rounded-lg focus-visible:outline-2 focus-visible:outline-ring" : "absolute"}
                   style={{ left: pos.x, top: pos.y, transform: "translate(-50%, -50%)" }}
-                  onClick={clickable ? () => router.push(`/modules/${node.module_id}/graph`) : undefined}
+                  onClick={clickable ? navigate : undefined}
+                  role={clickable ? "button" : undefined}
+                  tabIndex={clickable ? 0 : undefined}
+                  aria-label={clickable ? `Go to ${node.label}'s dependency graph` : undefined}
+                  onKeyDown={
+                    clickable
+                      ? (e) => {
+                          if (e.key === "Enter" || e.key === " ") {
+                            e.preventDefault();
+                            navigate();
+                          }
+                        }
+                      : undefined
+                  }
                 >
                   {content}
                 </div>
@@ -144,6 +169,44 @@ export default function GraphClient({ id }: { id: string }) {
               </span>
             ))}
           </div>
+
+          {overflowNeighbors.length > 0 && (
+            <div className="mx-auto w-full">
+              <button
+                type="button"
+                onClick={() => setShowOverflow((v) => !v)}
+                className="text-sm text-primary hover:underline"
+              >
+                {showOverflow ? "Hide" : "Show"} {overflowNeighbors.length} more{" "}
+                {overflowNeighbors.length === 1 ? "dependency" : "dependencies"} (too many to fit on the graph)
+              </button>
+              {showOverflow && (
+                <div className="mt-2 flex flex-wrap gap-2">
+                  {overflowNeighbors.map((node) => {
+                    const clickable = node.kind === "module" && node.module_id !== null;
+                    return clickable ? (
+                      <Link
+                        key={node.id}
+                        href={`/modules/${node.module_id}/graph`}
+                        className="rounded-lg border border-border bg-card px-2 py-1 text-xs font-mono hover:bg-accent/40"
+                        title={node.label}
+                      >
+                        {node.label}
+                      </Link>
+                    ) : (
+                      <span
+                        key={node.id}
+                        className="rounded-lg border border-dashed border-border bg-muted px-2 py-1 text-xs font-mono text-muted-foreground"
+                        title={node.label}
+                      >
+                        {node.label}
+                      </span>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+          )}
         </>
       )}
     </div>
