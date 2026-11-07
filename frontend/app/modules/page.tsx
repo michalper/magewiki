@@ -8,11 +8,12 @@ import { streamSse } from "@/lib/sse";
 import { downloadCsv, toCsv } from "@/lib/csv";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Badge } from "@/components/ui/badge";
 import { EnabledBadge } from "@/components/enabled-badge";
 import { CHECK_TYPES, QualityBadges } from "@/components/quality-badges";
 import { SeverityBadge, SEVERITY_ORDER, type Severity } from "@/components/severity-badge";
 import { StateBadge } from "@/components/state-badge";
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
+import { TagBadge } from "@/components/tag-badge";
 import { apiFetch, apiUrl } from "@/lib/api";
 import { useDocumentTitle } from "@/lib/use-document-title";
 import { notifyQueryParamChange, useQueryParam } from "@/lib/use-query-param";
@@ -61,10 +62,21 @@ async function streamScan(
 }
 
 function PresenceBadge({ present, label }: { present: boolean; label: string }) {
-  return present ? (
-    <SeverityBadge severity="ok">{label}</SeverityBadge>
-  ) : (
-    <SeverityBadge severity="none">no {label.toLowerCase()}</SeverityBadge>
+  return (
+    <Tooltip>
+      <TooltipTrigger className="inline-flex">
+        {present ? (
+          <SeverityBadge severity="ok">{label}</SeverityBadge>
+        ) : (
+          <SeverityBadge severity="none">no {label.toLowerCase()}</SeverityBadge>
+        )}
+      </TooltipTrigger>
+      <TooltipContent>
+        {present
+          ? `Has a ${label === "README" ? "README.md" : "Test/ directory"} in the module's own source.`
+          : `No ${label === "README" ? "README.md" : "test files"} found in the module's own source.`}
+      </TooltipContent>
+    </Tooltip>
   );
 }
 
@@ -136,9 +148,7 @@ function ModuleCard({ module }: { module: ModuleSummary }) {
       {module.tags.length > 0 && (
         <div className="flex flex-wrap gap-1">
           {module.tags.map((tag) => (
-            <Badge key={tag} variant="outline">
-              {tag}
-            </Badge>
+            <TagBadge key={tag} tag={tag} />
           ))}
         </div>
       )}
@@ -212,9 +222,7 @@ function ModuleRow({
           ) : (
             <div className="flex flex-wrap gap-1">
               {module.tags.map((tag) => (
-                <Badge key={tag} variant="outline">
-                  {tag}
-                </Badge>
+                <TagBadge key={tag} tag={tag} />
               ))}
             </div>
           )}
@@ -461,6 +469,7 @@ export default function ModulesPage() {
   }
 
   return (
+    <TooltipProvider>
     <div className="flex flex-col flex-1 gap-6 p-8 max-w-7xl mx-auto w-full">
       <h1 className="text-2xl font-semibold tracking-tight">Modules</h1>
 
@@ -680,5 +689,6 @@ export default function ModulesPage() {
         </>
       )}
     </div>
+    </TooltipProvider>
   );
 }

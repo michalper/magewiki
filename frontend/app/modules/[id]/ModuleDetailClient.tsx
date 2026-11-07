@@ -4,11 +4,12 @@ import { useState, type ReactNode } from "react";
 import Link from "next/link";
 import { useQuery } from "@tanstack/react-query";
 import ReactMarkdown, { type Components } from "react-markdown";
-import { Badge } from "@/components/ui/badge";
 import { EnabledBadge } from "@/components/enabled-badge";
 import { SeverityBadge, SEVERITY_ORDER, type Severity } from "@/components/severity-badge";
 import { StateBadge } from "@/components/state-badge";
 import { Button } from "@/components/ui/button";
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
+import { TagBadge } from "@/components/tag-badge";
 import { apiFetch, apiUrl } from "@/lib/api";
 import { downloadCsv, toCsv } from "@/lib/csv";
 import type { components } from "@/lib/api-types";
@@ -203,6 +204,7 @@ export default function ModuleDetailClient({ id }: { id: string }) {
   }
 
   return (
+    <TooltipProvider>
     <div className="flex flex-col flex-1 gap-6 p-8 max-w-4xl mx-auto w-full">
       <Link href="/modules" className="text-sm text-primary hover:underline self-start">
         ← All modules
@@ -225,16 +227,32 @@ export default function ModuleDetailClient({ id }: { id: string }) {
               <EnabledBadge enabled={moduleQuery.data.enabled} />
               <StateBadge state={moduleQuery.data.state} />
               {moduleQuery.data.tags.map((tag) => (
-                <Badge key={tag} variant="outline">
-                  {tag}
-                </Badge>
+                <TagBadge key={tag} tag={tag} />
               ))}
-              <SeverityBadge severity={moduleQuery.data.has_readme ? "ok" : "none"}>
-                {moduleQuery.data.has_readme ? "README" : "no README"}
-              </SeverityBadge>
-              <SeverityBadge severity={moduleQuery.data.has_tests ? "ok" : "none"}>
-                {moduleQuery.data.has_tests ? "tests" : "no tests"}
-              </SeverityBadge>
+              <Tooltip>
+                <TooltipTrigger className="inline-flex">
+                  <SeverityBadge severity={moduleQuery.data.has_readme ? "ok" : "none"}>
+                    {moduleQuery.data.has_readme ? "README" : "no README"}
+                  </SeverityBadge>
+                </TooltipTrigger>
+                <TooltipContent>
+                  {moduleQuery.data.has_readme
+                    ? "Has a README.md in the module's own source."
+                    : "No README.md found in the module's own source."}
+                </TooltipContent>
+              </Tooltip>
+              <Tooltip>
+                <TooltipTrigger className="inline-flex">
+                  <SeverityBadge severity={moduleQuery.data.has_tests ? "ok" : "none"}>
+                    {moduleQuery.data.has_tests ? "tests" : "no tests"}
+                  </SeverityBadge>
+                </TooltipTrigger>
+                <TooltipContent>
+                  {moduleQuery.data.has_tests
+                    ? "Has test files under Test/ in the module's own source."
+                    : "No test files found under Test/ in the module's own source."}
+                </TooltipContent>
+              </Tooltip>
             </div>
 
             <dl className="grid grid-cols-[auto_1fr] gap-x-4 gap-y-1.5 text-sm pt-1 border-t border-border/50">
@@ -397,5 +415,6 @@ export default function ModuleDetailClient({ id }: { id: string }) {
         </>
       )}
     </div>
+    </TooltipProvider>
   );
 }
