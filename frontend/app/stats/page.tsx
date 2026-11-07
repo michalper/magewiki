@@ -1,6 +1,7 @@
 "use client";
 
 import { useMemo } from "react";
+import Link from "next/link";
 import { useQuery } from "@tanstack/react-query";
 import { Info } from "lucide-react";
 import {
@@ -44,17 +45,49 @@ function StatTile({
   value,
   accent,
   description,
+  findingTypes,
 }: {
   label: string;
   value: number | string;
   accent?: string;
   description?: string;
+  // Check type key(s) this tile sums — when set, the tile links to the
+  // Modules list pre-filtered to exactly the modules counted here.
+  findingTypes?: string[];
+}) {
+  const className = "flex flex-col gap-1 rounded-2xl bg-card p-5 shadow-sm";
+  const style = accent ? { borderLeftColor: accent, borderLeftWidth: 3 } : undefined;
+
+  if (findingTypes && findingTypes.length > 0 && Number(value) > 0) {
+    return (
+      <Link
+        href={`/modules?finding=${findingTypes.join(",")}`}
+        className={`${className} hover:bg-accent/40 transition-colors`}
+        style={style}
+      >
+        <StatTileBody label={label} value={value} description={description} />
+      </Link>
+    );
+  }
+
+  return (
+    <div className={className} style={style}>
+      <StatTileBody label={label} value={value} description={description} />
+    </div>
+  );
+}
+
+function StatTileBody({
+  label,
+  value,
+  description,
+}: {
+  label: string;
+  value: number | string;
+  description?: string;
 }) {
   return (
-    <div
-      className="flex flex-col gap-1 rounded-2xl bg-card p-5 shadow-sm"
-      style={accent ? { borderLeftColor: accent, borderLeftWidth: 3 } : undefined}
-    >
+    <>
       <span className="flex items-center gap-1 text-xs uppercase tracking-wide text-muted-foreground">
         {label}
         {description && (
@@ -62,6 +95,7 @@ function StatTile({
             <TooltipTrigger
               className="inline-flex text-muted-foreground/70 hover:text-foreground"
               aria-label={`What is "${label}"?`}
+              onClick={(e) => e.preventDefault()}
             >
               <Info className="size-3" />
             </TooltipTrigger>
@@ -70,7 +104,7 @@ function StatTile({
         )}
       </span>
       <span className="text-2xl font-semibold tabular-nums">{value}</span>
-    </div>
+    </>
   );
 }
 
@@ -217,41 +251,48 @@ export default function StatsPage() {
               value={totals.secrets}
               accent={totals.secrets > 0 ? palette.status.critical : undefined}
               description="API keys, passwords, or tokens written directly in the code instead of a secure config. Anyone with code access can read them — fix urgently."
+              findingTypes={["hardcoded_secret"]}
             />
             <StatTile
               label="Known vulnerabilities"
               value={totals.securityAdvisories}
               accent={totals.securityAdvisories > 0 ? palette.status.critical : undefined}
               description="Third-party libraries with publicly disclosed security flaws (CVEs). Each one cites the advisory it matched."
+              findingTypes={["security_advisory"]}
             />
             <StatTile
               label="Deprecated usages"
               value={totals.deprecated}
               accent={totals.deprecated > 0 ? palette.status.warning : undefined}
               description="Code calling something Magento has marked for removal in a future version — works today, but will need updating before the next major upgrade."
+              findingTypes={["deprecated_annotation"]}
             />
             <StatTile
               label="Composer issues"
               value={totals.composerIssues}
               accent={totals.composerIssues > 0 ? palette.status.warning : undefined}
               description="Problems with a module's own packaging metadata (Composer is Magento's package manager) — e.g. missing license info or test coverage declared incorrectly."
+              findingTypes={["composer_completeness"]}
             />
             <StatTile
               label="Abandoned dependencies"
               value={totals.abandoned}
               accent={totals.abandoned > 0 ? palette.status.warning : undefined}
               description="Third-party libraries the maintainer has officially stopped supporting — no more fixes or security patches will ever come, even for new vulnerabilities."
+              findingTypes={["abandoned_dependency"]}
             />
             <StatTile
               label="Outdated dependencies"
               value={totals.outdated}
               description="Third-party libraries with a newer version available. Not urgent on its own, but worth tracking so upgrades don't pile up."
+              findingTypes={["outdated_dependency"]}
             />
             <StatTile
               label="Magento upgrade blockers"
               value={totals.magentoUpgradeBlockers}
               accent={totals.magentoUpgradeBlockers > 0 ? palette.status.critical : undefined}
               description="Modules that would break outright on the latest Magento release (wrong PHP version or incompatible Magento package requirement) — these block an upgrade project until fixed."
+              findingTypes={["magento_php_incompatible", "magento_version_blocker"]}
             />
             <StatTile
               label="PHP static-analysis findings"
@@ -262,6 +303,7 @@ export default function StatsPage() {
                   : undefined
               }
               description="Code-quality issues caught by automated PHP analysis tools (bugs, style violations, overly complex code) — a proxy for how much technical debt a module carries."
+              findingTypes={["phpstan_error", "phpmd_issue", "phpcs_violation", "php_compat_issue"]}
             />
           </div>
 

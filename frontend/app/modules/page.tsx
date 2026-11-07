@@ -327,10 +327,17 @@ export default function ModulesPage() {
   // Read directly from the URL — avoids useSearchParams' Suspense-boundary
   // requirement for a filter this page doesn't need to statically render.
   const repoFilter = useQueryParam("repo");
+  // Comma-separated check_type keys (e.g. a Stats tile summing several
+  // check types, such as "Magento upgrade blockers") — module matches if
+  // its finding_counts has a non-zero count for any of them.
+  const findingFilter = useQueryParam("finding");
   const queryClient = useQueryClient();
 
-  function clearRepoFilter() {
-    window.history.replaceState(null, "", "/modules");
+  function clearQueryParam(name: string) {
+    const params = new URLSearchParams(window.location.search);
+    params.delete(name);
+    const query = params.toString();
+    window.history.replaceState(null, "", query ? `/modules?${query}` : "/modules");
     notifyQueryParamChange();
   }
 
@@ -431,6 +438,7 @@ export default function ModulesPage() {
   const filteredAndSorted = useMemo(() => {
     const list = (modulesQuery.data ?? []).filter((m) => {
       if (repoFilter && m.repo_root !== repoFilter) return false;
+      if (findingFilter && !findingFilter.split(",").some((t) => (m.finding_counts[t] ?? 0) > 0)) return false;
       if (sourceFilter !== "all" && m.source_type !== sourceFilter) return false;
       if (stateFilter !== "all" && m.state !== stateFilter) return false;
       if (enabledFilter === "true" && m.enabled !== true) return false;
@@ -452,7 +460,7 @@ export default function ModulesPage() {
       if (av > bv) return 1 * dir;
       return 0;
     });
-  }, [modulesQuery.data, repoFilter, search, sourceFilter, stateFilter, enabledFilter, sortKey, sortDir]);
+  }, [modulesQuery.data, repoFilter, findingFilter, search, sourceFilter, stateFilter, enabledFilter, sortKey, sortDir]);
 
   function toggleSort(key: SortKey) {
     if (sortKey === key) {
@@ -481,7 +489,17 @@ export default function ModulesPage() {
         <div className="flex items-center gap-2 text-sm">
           <span className="text-muted-foreground">Filtering by repo:</span>
           <span className="font-mono">{repoFilter}</span>
-          <button type="button" onClick={clearRepoFilter} className="text-primary hover:underline">
+          <button type="button" onClick={() => clearQueryParam("repo")} className="text-primary hover:underline">
+            Clear
+          </button>
+        </div>
+      )}
+
+      {findingFilter && (
+        <div className="flex items-center gap-2 text-sm">
+          <span className="text-muted-foreground">Filtering by finding:</span>
+          <span className="font-mono">{findingFilter}</span>
+          <button type="button" onClick={() => clearQueryParam("finding")} className="text-primary hover:underline">
             Clear
           </button>
         </div>
