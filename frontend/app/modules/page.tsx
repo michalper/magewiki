@@ -5,6 +5,7 @@ import Link from "next/link";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { ChevronDown, ChevronRight } from "lucide-react";
 import { streamSse } from "@/lib/sse";
+import { downloadCsv, toCsv } from "@/lib/csv";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
@@ -68,7 +69,7 @@ function PresenceBadge({ present, label }: { present: boolean; label: string }) 
 }
 
 
-function toCsv(modules: ModuleSummary[]): string {
+function downloadModulesCsv(modules: ModuleSummary[]) {
   const headers = [
     "name",
     "composer_name",
@@ -84,41 +85,22 @@ function toCsv(modules: ModuleSummary[]): string {
     ...CHECK_TYPES.map((c) => c.key),
     "last_scanned_at",
   ];
-  const escape = (v: unknown) => {
-    const s = v === null || v === undefined ? "" : String(v);
-    return /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
-  };
-  const rows = modules.map((m) =>
-    [
-      m.name,
-      m.composer_name,
-      m.setup_version,
-      m.source_type,
-      m.enabled,
-      m.state,
-      m.class_count,
-      m.plugin_count,
-      m.observer_count,
-      m.has_readme,
-      m.has_tests,
-      ...CHECK_TYPES.map((c) => m.finding_counts[c.key] ?? 0),
-      m.last_scanned_at,
-    ]
-      .map(escape)
-      .join(",")
-  );
-  return [headers.join(","), ...rows].join("\n");
-}
-
-function downloadCsv(modules: ModuleSummary[]) {
-  const csv = toCsv(modules);
-  const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement("a");
-  a.href = url;
-  a.download = `modules-${new Date().toISOString().slice(0, 10)}.csv`;
-  a.click();
-  URL.revokeObjectURL(url);
+  const rows = modules.map((m) => [
+    m.name,
+    m.composer_name,
+    m.setup_version,
+    m.source_type,
+    m.enabled,
+    m.state,
+    m.class_count,
+    m.plugin_count,
+    m.observer_count,
+    m.has_readme,
+    m.has_tests,
+    ...CHECK_TYPES.map((c) => m.finding_counts[c.key] ?? 0),
+    m.last_scanned_at,
+  ]);
+  downloadCsv(`modules-${new Date().toISOString().slice(0, 10)}.csv`, toCsv(headers, rows));
 }
 
 const TABLE_COLUMN_COUNT = 14;
@@ -616,7 +598,7 @@ export default function ModulesPage() {
               <option value="false">Disabled</option>
               <option value="unknown">Unknown</option>
             </select>
-            <Button type="button" variant="outline" size="sm" onClick={() => downloadCsv(filteredAndSorted)}>
+            <Button type="button" variant="outline" size="sm" onClick={() => downloadModulesCsv(filteredAndSorted)}>
               Export CSV
             </Button>
             <span className="text-sm text-muted-foreground ml-auto">
