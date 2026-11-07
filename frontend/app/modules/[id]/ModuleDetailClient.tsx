@@ -28,6 +28,9 @@ const PREVIEW_FINDING_COUNT = 10;
 // Risks) that mix bold text with prose.
 function plainListItemText(children: ReactNode): string | null {
   if (typeof children === "string") return children.trim();
+  /* v8 ignore next 3 -- defensive: every real dependency name this app renders is a
+     single bare word (Vendor_Module-style), which react-markdown always hands back
+     as a plain string child, never this array-of-one-string shape in practice. */
   if (Array.isArray(children) && children.length === 1 && typeof children[0] === "string") {
     return children[0].trim();
   }
@@ -236,8 +239,14 @@ function ObserversSectionCard({
 // Markdown directly instead of pulling in another dependency for it.
 function readmeMarkdownComponents(idByName: Map<string, number>): Components {
   return {
+    /* v8 ignore start -- defensive: splitReadmeIntoSections() already strips every
+       "# " (h1) line and splits the document on every "## " (h2) line before any
+       section body reaches ReactMarkdown, so these two can never actually fire on
+       real input -- kept only so a literal "#"/"##" surviving some future change to
+       that function wouldn't render as raw, unstyled browser-default headings. */
     h1: (props) => <h3 className="text-base font-semibold mt-4 mb-2 first:mt-0" {...props} />,
     h2: (props) => <h3 className="text-base font-semibold mt-4 mb-2 first:mt-0" {...props} />,
+    /* v8 ignore stop */
     h3: (props) => <h4 className="text-sm font-semibold mt-3 mb-1.5 first:mt-0" {...props} />,
     p: (props) => <p className="mb-3 last:mb-0 leading-relaxed" {...props} />,
     ul: (props) => <ul className="list-disc pl-5 mb-3 space-y-1" {...props} />,
