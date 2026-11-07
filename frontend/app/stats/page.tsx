@@ -120,6 +120,11 @@ function ProgressRing({
   color: string;
 }) {
   const palette = useChartPalette();
+  // total === 0 is unreachable today -- StatsPage only renders ProgressRing
+  // inside its own "modules.length > 0" block, and total is always that same
+  // length -- kept as a guard against this component being reused somewhere
+  // that doesn't have that invariant.
+  /* v8 ignore next */
   const pct = total === 0 ? 0 : Math.round((value / total) * 100);
   const data = [
     { name: label, value },
