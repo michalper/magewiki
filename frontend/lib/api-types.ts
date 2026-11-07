@@ -414,6 +414,8 @@ export interface components {
             enabled: boolean | null;
             /** State */
             state: string;
+            /** Setup Version */
+            setup_version: string | null;
             /** Class Count */
             class_count: number;
             /** Plugin Count */
@@ -522,6 +524,8 @@ export interface components {
             enabled: boolean | null;
             /** State */
             state: string;
+            /** Setup Version */
+            setup_version: string | null;
             /** Class Count */
             class_count: number;
             /** Plugin Count */
@@ -567,6 +571,8 @@ export interface components {
             repo_root: string;
             /** Current Hash */
             current_hash: string | null;
+            /** Setup Version */
+            setup_version: string | null;
             /** Enabled */
             enabled: boolean | null;
         };

@@ -43,6 +43,7 @@ async def test_scan_and_list_modules(demo_store_path: Path, db_session: AsyncSes
         modules = list_response.json()
         vendor_module = next(m for m in modules if m["id"] == module_id)
         assert vendor_module["composer_name"] == "vendor/module-sample"
+        assert vendor_module["setup_version"] == "1.0.0"
         assert vendor_module["enabled"] is True
         assert vendor_module["class_count"] == 2
         assert vendor_module["plugin_count"] == 1
@@ -52,6 +53,7 @@ async def test_scan_and_list_modules(demo_store_path: Path, db_session: AsyncSes
         detail_response = await client.get(f"/modules/{module_id}")
         assert detail_response.status_code == 200
         detail = detail_response.json()
+        assert detail["setup_version"] == "1.0.0"
         assert detail["dependencies"] == ["Magento_Sales"]
         assert len(detail["classes"]) == 2
         assert detail["tags"] == []

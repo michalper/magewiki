@@ -17,7 +17,9 @@ async def overlap_fixture(db_session):
     repo_b = f"/tmp/overlap-b-{suffix}"
     repo_c = f"/tmp/overlap-c-{suffix}"
 
-    def module(repo_root: str, name: str, current_hash: str, enabled: bool) -> Module:
+    def module(
+        repo_root: str, name: str, current_hash: str, enabled: bool, setup_version: str | None = None
+    ) -> Module:
         return Module(
             repo_root=repo_root,
             name=name,
@@ -26,6 +28,7 @@ async def overlap_fixture(db_session):
             source_type="standalone",
             state="up_to_date",
             current_hash=current_hash,
+            setup_version=setup_version,
             enabled=enabled,
             has_readme=False,
             has_tests=False,
@@ -37,12 +40,12 @@ async def overlap_fixture(db_session):
     unique = f"Unique_{suffix}"
 
     rows = [
-        module(repo_a, shared_same_version, "hash1", True),
-        module(repo_b, shared_same_version, "hash1", True),
-        module(repo_a, drifted, "hash-old", True),
-        module(repo_b, drifted, "hash-new", True),
-        module(repo_c, drifted, "hash-new", False),
-        module(repo_a, unique, "hash-only", True),
+        module(repo_a, shared_same_version, "hash1", True, "2.1.3"),
+        module(repo_b, shared_same_version, "hash1", True, "2.1.3"),
+        module(repo_a, drifted, "hash-old", True, "2.0.9"),
+        module(repo_b, drifted, "hash-new", True, "2.1.0"),
+        module(repo_c, drifted, "hash-new", False, "2.1.0"),
+        module(repo_a, unique, "hash-only", True, "1.0.0"),
     ]
     db_session.add_all(rows)
     await db_session.commit()
@@ -89,3 +92,4 @@ async def test_a_module_with_different_hashes_across_stores_flags_version_drift(
     assert entry["store_count"] == 3
     assert entry["version_drift"] is True
     assert {s["current_hash"] for s in entry["stores"]} == {"hash-old", "hash-new"}
+    assert {s["setup_version"] for s in entry["stores"]} == {"2.0.9", "2.1.0"}

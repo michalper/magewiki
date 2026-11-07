@@ -101,15 +101,19 @@ export default function ReposPage() {
                       )}
                     </td>
                     <td className="p-3">
-                      <div className="flex flex-wrap gap-2">
+                      <div className="flex flex-wrap gap-x-3 gap-y-1">
                         {entry.stores.map((store) => (
-                          <Link
-                            key={store.repo_root}
-                            href={`/modules?repo=${encodeURIComponent(store.repo_root)}`}
-                            className="font-mono text-xs text-muted-foreground hover:text-foreground hover:underline"
-                          >
-                            {store.repo_root}
-                          </Link>
+                          <span key={store.repo_root} className="flex items-baseline gap-1">
+                            <Link
+                              href={`/modules?repo=${encodeURIComponent(store.repo_root)}`}
+                              className="font-mono text-xs text-muted-foreground hover:text-foreground hover:underline"
+                            >
+                              {store.repo_root}
+                            </Link>
+                            <span className="font-mono text-xs text-muted-foreground/70">
+                              ({store.setup_version ?? "unknown"})
+                            </span>
+                          </span>
                         ))}
                       </div>
                     </td>
