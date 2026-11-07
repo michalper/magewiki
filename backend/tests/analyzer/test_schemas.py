@@ -64,3 +64,45 @@ def test_module_doc_coerces_bare_string_tags():
     doc = ModuleDoc.model_validate(payload)
     assert [t.name for t in doc.tags] == ["payments", "search"]
     assert all(t.source == "ai" and t.confidence == 0.5 for t in doc.tags)
+
+
+# Real production samples captured from a 760-module store's last_error column
+# (synthesis failures that slipped past the Tag-coercion fix above) — exact
+# shapes, not paraphrased, so the fix is verified against what the model
+# actually emits rather than a hypothesized shape.
+REAL_REJECTED_TAGS_SAMPLES = [
+    {"name": "b2b", "source": "ai", "confidence": 0.0},
+    {"name": "admin-tools", "source": "ai", "confidence": 0.3},
+    {"name": "b2b"},
+    {"name": "checkout", "source": "ai", "confidence": 0.0},
+]
+
+
+@pytest.mark.parametrize("sample", REAL_REJECTED_TAGS_SAMPLES)
+def test_module_doc_coerces_rejected_tags_given_as_tag_objects(sample):
+    payload = _valid_doc_payload("anything.php")
+    payload["rejected_tags"] = [sample]
+    doc = ModuleDoc.model_validate(payload)
+    assert doc.rejected_tags == [sample["name"]]
+
+
+def test_module_doc_parses_a_stringified_features_list():
+    payload = _valid_doc_payload("anything.php")
+    # Real production sample's exact bug shape: the whole list JSON-encoded as a
+    # string instead of emitted as nested JSON — here with well-formed Feature
+    # items, to isolate the string->list recovery from the separate, unrelated
+    # data-quality issue the real sample also had (mismatched inner field names).
+    payload["features"] = (
+        '[{"name": "Query compare list", "description": "Adds a GraphQL query.", "source": "anything.php"}]'
+    )
+    doc = ModuleDoc.model_validate(payload)
+    assert doc.features[0].name == "Query compare list"
+
+
+def test_module_doc_leaves_a_non_json_string_list_field_as_is():
+    # A genuinely malformed string must still surface its real validation error,
+    # not be silently swallowed by the recovery attempt.
+    payload = _valid_doc_payload("anything.php")
+    payload["features"] = "not valid json"
+    with pytest.raises(ValidationError):
+        ModuleDoc.model_validate(payload)
