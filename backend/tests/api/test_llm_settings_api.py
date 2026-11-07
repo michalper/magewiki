@@ -227,3 +227,15 @@ async def test_patch_rejects_changing_embedding_api_base_alone_when_a_key_is_alr
     assert attack.status_code == 400
     assert "embedding_api_key" in attack.json()["detail"]
     assert unchanged.json()["embedding_api_base"] is None
+
+
+@pytest.mark.asyncio
+async def test_patch_allows_setting_embedding_api_base_alone_with_no_key_stored_yet():
+    transport = ASGITransport(app=app)
+    async with AsyncClient(transport=transport, base_url="http://test") as client:
+        response = await client.patch(
+            "/settings/llm", json={"embedding_api_base": "http://host.docker.internal:11434"}
+        )
+
+    assert response.status_code == 200
+    assert response.json()["embedding_api_base"] == "http://host.docker.internal:11434"

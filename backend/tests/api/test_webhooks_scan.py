@@ -150,3 +150,20 @@ async def test_webhook_scan_debounces_duplicate_calls(demo_store_path):
     # the second, identical call is debounced whether or not a worker ever drains
     # the first one during this test.
     assert second.json()["status"] == "duplicate"
+
+
+@pytest.mark.asyncio
+async def test_webhook_scan_rejects_invalid_json_with_a_valid_signature():
+    body = b"not valid json"
+    signature = _sign(body)
+
+    transport = ASGITransport(app=app)
+    async with AsyncClient(transport=transport, base_url="http://test") as client:
+        response = await client.post(
+            "/webhooks/scan",
+            content=body,
+            headers={"Content-Type": "application/json", "X-Signature-256": signature},
+        )
+
+    assert response.status_code == 400
+    assert response.json()["detail"] == "invalid JSON body"

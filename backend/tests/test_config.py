@@ -50,3 +50,17 @@ def test_is_within_scan_roots_resolves_dot_dot_traversal(tmp_path: Path):
     s = Settings(magewiki_scan_root_1=str(allowed), magewiki_scan_root_2="", magewiki_scan_root_3="")
     traversal_path = str(allowed / ".." / "not-allowed")
     assert s.is_within_scan_roots(traversal_path) is False
+
+
+def test_is_within_scan_roots_fails_closed_when_resolve_raises_oserror(tmp_path: Path, monkeypatch):
+    """Path.resolve() can raise OSError for a real, pathological input (e.g. a
+    component exceeding the filesystem's max name length) -- must fail closed
+    (reject), not propagate the exception out of an access-control check.
+    """
+    def _raise(self, strict=False):
+        raise OSError("name too long")
+
+    monkeypatch.setattr(Path, "resolve", _raise)
+
+    s = Settings(magewiki_scan_root_1=str(tmp_path), magewiki_scan_root_2="", magewiki_scan_root_3="")
+    assert s.is_within_scan_roots(str(tmp_path)) is False
