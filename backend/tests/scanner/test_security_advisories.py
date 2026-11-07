@@ -107,3 +107,51 @@ async def test_check_security_advisories_caches_the_response(db_session, monkeyp
     await check_security_advisories(db_session, {package: "^1.0"})
 
     assert client.calls == [package]
+
+
+@pytest.mark.asyncio
+async def test_fetch_from_packagist_returns_none_on_an_http_error(db_session, monkeypatch):
+    import httpx
+
+    class _RaisingClient:
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *args):
+            return False
+
+        async def get(self, url, params=None):
+            raise httpx.ConnectError("connection refused")
+
+    monkeypatch.setattr(
+        "app.scanner.security_advisories.httpx.AsyncClient", lambda *a, **k: _RaisingClient()
+    )
+
+    package = f"vendor/pkg-{uuid.uuid4().hex[:8]}"
+    findings = await check_security_advisories(db_session, {package: "^1.0"})
+
+    assert findings == []
+
+
+@pytest.mark.asyncio
+async def test_check_security_advisories_handles_the_empty_list_shape(db_session, monkeypatch):
+    # Packagist returns "advisories": {} as a dict keyed by package name when
+    # there are results, but as an empty *list* [] when there are none.
+    class _EmptyListClient:
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *args):
+            return False
+
+        async def get(self, url, params=None):
+            return _FakeResponse({"advisories": []})
+
+    monkeypatch.setattr(
+        "app.scanner.security_advisories.httpx.AsyncClient", lambda *a, **k: _EmptyListClient()
+    )
+
+    package = f"vendor/pkg-{uuid.uuid4().hex[:8]}"
+    findings = await check_security_advisories(db_session, {package: "^1.0"})
+
+    assert findings == []

@@ -47,3 +47,13 @@ def test_scan_deprecated_annotations_flags_a_deprecated_method(tmp_path: Path):
 def test_scan_deprecated_annotations_with_no_annotations(tmp_path: Path):
     (tmp_path / "Clean.php").write_text("<?php\nclass Clean {}\n")
     assert scan_deprecated_annotations(tmp_path) == []
+
+
+def test_scan_deprecated_annotations_skips_a_file_that_vanishes_before_it_can_be_read(tmp_path: Path, monkeypatch):
+    clean = tmp_path / "Clean.php"
+    clean.write_text("<?php\nclass Clean {}\n")
+    vanished = tmp_path / "Vanished.php"
+
+    monkeypatch.setattr("app.scanner.deprecated_scanner.walk_module_source_files", lambda root: [clean, vanished])
+
+    assert scan_deprecated_annotations(tmp_path) == []

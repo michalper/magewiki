@@ -69,3 +69,20 @@ def test_hyphenated_range_is_unaffected_by_a_prerelease_suffix_dash():
     # The embedded dash in "1.0.0-beta" has no surrounding whitespace, unlike the
     # hyphen-range separator, so it must not be mistaken for one.
     assert constraints_overlap("^1.0.0-beta", ">=1.0.0,<2.0.0") is True
+
+
+def test_exclusive_greater_than():
+    # ">1.0.0" excludes 1.0.0 itself but includes anything strictly above it.
+    assert constraints_overlap(">1.0.0", "1.0.0") is False
+    assert constraints_overlap(">1.0.0", "1.0.1") is True
+
+
+def test_not_equal_is_treated_as_unbounded():
+    # "!=" isn't expressible as a single interval -- never the reason an
+    # overlap check reports false, per semver.py's own documented behavior.
+    assert constraints_overlap("!=1.0.0", "1.0.0") is True
+
+
+def test_an_unparseable_version_falls_back_to_zero():
+    # A garbage/empty version string parses as (0,) rather than raising.
+    assert constraints_overlap("not-a-version", "0.0.0") is True

@@ -38,3 +38,13 @@ def test_scan_hardcoded_secrets_ignores_placeholders(tmp_path: Path):
 def test_scan_hardcoded_secrets_with_no_secrets(tmp_path: Path):
     (tmp_path / "Clean.php").write_text("<?php\nclass Clean {}\n")
     assert scan_hardcoded_secrets(tmp_path) == []
+
+
+def test_scan_hardcoded_secrets_skips_a_file_that_vanishes_before_it_can_be_read(tmp_path: Path, monkeypatch):
+    clean = tmp_path / "Clean.php"
+    clean.write_text("<?php\nclass Clean {}\n")
+    vanished = tmp_path / "Vanished.php"
+
+    monkeypatch.setattr("app.scanner.secrets_scanner.walk_module_source_files", lambda root: [clean, vanished])
+
+    assert scan_hardcoded_secrets(tmp_path) == []
