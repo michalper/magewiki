@@ -253,6 +253,7 @@ export default function StatsPage() {
       total: modules.length,
       withReadme: modules.filter((m) => m.has_readme).length,
       withTests: modules.filter((m) => m.has_tests).length,
+      withModuleDoc: modules.filter((m) => m.has_module_doc).length,
       composerIssues: sumByCheckType(modules, "composer_completeness"),
       deprecated: sumByCheckType(modules, "deprecated_annotation"),
       secrets: sumByCheckType(modules, "hardcoded_secret"),
@@ -348,6 +349,12 @@ export default function StatsPage() {
             <ProgressRing
               label="Have tests"
               value={totals.withTests}
+              total={totals.total}
+              color={palette.status.good}
+            />
+            <ProgressRing
+              label="Have an AI-generated doc"
+              value={totals.withModuleDoc}
               total={totals.total}
               color={palette.status.good}
             />
