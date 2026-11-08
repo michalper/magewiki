@@ -726,7 +726,75 @@ Also worth flagging: `ModuleSummary`
 now carries 10 flat per-check-type count fields (3 added in Phase 9, 3 more in Phase 10, 4 more
 here) — a generic `dict[check_type, count]` would scale better, but wasn't worth refactoring three
 times' worth of already-shipped, working frontend code for a cleanliness win nobody asked for.
-Worth doing if an even 5th wave of check types ever shows up.
+Worth doing if an even 5th wave of check types ever shows up. **Update (2026-11-07/08):** that
+refactor happened by the time Phase 14 and the plugin-conflict/PhpMetrics check types below were
+added — `finding_counts` is a plain `dict[str, int]` today (`app/schemas.py`), and
+`frontend/components/quality-badges.tsx`'s `CHECK_TYPES` array is the one place a new check type
+needs registering on the frontend. Two more waves since this was first flagged, zero backend/
+frontend-shape changes needed either time — the "worth doing if a 5th wave shows up" bar was
+already cleared.
+
+**PhpMetrics added (recorded 2026-11-08):** closes the "dropped during scoping" gap immediately
+above, flagged by the author asking directly what free scanners from `modularz`/v1's original
+tool list MageWiki still didn't have. Unlike phpstan/phpmd/phpcs/rector, PhpMetrics' CLI
+(`--report-json`) reports continuous metrics (complexity, maintainability index, coupling), not
+discrete pass/fail violations — rather than inventing arbitrary thresholds on those raw numbers,
+`--report-violations` emits an XML in the exact same "PMD Violation" shape phpmd itself produces,
+encoding PhpMetrics' own built-in risk rules (confirmed empirically against a real 1514-class
+module: "Too complex method code," "Probably bugged" via Halstead bug prediction, "Blob / God
+object," "Stable Dependencies/Abstractions Principle" for package-level coupling — 138 real
+findings, not a synthetic test). The one real integration wrinkle: PhpMetrics' violations key by
+class FQCN (or, for a package-level rule, a bare namespace prefix ending in `\`) rather than a
+real file path like every other tool here — `app/scanner/php_analyzer_client.py` resolves this
+against the *same* `fqcn_to_file` dict `orchestrator.py` already builds from
+`catalog_module_classes()`'s own result, passed in as a new optional argument, rather than a DB
+round-trip — keeps `check_php_static_analysis` genuinely session-independent so it can keep
+running concurrently with the other quality checks. A namespace prefix never matches a real FQCN,
+so a package-level finding naturally resolves to `file_path=None`, which is correct — there isn't
+one. New `phpmetrics_issue` check_type (migration `0023`), severity `"warning"` to match the rest
+of the PHP toolchain family. The Test/-directory exclusion filter (shared across all five tools)
+had to switch from a `"/Test/"` substring check to a path-*segment* check (`"Test" in
+Path(...).parts`), since phpmetrics' resolved paths are already-relative (`"Test/Unit/Foo.php"`,
+no leading `/`) unlike the other four tools' absolute paths — a substring check would have missed
+that shape.
+
+**GitHub API degradation during this same build (recorded 2026-11-08):** Composer's
+`--prefer-dist` kept failing with `curl error 28/56` timeouts and HTTP 504s against
+`api.github.com`'s zipball endpoint — not a one-off blip: confirmed as a real, officially
+acknowledged GitHub incident (githubstatus.com: "Increase in timeouts for some unauthenticated
+users," API Requests degraded, started that day) explicitly scoped to *unauthenticated* traffic,
+which is exactly what an anonymous `composer install` makes. Two durable fixes, both kept
+permanently (not reverted once the incident resolved): (1) `php-analyzer/Dockerfile`'s
+`composer install` now always passes `--prefer-source` (git clone over `github.com`) instead of
+the default `--prefer-dist` — confirmed more reliable for this dependency set independent of the
+incident, and `git` was already installed for this exact reason; (2) added an *optional* Docker
+build secret (`--mount=type=secret,id=github_token`) that authenticates Composer's GitHub
+requests when the build is invoked with `--secret id=github_token,src=<file>` — a no-op (`||
+true`) when no secret is passed, so every existing build (CI, every other contributor) behaves
+identically to before. Authenticated requests aren't subject to GitHub's unauthenticated-tier
+rate limits/degradation at all, which is a genuine, permanent resilience improvement regardless
+of this specific incident, not just a workaround for it. Verified directly: the exact same
+dependency set that failed repeatedly over roughly an hour on `--prefer-dist`/anonymous
+`--prefer-source` succeeded in 162s once a GitHub token was supplied via the secret mount.
+
+**Composer version-conflict detection (recorded 2026-11-08):** the third of three new scanner
+features added the same session, after the user asked directly what MageWiki was still missing
+for full SCA (Software Composition Analysis) coverage. Real impact, not theoretical:
+`composer install` resolves exactly *one* version of a package for an entire Composer project: if
+two modules in the same store require incompatible ranges of the same package (a very real case
+for `magento/module-*` packages between extensions targeting different Magento versions, as well
+as ordinary third-party libraries), the install fails for the whole store, not just the
+conflicting modules. New `app/scanner/composer_conflicts.py` reuses the exact same fleet-wide
+Phase-C pattern as plugin-conflict detection (groups every module's already-cataloged
+`composer_package_requirements` by package name, flags a pair across 2+ distinct modules whose
+constraints don't overlap via `semver.py`'s existing `constraints_overlap`) and the exact same
+"flag a concrete conflicting pair, don't solve full N-way SAT across every requirer" pragmatism.
+Magento's own packages are deliberately *not* excluded here, unlike the CVE check — that
+exclusion exists only because Magento's packages aren't resolvable via public Packagist, but this
+check never calls Packagist at all, just compares constraint strings directly. New
+`composer_conflict` check_type (migration `0024`), severity `"warning"`, one row per involved
+module — the `finding_counts`/`CHECK_TYPES` registration note right after the Phase 12 decision
+above covers this and the other two new check types added the same session.
 
 **Phase 12b decision (recorded 2026-11-06):** this is v1's actual headline feature ("upgrade
 readiness"), deliberately left out of Phase 12 and called out there as "no 'upgrade readiness'

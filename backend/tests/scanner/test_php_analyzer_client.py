@@ -184,6 +184,85 @@ async def test_check_php_static_analysis_excludes_test_directory_findings(tmp_pa
 
 
 @pytest.mark.asyncio
+async def test_check_php_static_analysis_resolves_phpmetrics_class_names_to_file_paths(tmp_path, monkeypatch):
+    module_root = tmp_path / "Vendor" / "Module"
+    module_root.mkdir(parents=True)
+    findings_by_tool = {
+        "phpmetrics": [
+            {"class": "Vendor\\Module\\Plugin\\SavePlugin", "line": None, "message": "Too complex method code: ..."},
+        ],
+    }
+    monkeypatch.setattr(
+        "app.scanner.php_analyzer_client.httpx.AsyncClient", lambda *a, **k: _FakeAsyncClient(findings_by_tool)
+    )
+
+    findings = await check_php_static_analysis(
+        module_root,
+        module_root,
+        fqcn_to_file={"Vendor\\Module\\Plugin\\SavePlugin": "Plugin/SavePlugin.php"},
+    )
+
+    assert len(findings) == 1
+    assert findings[0].check_type == "phpmetrics_issue"
+    assert findings[0].file_path == "Plugin/SavePlugin.php"
+    assert findings[0].severity == "warning"
+
+
+@pytest.mark.asyncio
+async def test_check_php_static_analysis_leaves_a_package_level_phpmetrics_finding_with_no_file(
+    tmp_path, monkeypatch
+):
+    """A package-level rule (e.g. "Stable Dependencies Principle") reports a
+    namespace prefix, not a real class -- it never matches a real FQCN, so
+    there's correctly no file to point to.
+    """
+    module_root = tmp_path / "Vendor" / "Module"
+    module_root.mkdir(parents=True)
+    findings_by_tool = {
+        "phpmetrics": [
+            {"class": "Vendor\\Module\\Plugin", "line": None, "message": "Stable Dependencies Principle: ..."},
+        ],
+    }
+    monkeypatch.setattr(
+        "app.scanner.php_analyzer_client.httpx.AsyncClient", lambda *a, **k: _FakeAsyncClient(findings_by_tool)
+    )
+
+    findings = await check_php_static_analysis(
+        module_root, module_root, fqcn_to_file={"Vendor\\Module\\Plugin\\SavePlugin": "Plugin/SavePlugin.php"}
+    )
+
+    assert len(findings) == 1
+    assert findings[0].file_path is None
+
+
+@pytest.mark.asyncio
+async def test_check_php_static_analysis_excludes_a_phpmetrics_finding_resolved_to_a_test_file(
+    tmp_path, monkeypatch
+):
+    module_root = tmp_path / "Vendor" / "Module"
+    module_root.mkdir(parents=True)
+    findings_by_tool = {
+        "phpmetrics": [
+            {"class": "Vendor\\Module\\Test\\Unit\\FooTest", "line": None, "message": "Probably bugged: ..."},
+        ],
+    }
+    monkeypatch.setattr(
+        "app.scanner.php_analyzer_client.httpx.AsyncClient", lambda *a, **k: _FakeAsyncClient(findings_by_tool)
+    )
+
+    findings = await check_php_static_analysis(
+        module_root,
+        module_root,
+        # Realistic shape: PhpClassEntry.file_path (what fqcn_to_file's real
+        # values come from) is already relative to the module root, unlike
+        # the absolute paths phpstan/phpmd/phpcs/rector report directly.
+        fqcn_to_file={"Vendor\\Module\\Test\\Unit\\FooTest": "Test/Unit/FooTest.php"},
+    )
+
+    assert findings == []
+
+
+@pytest.mark.asyncio
 async def test_check_php_static_analysis_fails_open_on_a_non_dict_json_response(tmp_path, monkeypatch):
     class _BareListResponse:
         def raise_for_status(self) -> None:

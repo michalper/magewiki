@@ -33,7 +33,17 @@ _TOOL_CHECK_TYPES = {
     "phpmd": "phpmd_issue",
     "phpcs": "phpcs_violation",
     "rector": "php_compat_issue",
+    "phpmetrics": "phpmetrics_issue",
 }
+
+# phpmetrics is the one tool here whose findings key by class FQCN (or, for a
+# package-level rule, a namespace prefix) rather than a real file path --
+# di.xml and the other three tools never need this, since they already
+# report an actual file. Resolved against this module's own already-
+# cataloged PhpClass rows (fqcn -> relative file_path); a namespace prefix
+# never matches a real FQCN, so a package-level finding naturally resolves
+# to no file, which is correct -- there isn't one.
+_CLASS_KEYED_TOOLS = {"phpmetrics"}
 
 
 async def _call_tool(tool: str, module_path: str, magento_root: str | None, php_binary: str) -> list[dict]:
@@ -72,15 +82,20 @@ def _relativize(file_path: str, module_root: Path) -> str:
 
 
 async def check_php_static_analysis(
-    module_root: Path, repo_root: Path, php_constraint: str | None = None
+    module_root: Path, repo_root: Path, php_constraint: str | None = None, fqcn_to_file: dict[str, str] | None = None
 ) -> list[QualityFinding]:
     """Real PHP static analysis via the php-analyzer sidecar (Phase 12) — the
     one case where MageWiki shells out to real PHP tooling rather than just
     parsing with tree-sitter. Fails open per tool (a sidecar outage degrades
-    to "no findings from that tool", never a scan failure); all four check
-    types default to "warning" — informational, not blocking, since there's
-    no "upgrade readiness" gate concept yet to make php_compat_issue
-    meaningful as a hard blocker the way v1 treats it.
+    to "no findings from that tool", never a scan failure); every check type
+    defaults to "warning" — informational, not blocking, since there's no
+    "upgrade readiness" gate concept yet to make php_compat_issue meaningful
+    as a hard blocker the way v1 treats it.
+
+    fqcn_to_file resolves phpmetrics' class/package-keyed findings to this
+    module's own already-cataloged file paths (see _CLASS_KEYED_TOOLS) —
+    every other tool here reports a real file path directly and never needs
+    this.
 
     repo_root (the scanned store's root, not just this one module) is passed
     to phpstan only, as bitexpert/phpstan-magento's magentoRoot — a module
@@ -115,8 +130,13 @@ async def check_php_static_analysis(
         await _call_tool(tool, str(module_root), str(repo_root) if tool == "phpstan" else None, php_binary)
         for tool, _check_type in tools
     ]
-    for (_tool, check_type), items in zip(tools, results, strict=True):
+    for (tool, check_type), items in zip(tools, results, strict=True):
         for item in items:
+            if tool in _CLASS_KEYED_TOOLS:
+                resolved_file = (fqcn_to_file or {}).get(item.get("class", ""))
+            else:
+                resolved_file = item.get("file") or None
+
             # Every tool is asked to exclude Test/ at its own CLI level too
             # (cheaper — it skips analysing those files at all), but phpmd's
             # own --exclude pattern matching proved unreliable combining
@@ -125,14 +145,19 @@ async def check_php_static_analysis(
             # place the policy is guaranteed correct regardless of any one
             # tool's own exclude-flag quirks. PHPUnit mock/stub code is a
             # different quality concern than the production code these
-            # checks are meant to flag.
-            if "/Test/" in item.get("file", ""):
+            # checks are meant to flag. Checked by path *segment*, not
+            # substring, since phpstan/phpmd/phpcs/rector report an absolute
+            # path ("/.../Test/Unit/Foo.php") while phpmetrics' class-keyed
+            # findings resolve to this module's own already-relative
+            # PhpClassEntry.file_path ("Test/Unit/Foo.php", no leading "/") —
+            # a plain "/Test/" substring check would miss the latter shape.
+            if resolved_file and "Test" in Path(resolved_file).parts:
                 continue
             findings.append(
                 QualityFinding(
                     check_type=check_type,
                     severity="warning",
-                    file_path=_relativize(item.get("file", ""), module_root) if item.get("file") else None,
+                    file_path=_relativize(resolved_file, module_root) if resolved_file else None,
                     line=item.get("line"),
                     message=item.get("message", ""),
                 )

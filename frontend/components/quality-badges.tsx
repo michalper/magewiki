@@ -18,6 +18,8 @@ export const CHECK_TYPES: { key: string; severity: Severity; label: (n: number) 
   { key: "magento_php_incompatible", severity: "blocking", label: (n) => `${n} magento-php` },
   { key: "magento_version_blocker", severity: "blocking", label: (n) => `${n} magento-upgrade` },
   { key: "plugin_conflict", severity: "warning", label: (n) => `${n} plugin-conflict${n === 1 ? "" : "s"}` },
+  { key: "phpmetrics_issue", severity: "warning", label: (n) => `${n} phpmetrics` },
+  { key: "composer_conflict", severity: "warning", label: (n) => `${n} composer-conflict${n === 1 ? "" : "s"}` },
 ];
 
 export function sumFindingCounts(findingCounts: Record<string, number>): number {

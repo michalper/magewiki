@@ -287,6 +287,52 @@ function run_rector(string $root, string $modulePath, string $phpBinary): array
     return $findings;
 }
 
+function run_phpmetrics(string $root, string $modulePath, string $phpBinary): array
+{
+    // --report-violations emits an XML in the same "PMD Violation" shape
+    // phpmd itself produces, encoding PhpMetrics' own built-in risk
+    // thresholds (complexity, cohesion, Halstead bug prediction, package
+    // coupling) directly — confirmed empirically against a real 1514-class
+    // module rather than inventing thresholds from the raw --report-json
+    // metrics ourselves. No --exclude passed: its own default
+    // (vendor,test,Test,tests,Tests,testing,Testing,...) already covers test
+    // directories, same policy every other tool here applies explicitly.
+    $reportFile = tempnam(sys_get_temp_dir(), 'phpmetrics_');
+    if ($reportFile === false) {
+        return [];
+    }
+    try {
+        run_command([
+            ...with_memory_limit($phpBinary, $root . '/vendor/bin/phpmetrics'),
+            '--report-violations=' . $reportFile, '--quiet', $modulePath,
+        ]);
+        $xml = @simplexml_load_file($reportFile);
+    } finally {
+        unlink($reportFile);
+    }
+    if ($xml === false) {
+        return [];
+    }
+    $findings = [];
+    foreach ($xml->file as $fileEl) {
+        // Confirmed empirically: this is a class/interface FQCN (or, for a
+        // package-level rule like "Stable Dependencies Principle", a
+        // namespace *prefix* ending in "\\") — never a real file path, unlike
+        // every other tool here. The Python client resolves it against this
+        // module's own already-cataloged PhpClass rows (fqcn -> file_path);
+        // a trailing "\\" never matches a real FQCN, so a package-level
+        // violation naturally resolves to no file, which is correct — there
+        // isn't one.
+        $className = rtrim((string) $fileEl['name'], '\\');
+        foreach ($fileEl->violation as $violation) {
+            $rule = (string) $violation['rule'];
+            $message = trim(preg_replace('/\s+/', ' ', (string) $violation) ?? '');
+            $findings[] = ['class' => $className, 'line' => null, 'message' => "$rule: $message"];
+        }
+    }
+    return $findings;
+}
+
 $analyzerRoot = dirname(__DIR__);
 
 $tools = [
@@ -294,6 +340,7 @@ $tools = [
     '/phpmd' => 'run_phpmd',
     '/phpcs' => 'run_phpcs',
     '/rector' => 'run_rector',
+    '/phpmetrics' => 'run_phpmetrics',
 ];
 
 if (!isset($tools[$requestPath])) {

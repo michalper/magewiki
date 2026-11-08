@@ -715,6 +715,12 @@ async def _persist_module(
 
     classes = catalog_module_classes(pm.discovered.root)
     outcome.classes = len(classes)
+    # phpmetrics (check_php_static_analysis below) reports class FQCNs, not
+    # file paths like every other PHP-toolchain tool — resolved against this
+    # module's own catalog rather than a DB round-trip, so that check can
+    # stay genuinely independent of `session` and run concurrently with the
+    # other quality checks.
+    fqcn_to_file = {entry.fqcn: entry.file_path for entry in classes}
 
     for entry in classes:
         top_level_dir = entry.file_path.split("/", 1)[0]
@@ -799,7 +805,7 @@ async def _persist_module(
         session_findings, php_static_findings = await asyncio.gather(
             _session_based_checks(),
             check_php_static_analysis(
-                pm.discovered.root, repo_root, pm.composer.php_constraint if pm.composer else None
+                pm.discovered.root, repo_root, pm.composer.php_constraint if pm.composer else None, fqcn_to_file
             ),
         )
         quality_findings = [

@@ -34,7 +34,27 @@ COPY php-analyzer/composer.json php-analyzer/composer.lock* ./
 # magento/php-compatibility-fork instead) — confirmed the override was
 # actively wrong, not just redundant, and removed it rather than updating
 # the hardcoded path again next time a dependency renames.
-RUN composer install --no-dev --no-interaction --prefer-dist --no-progress
+# --prefer-source (git clone over github.com) instead of the default
+# --prefer-dist (a zipball generated on demand by api.github.com) — confirmed
+# directly, repeatedly, the same day this was changed: --prefer-dist kept
+# failing with curl error 28/56 timeouts and HTTP 504s against
+# api.github.com's zipball endpoint for this exact dependency set, while
+# --prefer-source succeeded reliably every time against the same packages.
+# git is already installed above specifically for this.
+#
+# Optional build secret: if a `github_token` secret is passed at build time
+# (docker build --secret id=github_token,src=<file>), authenticate Composer's
+# GitHub requests with it — GitHub's unauthenticated API tier is always more
+# exposed to rate limits/degradation than the authenticated one (confirmed
+# directly against a real, officially-acknowledged GitHub incident the same
+# day: "increase in timeouts for some unauthenticated users"). Silently a
+# no-op when the secret isn't provided (every existing build, including
+# CI), via `|| true` — never required.
+RUN --mount=type=secret,id=github_token \
+    (test -s /run/secrets/github_token \
+        && composer config -g github-oauth.github.com "$(cat /run/secrets/github_token)" \
+        || true) \
+    && composer install --no-dev --no-interaction --prefer-source --no-progress
 
 COPY php-analyzer/public ./public
 COPY php-analyzer/rector.php ./rector.php

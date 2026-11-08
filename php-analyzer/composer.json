@@ -1,6 +1,6 @@
 {
     "name": "magewiki/php-analyzer",
-    "description": "Internal HTTP wrapper around PHPStan/PHPMD/phpcs/Rector for MageWiki-AI's Phase 12 static-analysis scanners. Not published, never reachable outside the docker network.",
+    "description": "Internal HTTP wrapper around PHPStan/PHPMD/phpcs/Rector/PhpMetrics for MageWiki-AI's Phase 12 static-analysis scanners. Not published, never reachable outside the docker network.",
     "type": "project",
     "license": "MIT",
     "require": {
@@ -10,7 +10,8 @@
         "phpmd/phpmd": "^2.15",
         "squizlabs/php_codesniffer": "^3.10",
         "magento/magento-coding-standard": "^41",
-        "rector/rector": "^2.0"
+        "rector/rector": "^2.0",
+        "phpmetrics/phpmetrics": "^2.11"
     },
     "config": {
         "allow-plugins": {
