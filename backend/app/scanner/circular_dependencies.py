@@ -59,7 +59,7 @@ def detect_circular_dependencies(deps: list[ModuleDependencyRow]) -> list[tuple[
         path.pop()
         color[node] = BLACK
 
-    for node in list(edges):
+    for node in edges:
         if color[node] == WHITE:
             visit(node)
 

@@ -320,6 +320,14 @@ function SortableHead({
   );
 }
 
+function clearQueryParam(name: string) {
+  const params = new URLSearchParams(window.location.search);
+  params.delete(name);
+  const query = params.toString();
+  window.history.replaceState(null, "", query ? `/modules?${query}` : "/modules");
+  notifyQueryParamChange();
+}
+
 export default function ModulesPage() {
   useDocumentTitle("Modules");
   const [path, setPath] = useState("");
@@ -338,14 +346,6 @@ export default function ModulesPage() {
   // its finding_counts has a non-zero count for any of them.
   const findingFilter = useQueryParam("finding");
   const queryClient = useQueryClient();
-
-  function clearQueryParam(name: string) {
-    const params = new URLSearchParams(window.location.search);
-    params.delete(name);
-    const query = params.toString();
-    window.history.replaceState(null, "", query ? `/modules?${query}` : "/modules");
-    notifyQueryParamChange();
-  }
 
   const modulesQuery = useQuery({ queryKey: ["modules"], queryFn: fetchModules });
   const scanRootsQuery = useQuery({ queryKey: ["scan-roots"], queryFn: fetchScanRoots });
@@ -517,7 +517,7 @@ export default function ModulesPage() {
         className="flex gap-2"
         onSubmit={(e) => {
           e.preventDefault();
-          startScan();
+          void startScan();
         }}
       >
         <Input

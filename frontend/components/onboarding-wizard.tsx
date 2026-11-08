@@ -1,6 +1,6 @@
 "use client";
 
-import { createContext, useContext, useState, useSyncExternalStore } from "react";
+import { createContext, useCallback, useContext, useMemo, useState, useSyncExternalStore } from "react";
 import Link from "next/link";
 import { useQuery } from "@tanstack/react-query";
 import { Button } from "@/components/ui/button";
@@ -200,8 +200,11 @@ export function OnboardingProvider({ children }: { children: React.ReactNode }) 
     }
   }
 
+  const open = useCallback(() => setManualOverride(true), []);
+  const contextValue = useMemo(() => ({ open }), [open]);
+
   return (
-    <OnboardingContext.Provider value={{ open: () => setManualOverride(true) }}>
+    <OnboardingContext.Provider value={contextValue}>
       {children}
       <OnboardingDialog open={isOpen} onOpenChange={handleOpenChange} />
     </OnboardingContext.Provider>

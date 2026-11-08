@@ -209,7 +209,8 @@ async def run_agent(session: AsyncSession, messages: list[dict], audience: str) 
             else:
                 try:
                     result = await tool_fn(session, **args)
-                except Exception as exc:  # noqa: BLE001 - surface the failure to the model, don't crash the chat
+                except Exception as exc:  # noqa: BLE001
+                    # Surface the failure to the model, don't crash the chat.
                     result = {"error": str(exc)}
 
             _collect_sources(tool_name, args, result, sources)

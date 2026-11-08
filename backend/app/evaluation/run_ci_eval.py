@@ -79,7 +79,7 @@ def _markdown(metrics: dict[str, dict[str, float]]) -> str:
     )
 
 
-async def _run_scenario(session, scenario: CiScenario, chunks_by_path: dict[str, int]) -> dict[str, list[int]]:
+async def _run_scenario(session, scenario: CiScenario) -> dict[str, list[int]]:
     expected_vector = _vector_noise_embedding(scenario)
 
     async def _fake_embed(
@@ -119,7 +119,7 @@ async def main() -> None:
             per_mode: dict[str, list[tuple[list[int], set[int]]]] = {"vector": [], "keyword": [], "hybrid": []}
             for scenario in CI_SCENARIOS:
                 relevant = {chunks_by_path[f"{scenario.id}/{scenario.relevant_relative_path}"]}
-                ranked = await _run_scenario(session, scenario, chunks_by_path)
+                ranked = await _run_scenario(session, scenario)
                 for mode, ranked_ids in ranked.items():
                     per_mode[mode].append((ranked_ids, relevant))
 

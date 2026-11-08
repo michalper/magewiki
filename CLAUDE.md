@@ -1311,6 +1311,58 @@ pre-override `3.32.7` (inaccurate). Left open, no action: the 2 remaining npm al
 locked major via `shadcn`/`openapi-typescript`'s own transitive pins, matching the
 existing accepted-risk note above for frontend dev-tooling deps.
 
+**SonarCloud follow-up triage, and why the noise can't be silenced from a committed
+file (recorded 2026-11-08):** after the first SonarCloud pass (commit fixing
+`pythonsecurity:S5145` and the regex-alternation rules, same day), the author asked
+directly to stop the remaining alerts from "showing up in the configuration" — a
+second full pass over all 214 still-open issues, grouped by rule this time rather
+than read one-by-one. Found and fixed six more genuinely real/cheap ones: an unused
+`chunks_by_path` parameter on `_run_scenario()` (`app/evaluation/run_ci_eval.py`,
+dead since `main()` already resolves it before calling in); two `# noqa: BLE001 -
+<reason>` comments (`health.py`, `agent/loop.py`) reformatted to put the reason on
+its own line, since ruff's dialect tolerates trailing text after a noqa code but
+SonarCloud's own suppression-comment-format rule (`python:S7632`) doesn't; a
+redundant `list(edges)` in `circular_dependencies.py` (verified `edges` is never
+mutated during that loop — `visit()` only ever touches `color`/`path`/`cycles`, so
+the defensive copy was never load-bearing); the onboarding-wizard context's `value`
+prop being a fresh object+closure every render (`useMemo`/`useCallback` now memoize
+it); and two accessibility fixes on the dependency-graph page
+(`GraphClient.tsx`) — the connector `<svg>` marked `aria-hidden` (decorative; labels
+are separate HTML nodes overlaid on top), and a clickable node switched from a
+`role="button"` `div` with manual `onKeyDown` to a real `<button>` (native Enter/
+Space activation, confirmed by the existing keydown test still passing unchanged).
+Also added `void` to the one genuine fire-and-forget `startScan()` call
+(`modules/page.tsx`) and hoisted `clearQueryParam` out of the component (pure
+function, no closure over component state) per two more real, trivial findings.
+`ci.yml`'s `pull-requests: write` was scoped from workflow-level down to just the
+one job that actually posts a PR comment (`rag-eval-comment`), since nothing else
+needs it. All verified against the full backend pytest run, ruff, mypy, frontend
+lint/typecheck, and `vitest run --coverage` (100% lines/statements/functions
+unchanged) before committing.
+
+The rest (python:S3776 cognitive complexity on fleet-wide scanner functions,
+typescript:S6759 read-only props, CI/Docker hardening boilerplate, generated-file
+naming, ARQ's required-but-unused `ctx` job parameter, test-style nits, etc.) is the
+same category of accepted noise the first pass already reasoned through — nothing
+new, just more of it once grouped by rule instead of read one issue at a time.
+
+Important constraint discovered this pass: **this project's SonarCloud analysis runs
+in "Automatic Analysis" mode** (the SonarCloud GitHub App scans on every push; no
+`SONAR_TOKEN` secret exists in the repo, confirmed via `gh secret list`, and `ci.yml`
+has no sonar-scanner step). A committed `sonar-project.properties` with
+`sonar.issue.ignore.multicriteria` — the normal way to silence a rule/path
+combination from version control — is **not read at all** in that mode; it only
+takes effect under CI-based analysis (a real `sonar-scanner` step authenticated with
+a token). Writing one anyway would have looked like a fix while doing nothing, so it
+wasn't committed. Silencing the remaining accepted-noise issues for good requires
+one of: (a) the author bulk-resolving them as "Won't Fix"/"False Positive" on
+SonarCloud's own Issues page (a few clicks per rule, filtering by rule key — free on
+the public-repo tier, no token needed), or (b) generating a SonarCloud token and
+adding it as this repo's `SONAR_TOKEN` secret, which would let a future session wire
+up real CI-based analysis with a committed, version-controlled properties file —
+worth doing only if (a) turns out to be too tedious to repeat as new noise
+accumulates.
+
 **First-run onboarding wizard (recorded 2026-11-08):** flagged by the author relaying a
 colleague's confusion — a fellow developer couldn't tell from the running app alone
 whether MageWiki-AI needed a paid API key/subscription just to start using it, even

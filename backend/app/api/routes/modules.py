@@ -327,7 +327,10 @@ async def _scan_sse_stream(path: str, session: AsyncSession) -> AsyncIterator[st
         # against the configured scan roots by this point, but defense in
         # depth costs nothing) — %r's repr() escapes embedded newlines/control
         # characters instead of letting them forge or split fake log lines.
-        logger.exception("unexpected error during a streaming scan of %r", path)
+        # SonarCloud's S5145 still flags this line: its taint-flow check sees
+        # tainted data reaching a log call, not that %r already neutralizes
+        # the CRLF-injection risk the rule is about.
+        logger.exception("unexpected error during a streaming scan of %r", path)  # NOSONAR
         yield format_sse({"event": "error", "detail": "scan failed unexpectedly — check server logs"})
 
 

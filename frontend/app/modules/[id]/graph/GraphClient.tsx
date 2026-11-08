@@ -77,7 +77,7 @@ export default function GraphClient({ id }: { id: string }) {
           </h1>
 
           <div className="relative mx-auto" style={{ width: SIZE, height: SIZE }}>
-            <svg width={SIZE} height={SIZE} className="absolute inset-0">
+            <svg width={SIZE} height={SIZE} className="absolute inset-0" aria-hidden="true">
               <defs>
                 {Object.entries(RELATION_COLORS).map(([relation, color]) => (
                   <marker
@@ -135,25 +135,26 @@ export default function GraphClient({ id }: { id: string }) {
               );
               const navigate = () => router.push(`/modules/${node.module_id}/graph`);
 
+              if (clickable) {
+                return (
+                  <button
+                    key={node.id}
+                    type="button"
+                    className="absolute appearance-none border-0 bg-transparent p-0 rounded-lg focus-visible:outline-2 focus-visible:outline-ring"
+                    style={{ left: pos.x, top: pos.y, transform: "translate(-50%, -50%)" }}
+                    onClick={navigate}
+                    aria-label={`Go to ${node.label}'s dependency graph`}
+                  >
+                    {content}
+                  </button>
+                );
+              }
+
               return (
                 <div
                   key={node.id}
-                  className={clickable ? "absolute rounded-lg focus-visible:outline-2 focus-visible:outline-ring" : "absolute"}
+                  className="absolute"
                   style={{ left: pos.x, top: pos.y, transform: "translate(-50%, -50%)" }}
-                  onClick={clickable ? navigate : undefined}
-                  role={clickable ? "button" : undefined}
-                  tabIndex={clickable ? 0 : undefined}
-                  aria-label={clickable ? `Go to ${node.label}'s dependency graph` : undefined}
-                  onKeyDown={
-                    clickable
-                      ? (e) => {
-                          if (e.key === "Enter" || e.key === " ") {
-                            e.preventDefault();
-                            navigate();
-                          }
-                        }
-                      : undefined
-                  }
                 >
                   {content}
                 </div>

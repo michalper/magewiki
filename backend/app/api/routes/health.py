@@ -24,7 +24,8 @@ async def health(session: AsyncSession = Depends(get_session)) -> dict:
     try:
         await session.execute(text("SELECT 1"))
         db_status = "ok"
-    except Exception:  # noqa: BLE001 - health check must never crash, just report degraded
+    except Exception:  # noqa: BLE001
+        # Health check must never crash, just report degraded.
         db_status = "error"
 
     # Catches the real incident this closes: a container started against a DB
