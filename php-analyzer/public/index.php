@@ -446,7 +446,13 @@ function run_phpunit(string $modulePath, string $phpBinary): array
     // top-level one, and summing attributes at the wrong nesting level would
     // double-count. Counting leaf <testcase> elements directly sidesteps the
     // ambiguity entirely regardless of how deep the suite nesting goes.
-    $testcases = $junit->xpath('//testcase') ?: [];
+    //
+    // Excludes a <testcase> containing a <skipped/> or <incomplete/> child --
+    // PHPUnit emits those without actually running the test body, so
+    // counting them in tests_run inflated the reported count relative to
+    // tests that genuinely executed (passed or failed), the same way
+    // tests_failed already only counts failure/error, not every <testcase>.
+    $testcases = $junit->xpath('//testcase[not(skipped) and not(incomplete)]') ?: [];
     $failingCases = $junit->xpath('//testcase[failure or error]') ?: [];
     $failures = [];
     foreach ($failingCases as $testcase) {
