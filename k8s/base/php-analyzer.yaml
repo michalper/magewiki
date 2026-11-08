@@ -29,3 +29,26 @@ spec:
   ports:
     - port: 8080
       targetPort: 8080
+---
+# Mirrors docker-compose.yml's php_analyzer_net (internal: true) -- run_phpunit()
+# (php-analyzer/public/index.php) is the one place this whole project executes a
+# scanned module's own third-party code rather than only parsing it, and nothing
+# this sidecar does at runtime ever needs the internet (composer install already
+# happened at image build time). An empty egress list with no other rules means
+# "no egress at all" under standard NetworkPolicy semantics -- responses to
+# already-established inbound connections (the actual use case: api/worker calling
+# this Service) are unaffected, only this pod *initiating* new outbound connections
+# is blocked. Verified directly against a real kind cluster (kindnet now enforces
+# NetworkPolicy, confirmed empirically rather than assumed) before trusting this,
+# not just assumed from the Compose-level change.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: php-analyzer-no-egress
+spec:
+  podSelector:
+    matchLabels:
+      app: php-analyzer
+  policyTypes:
+    - Egress
+  egress: []

@@ -1352,14 +1352,45 @@ the real-execution test is gated behind the same `MAGEWIKI_ORDO_FIXTURE_PATH`-pr
 skip every other real-Ordo test already uses, so it never runs in CI, only locally
 where the real fixture exists).
 
-**Known gap, not yet closed:** the Kubernetes manifests (`k8s/`) don't mirror the new
-`php_analyzer_net` egress restriction — no `NetworkPolicy` resource was added
-restricting the `php-analyzer` Deployment's egress. The Dockerfile's own
-`intl`/`pecv-pcov` additions apply identically regardless of deployment target (same
-image), only the Compose-level network isolation is Compose-specific. Flagging here
-rather than building it out — a correctly configured k8s cluster's own default
-network policy is a separate, cluster-level concern this project doesn't control
-either way, and no one has asked for k8s-level parity on this specific control yet.
+**Kubernetes NetworkPolicy parity, closing the gap above (recorded 2026-11-08):** new
+`php-analyzer-no-egress` `NetworkPolicy` (`k8s/base/php-analyzer.yaml`) mirrors
+`docker-compose.yml`'s `php_analyzer_net` (`internal: true`) — an empty `egress: []`
+under `policyTypes: [Egress]` means no egress at all for pods labeled
+`app: php-analyzer`, while responses to already-established inbound connections
+(api/worker calling the Service) are unaffected, same semantics as the Compose
+change.
+
+Before trusting this would do anything at all, checked whether it even could: `kind`'s
+default CNI (kindnet) historically did **not** enforce `NetworkPolicy` — multiple
+community reports (some as recent as mid-2026) say policies are accepted by the API
+server but never actually enforced, while kindnet's own docs claim support, a direct
+contradiction found by searching rather than assumed either way. Resolved
+empirically, not from documentation: spun up a real, throwaway `kind` cluster (`kind
+v0.33.0`, node image `v1.37.0`) with two bare pods and a deny-all-egress policy —
+egress genuinely failed with the policy applied and genuinely came back once it was
+removed. This kind/kindnet version does enforce it.
+
+Verified end-to-end against the real magewiki stack on a real `kind` cluster after
+that (not just the toy pods): `kubectl apply -k k8s/overlays/kind` creates the policy
+cleanly; a real exec into the running `php-analyzer` pod confirmed egress is
+genuinely blocked (`wget` to a real host fails with DNS resolution itself failing,
+identical failure mode to the Compose-level verification); a real call from the `api`
+pod to `php-analyzer`'s `/phpunit` endpoint confirmed ingress is completely
+unaffected; and a real call to `/phpstan` against the committed demo-store fixture
+confirmed the actual static-analysis tools still function normally under the
+restriction (never needed egress to begin with). The `ext-intl`/`php8X-pecl-pcov`
+Dockerfile additions already applied identically regardless of deployment target —
+only this `NetworkPolicy` resource was the actual k8s-specific gap, and it's now
+closed.
+
+Also found live, doing this verification first-hand rather than just reading the
+docs: the README's own Kubernetes quickstart never built or `kind load`ed the
+`php-analyzer` image at all — only backend/frontend — despite `k8s/base/
+php-analyzer.yaml` needing `magewiki-php-analyzer:dev` with `imagePullPolicy:
+IfNotPresent`. Anyone following those steps literally would hit `ImagePullBackOff`
+the moment that Deployment started. Added the missing `docker build`/`kind
+load-docker-image` lines, and added `deployment/php-analyzer` to the final
+`kubectl wait` line (previously only waited for api/worker/web).
 
 ## Working method
 

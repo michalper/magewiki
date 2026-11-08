@@ -247,15 +247,17 @@ kind create cluster --name magewiki --config k8s/overlays/kind/kind-config.yaml
 
 docker build -t magewiki-backend:dev ./backend
 docker build -t magewiki-frontend:dev ./frontend
+docker build -t magewiki-php-analyzer:dev -f php-analyzer/Dockerfile .
 kind load docker-image magewiki-backend:dev --name magewiki
 kind load docker-image magewiki-frontend:dev --name magewiki
+kind load docker-image magewiki-php-analyzer:dev --name magewiki
 
 cp k8s/base/.env.k8s.example k8s/base/.env.k8s   # fill in; gitignored
 
 kubectl apply -k k8s/overlays/kind
 kubectl wait --for=condition=complete job/migrate -n magewiki --timeout=120s
 kubectl rollout restart deployment/api deployment/worker -n magewiki
-kubectl wait --for=condition=available deployment/api deployment/worker deployment/web -n magewiki --timeout=120s
+kubectl wait --for=condition=available deployment/api deployment/worker deployment/web deployment/php-analyzer -n magewiki --timeout=120s
 ```
 
 - API: http://localhost:8080/health — Web UI: http://localhost:3080
