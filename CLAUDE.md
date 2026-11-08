@@ -1085,6 +1085,19 @@ wrapping every page). Verified live in a real browser against the real app, not 
 unit tests: all 4 steps, the live scan-roots data, dismissal persisting across a page
 navigation, and the header button reopening it from any page.
 
+**Real Playwright coverage for the wizard (recorded 2026-11-08):** the manual
+browser verification above was real but one-off — the user explicitly asked for
+durable, real (not mocked) e2e coverage of the wizard specifically. New
+`frontend/tests/e2e/onboarding.spec.ts`, picked up automatically by the existing
+`e2e-smoke` CI job (`npx playwright test` with no path argument already runs every
+spec in `tests/e2e/`, so no workflow change was needed): steps through all 4 steps
+including Back, confirms dismissal survives a real page *reload* (not just in-memory
+state — the actual point of persisting to `localStorage`), confirms the header's "?"
+button reopens it from a completely different page, and confirms the scanning step
+shows either a real configured scan root or the explicit "none configured" message,
+never a blank gap. Runs against the real, fully built app (same `docker compose up`
+the existing smoke test uses), not a mocked API.
+
 ## Working method
 
 - Start each phase in plan mode; propose a plan and wait for approval before writing code.
