@@ -92,7 +92,7 @@ it's enforced and how to resume paused modules once you raise it.
 
 ## Cross-module conflict detection
 
-Every quality check above looks at one module at a time. These three look across
+Every quality check above looks at one module at a time. These five look across
 the whole scanned fleet for a pair of modules that silently fight over the same
 thing — all free, parser-derived, zero AI involved:
 
@@ -110,13 +110,17 @@ thing — all free, parser-derived, zero AI involved:
   column with a different type or nullability; Magento's declarative schema
   merges modules by sequence order, so one definition silently wins.
 - **Circular module dependencies** — module A sequenced after B, after C, after
-  A in `module.xml`. Unlike the other three, this one is a guaranteed break:
+  A in `module.xml`. Unlike the other four, this one is a guaranteed break:
   Magento's own `setup:upgrade` fails outright on a circular sequence.
 
 Each scanned repo also exports a standard **CycloneDX SBOM** (`GET /repos/sbom` or
 the "Download SBOM" button on the Repos page) — one component per module, with its
 composer name, resolved version, license, and purl — ready to feed into
 Dependency-Track or any other SBOM-consuming tool.
+
+A separate per-module **license-risk** check flags a composer.json declaring a
+strong-copyleft license (GPL/AGPL/SSPL) — a real redistribution obligation worth
+reviewing before bundling it into a commercial store.
 
 ## Roadmap
 
