@@ -628,6 +628,22 @@ add composer `scripts`/`autoload`/`config.allow-plugins` in the same pass —
 lower-value, more niche fields for a module catalog's own UI; worth adding
 individually if ever asked for, not speculatively bundled in here.
 
+**Composer scripts/autoload.psr-4/allow-plugins added (recorded
+2026-11-08):** closes the "worth adding individually if ever asked for" note
+right above, once actually asked for. `scripts` stores only the defined
+script *names* (`composer.json` is untrusted third-party input, and a
+script's command content isn't useful for a read-only catalog without
+execution anyway — same reasoning as every other "facts from parsers, not
+execution" decision in this file). `autoload.psr-4` stores the real
+namespace → path map, normalizing Composer's string-or-array path shape to
+one string per namespace. `config.allow-plugins` stores package name →
+whether it's allowed to run as a Composer plugin. New `Module.composer_scripts`/
+`composer_autoload_psr4`/`composer_allow_plugins` columns, exposed on
+`ModuleDetail` and rendered on the module detail page the same way
+`homepage`/`authors`/`php_extensions` already are. Verified against the real
+Ordo_Automation fixture's actual composer.json (real `scripts`/`autoload.psr-4`/
+`config.allow-plugins` entries), not just synthetic fixtures.
+
 **Two more PHPStan settings adopted from a battle-tested internal Magento
 scanner (recorded 2026-11-07):** the user asked directly whether php-analyzer
 should be configurable the same way as "modularz" — a separate, independently
@@ -1019,6 +1035,18 @@ New `license_risk` check_type (migration `0029`), added to
 purely a function of composer.json's own license field. Own "License risks" Stats
 tile (not folded into "Cross-module conflicts" — this isn't a cross-module conflict
 at all, just a per-module compliance signal).
+
+**License-risk prefixes made configurable (recorded 2026-11-08):** the
+`GPL-`/`AGPL-`/`SSPL-` list above was hardcoded, but what counts as "risky" is
+a legal/business judgment call that varies by operator, not a technical fact
+— unlike every other quality check in this file, which flags a concrete,
+certain signal rather than a policy opinion. New `LICENSE_RISK_PREFIXES`
+setting (`.env`, comma-separated, case-insensitive; default unchanged).
+Empty disables the check entirely, for an operator who's already reviewed
+their fleet's licenses and decided it doesn't apply to them.
+`check_license_risk()` keeps the original tuple as its default parameter
+(so the many call sites that don't care still work unchanged) and the
+orchestrator passes `settings.license_risk_prefix_tuple` explicitly.
 
 **Phase 12b decision (recorded 2026-11-06):** this is v1's actual headline feature ("upgrade
 readiness"), deliberately left out of Phase 12 and called out there as "no 'upgrade readiness'
