@@ -746,6 +746,43 @@ against `vendor/magento/module-catalog`'s real `di.xml`, then that one-off
 verification module was deleted again (not something the user asked to add to the
 catalog).
 
+**Plugin-conflict detection (recorded 2026-11-07):** closes the one item named in this
+file's own original vision statement ("Later: cron/webhook, BYOK, Ollama, dependency
+graph, **plugin-conflict detection**, evaluation") that was never actually built, even
+though everything else on that list was. The data was already there — `di_plugins`
+(Phase 1) records `intercepted_type`/`plugin_class`/`sort_order` per module — but di.xml
+never declares *which method* a plugin targets or *which kind* (before/after/around) it
+is, only which class it intercepts; that has to be derived from the plugin class's own
+method names (Magento's own convention: `before<Method>`/`after<Method>`/
+`around<Method>`), which weren't being correlated across modules anywhere. New
+`app/scanner/plugin_conflicts.py` does this: groups every module's plugins (fleet-wide,
+by `repo_root`) by `(intercepted_type, target_method)`, using each plugin class's own
+already-cataloged `php_class_methods` rows to resolve its real hook kind, and flags a
+conflict only when **at least two different modules** are involved and either (a) 2+
+of them define an `around` hook on the same method — arounds can silently suppress each
+other depending on execution order, which is not guaranteed — or (b) they collide on
+the exact same effective `sortOrder` (missing treated as the real Magento default, 0).
+A plugin whose class's methods aren't known at all (never cataloged) is skipped rather
+than guessed at — deterministic-only, consistent with every other parser-derived check
+in this file. New `plugin_conflict` check_type (migration `0022`) reuses the generic
+`module_quality_findings` table unchanged, one row per involved module so it surfaces on
+every affected module's own page, and the new entry in
+`frontend/components/quality-badges.tsx`'s `CHECK_TYPES` (the single source of truth
+that already cascades to modules/repos/stats automatically) was the only frontend
+change needed.
+
+This runs as a new Phase C in `scan_repository_events()`/`_run_scan`, after the
+existing per-module Phase A/B loop — it needs every scanned module's `di_plugins` *and*
+`php_class_methods` already committed (same reason Phase A/B are split at all: a
+plugin's class, and therefore which method it hooks, can live in a different module
+than the one declaring the plugin in di.xml), and it recomputes across the *whole*
+repo_root's already-persisted modules, not just the ones in the current scan, so even a
+single-module scan still catches a conflict against a module scanned previously.
+Verified end-to-end with a real two-module orchestrator-level test (not just the pure
+detection function in isolation): two fixture modules each declaring an `aroundSave`
+plugin on the same shared type produce exactly one `plugin_conflict` finding on each
+module, and a sibling case (different methods, same class) correctly produces none.
+
 ### Backlog: porting ideas from v1
 
 The author previously built a PHP tool for his employer Cognize — the predecessor MageWiki-AI (the open-source Python rewrite) succeeds, referred to here only as "v1" since it's Cognize's property. Phases 9–12 above come from a curated review of what v1 does in production; the full inventory (what's ported, what's skipped as Cognize-internal, and the detailed CVE-check design) lives in `docs/v1-port-roadmap.md`. Nothing here is copied code — concepts only, per the "no client-confidential code" rule below.

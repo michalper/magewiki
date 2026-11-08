@@ -1,5 +1,6 @@
 import asyncio
 import logging
+from collections import defaultdict
 from collections.abc import AsyncIterator
 from dataclasses import asdict, dataclass, field
 from datetime import UTC, datetime
@@ -61,6 +62,7 @@ from app.scanner.module_xml import InvalidModuleXmlError, parse_module_xml
 from app.scanner.multi_store import find_store_roots
 from app.scanner.php_analyzer_client import check_php_static_analysis
 from app.scanner.php_classes import catalog_module_classes
+from app.scanner.plugin_conflicts import PluginRow, detect_plugin_conflicts
 from app.scanner.queue_config import parse_queue_config
 from app.scanner.readme_check import has_readme
 from app.scanner.secrets_scanner import scan_hardcoded_secrets
@@ -420,8 +422,71 @@ async def _run_scan(root: Path, session: AsyncSession) -> AsyncIterator[dict]:
             "warning": outcome.warnings[0] if outcome.warnings else None,
         }
 
+    # Phase C: cross-module plugin-conflict detection. Needs every scanned
+    # module's di_plugins *and* php_class_methods already committed (a
+    # plugin's class, and therefore which method(s) it actually hooks, can
+    # live in a different module than the one declaring the plugin in
+    # di.xml — same reason Phase A/B split exists for role-flagging), so
+    # this can only run after the per-module loop above, not folded into it.
+    # It also recomputes across the *whole* repo_root's already-persisted
+    # modules, not just the ones in this scan, so a single-module scan still
+    # catches a conflict against a module scanned previously.
+    await _detect_and_persist_plugin_conflicts(session, root)
+
     result.tasks_enqueued = tasks_enqueued
     yield {"event": "done", "result": result}
+
+
+async def _detect_and_persist_plugin_conflicts(session: AsyncSession, root: Path) -> None:
+    plugin_rows = (
+        await session.execute(
+            select(
+                DiPlugin.module_id,
+                Module.name,
+                DiPlugin.intercepted_type,
+                DiPlugin.plugin_name,
+                DiPlugin.plugin_class,
+                DiPlugin.sort_order,
+                DiPlugin.disabled,
+            )
+            .join(Module, Module.id == DiPlugin.module_id)
+            .where(Module.repo_root == str(root))
+        )
+    ).all()
+    plugins = [PluginRow(*row) for row in plugin_rows]
+
+    method_rows = (
+        await session.execute(
+            select(PhpClass.fqcn, PhpClassMethod.name)
+            .join(PhpClassMethod, PhpClassMethod.class_id == PhpClass.id)
+            .join(Module, Module.id == PhpClass.module_id)
+            .where(Module.repo_root == str(root))
+        )
+    ).all()
+    class_methods: dict[str, set[str]] = defaultdict(set)
+    for fqcn, method_name in method_rows:
+        class_methods[fqcn].add(method_name)
+
+    findings = detect_plugin_conflicts(plugins, class_methods)
+
+    await session.execute(
+        delete(ModuleQualityFinding).where(
+            ModuleQualityFinding.check_type == "plugin_conflict",
+            ModuleQualityFinding.module_id.in_(select(Module.id).where(Module.repo_root == str(root))),
+        )
+    )
+    for module_id, finding in findings:
+        session.add(
+            ModuleQualityFinding(
+                module_id=module_id,
+                check_type=finding.check_type,
+                severity=finding.severity,
+                file_path=finding.file_path,
+                line=finding.line,
+                message=finding.message,
+            )
+        )
+    await session.commit()
 
 
 _ModuleChildModel = (
