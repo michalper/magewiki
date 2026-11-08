@@ -1385,6 +1385,58 @@ real content through a `{...props}` spread Sonar's static check can't see
 through) — added to `sonar-project.properties` as e44/e45 rather than left
 open.
 
+**Observability: structured request logging + Prometheus metrics (recorded
+2026-11-09):** the app had none at all -- no per-request correlation in logs,
+no metrics beyond what Codecov reports about test coverage. New
+`app/observability.py` threads a per-request id (`X-Request-ID`, generated if
+the caller doesn't send one) through every log line via a `logging.Filter`
+reading a `contextvar`, and exposes `GET /metrics` (Prometheus text format):
+HTTP request count/duration labeled by the route's own path template (not the
+raw URL, so a module id in the path doesn't create one series per module);
+`llm_calls_total`/`llm_call_cost_usd` labeled by model + call_type
+(completion/embedding/chat), hooked into the one real shared choke point each
+cost center already funnels through (`analyzer/client.py`'s
+`_result_from_response`, `embeddings.py`'s `embed_text`, `agent/loop.py`'s
+`_turn_cost`) rather than scattered at every call site; `llm_monthly_spend_usd`,
+a DB-backed gauge set at scrape time from the same query `budget.py`'s
+`is_budget_exceeded()` already runs (extracted into a shared
+`get_monthly_spend_usd()` helper both now call); and `scan_duration_seconds`,
+hooked into `_scan_response()` (shared by `/scan` and `/scan/stream`).
+
+Found and fixed two pre-existing coverage gaps while verifying this against a
+clean, single-invocation full suite run (the project's own 100%-coverage gate
+never actually enforces via `pytest`/`--cov-fail-under` — it's enforced via
+Codecov's project+patch targets, so a tiny, real gap like this could have sat
+unnoticed): `composer_conflicts.py`'s self-pair skip inside the pairwise loop
+was real and reachable (a module requiring the same package twice) but
+untested — the existing "same module twice" test had only one other distinct
+module_id, so the outer "fewer than 2 distinct requirers" guard returned
+before the pairwise loop was ever reached; added a three-row test that
+actually forces it. `circular_dependencies.py`'s analogous guard is,
+after working through the proof, mathematically unreachable given how
+`edges`/`name_to_id` are built from the same loop over the same rows — marked
+`pragma: no cover` with the reasoning inline rather than writing a misleading
+test to force it.
+
+Verified against the real, **rebuilt** (not just bind-mounted) `api`/`worker`
+images, which surfaced an unrelated, pre-existing operational gotcha: the
+`migrate` one-shot service has its own separate image (same Dockerfile/context
+as `api`/`worker`, but no `image:` key shared between them, so Compose builds
+three independent images) with no bind mount, and it turned out to be stale
+from well before migration `0031` ever existed — `docker compose build api
+worker` didn't rebuild it, since it's a genuinely separate image. `docker
+compose up -d api worker` failed with "Can't locate revision identified by
+'0031'" until `migrate` was rebuilt explicitly too. Not caused by this
+session's changes (nothing here touched migrations), only surfaced because
+this was the first non-bind-mounted full rebuild in a while — `api`/`worker`
+normally hot-reload via their bind mount and never need rebuilding, so
+`migrate`'s own staleness had no way to show up until something finally
+forced a real `docker compose up` through it again. After the fix: `/health`
+reports `schema: "ok"` at revision `0031`, `/metrics` returns real Prometheus
+text including a real `llm_monthly_spend_usd` value from the live DB, and
+`filelock` is confirmed at the CVE-fixed `4.2.9` (the Dockerfile's own
+post-`poetry install` override, re-verified still correct after rebuild).
+
 **First-run onboarding wizard (recorded 2026-11-08):** flagged by the author relaying a
 colleague's confusion — a fellow developer couldn't tell from the running app alone
 whether MageWiki-AI needed a paid API key/subscription just to start using it, even
