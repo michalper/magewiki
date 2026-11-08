@@ -52,6 +52,21 @@ def test_is_within_scan_roots_resolves_dot_dot_traversal(tmp_path: Path):
     assert s.is_within_scan_roots(traversal_path) is False
 
 
+def test_license_risk_prefix_tuple_parses_the_default():
+    s = Settings(license_risk_prefixes="GPL-,AGPL-,SSPL-")
+    assert s.license_risk_prefix_tuple == ("GPL-", "AGPL-", "SSPL-")
+
+
+def test_license_risk_prefix_tuple_uppercases_and_strips_whitespace():
+    s = Settings(license_risk_prefixes=" gpl-, lgpl- ")
+    assert s.license_risk_prefix_tuple == ("GPL-", "LGPL-")
+
+
+def test_license_risk_prefix_tuple_empty_when_unconfigured():
+    s = Settings(license_risk_prefixes="")
+    assert s.license_risk_prefix_tuple == ()
+
+
 def test_is_within_scan_roots_fails_closed_when_resolve_raises_oserror(tmp_path: Path, monkeypatch):
     """Path.resolve() can raise OSError for a real, pathological input (e.g. a
     component exceeding the filesystem's max name length) -- must fail closed

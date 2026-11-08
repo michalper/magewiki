@@ -1003,7 +1003,9 @@ async def _persist_module(
             module.phpunit_coverage_percent = phpunit_result.coverage_percent
         quality_findings = [
             *composer_completeness_findings(pm.composer),
-            *check_license_risk(pm.composer.license if pm.composer else None),
+            *check_license_risk(
+                pm.composer.license if pm.composer else None, settings.license_risk_prefix_tuple
+            ),
             *scan_deprecated_annotations(pm.discovered.root),
             *scan_hardcoded_secrets(pm.discovered.root),
             *session_findings,

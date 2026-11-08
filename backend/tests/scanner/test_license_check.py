@@ -57,3 +57,17 @@ def test_one_finding_even_with_multiple_risky_licenses():
     assert len(findings) == 1
     assert "GPL-3.0" in findings[0].message
     assert "AGPL-3.0" in findings[0].message
+
+
+def test_empty_risky_prefixes_disables_the_check_entirely():
+    assert check_license_risk(["GPL-3.0"], risky_prefixes=()) == []
+
+
+def test_custom_risky_prefixes_override_the_default():
+    # LGPL isn't risky by default, but an operator can opt it in.
+    findings = check_license_risk(["LGPL-3.0"], risky_prefixes=("LGPL-",))
+    assert len(findings) == 1
+    assert "LGPL-3.0" in findings[0].message
+
+    # With a custom list, GPL is no longer flagged unless it's in that list.
+    assert check_license_risk(["GPL-3.0"], risky_prefixes=("LGPL-",)) == []

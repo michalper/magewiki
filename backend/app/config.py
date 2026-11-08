@@ -38,10 +38,22 @@ class Settings(BaseSettings):
     magewiki_scan_root_1: str = ""
     magewiki_scan_root_2: str = ""
     magewiki_scan_root_3: str = ""
+    # What counts as a "risky" (strong-copyleft) license for
+    # app/scanner/license_check.py's license_risk finding is a legal/business
+    # judgment call that varies by operator -- GPL/AGPL/SSPL is just the
+    # project's own default (see that module's own comment for why). Empty
+    # disables the check entirely rather than falling back to the default --
+    # an operator who's already reviewed their fleet's licenses and decided
+    # none of this matters to them should be able to turn it off outright.
+    license_risk_prefixes: str = "GPL-,AGPL-,SSPL-"
 
     @property
     def cors_origin_list(self) -> list[str]:
         return [origin.strip() for origin in self.cors_origins.split(",") if origin.strip()]
+
+    @property
+    def license_risk_prefix_tuple(self) -> tuple[str, ...]:
+        return tuple(p.strip().upper() for p in self.license_risk_prefixes.split(",") if p.strip())
 
     @property
     def scan_roots(self) -> list[str]:
