@@ -113,6 +113,11 @@ thing — all free, parser-derived, zero AI involved:
   A in `module.xml`. Unlike the other three, this one is a guaranteed break:
   Magento's own `setup:upgrade` fails outright on a circular sequence.
 
+Each scanned repo also exports a standard **CycloneDX SBOM** (`GET /repos/sbom` or
+the "Download SBOM" button on the Repos page) — one component per module, with its
+composer name, resolved version, license, and purl — ready to feed into
+Dependency-Track or any other SBOM-consuming tool.
+
 ## Roadmap
 
 - [x] **Phase 0** — Repo skeleton, docker-compose, migrations
