@@ -294,13 +294,26 @@ switching embedding models never had a safe automatic data-migration path anyway
 (different models produce incomparable vector spaces). `PATCH /settings/llm` now probes
 a changed `embedding_model`'s *real* output dimension with one tiny live call
 (`embed_text`, not a hardcoded model→dimension lookup table that would go stale) and
-rejects a mismatch with a 400 before saving, instead of only failing later. **Still
-explicitly not solved**: no column tracks which model produced an existing chunk's
-embedding, and there's no automatic re-embed-everything workflow when the model
-changes — confirmed via research that this gap already existed before this fix (model
-switching has always silently left old embeddings in a stale vector space); closing it
-is materially bigger scope than what was needed to unblock the eval and is deferred,
-not forgotten.
+rejects a mismatch with a 400 before saving, instead of only failing later.
+
+**Re-embed workflow on embedding-model change (recorded 2026-11-07):** closes the gap
+flagged above. `PATCH /settings/llm` now detects an *actual* change to the effective
+embedding model (not just the field being present in the request body — re-sending
+today's already-effective value, e.g. a form that always submits every field, must not
+trigger anything) and, if any module is `up_to_date`, requires a new `confirm_reembed:
+true` flag before proceeding — re-embedding a large fleet is real, billable work (the
+same budget-consciousness this file already treats CVE/PHPStan checks as exempt from,
+since those cost nothing), so this is never triggered silently just because
+`embedding_model` changed. With confirmation, every `up_to_date` module flips to
+`embedding` and gets a fresh `embed_chunks` job enqueued — a distinct `_job_id`
+(`embed:{id}:{hash}:reembed:{model}`), not the one `synthesize_module` would normally
+use for that same `(module_id, current_hash)` pair, since the module's own hash hasn't
+changed here and reusing that job_id risks ARQ treating it as a duplicate of an
+already-completed job and silently skipping it. No new per-chunk model/dimension
+tracking column was added — a cache miss under the new model's name already triggers a
+real re-embed call per chunk (`analysis_cache` is keyed by `(content_hash, model, ...)`
+), so this only had to get each module's own job back into the queue, not change the
+caching mechanism itself.
 
 **Security review findings fixed (recorded 2026-11-06):** a full-project `/security-review`
 (initial scan + independent verification sub-agents) found two real, confirmed HIGH

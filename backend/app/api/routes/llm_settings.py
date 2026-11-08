@@ -1,12 +1,14 @@
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.analyzer.embeddings import embed_text
 from app.config import settings
 from app.db import get_session
-from app.models import RuntimeLlmConfig
+from app.models import Module, RuntimeLlmConfig
 from app.runtime_config import resolve_embedding_config, resolve_llm_config
+from app.tasks.queue import get_arq_pool
 
 router = APIRouter()
 
@@ -18,6 +20,10 @@ class LlmSettingsResponse(BaseModel):
     embedding_model: str
     embedding_key_configured: bool
     embedding_api_base: str | None
+    # Set only on a PATCH that actually triggered a re-embed (None otherwise,
+    # including on every GET) -- how many already up-to-date modules were just
+    # queued to re-embed under the new model.
+    modules_queued_for_reembed: int | None = None
 
 
 class LlmSettingsUpdate(BaseModel):
@@ -27,6 +33,13 @@ class LlmSettingsUpdate(BaseModel):
     embedding_model: str | None = None
     embedding_api_key: str | None = None
     embedding_api_base: str | None = None
+    # Switching the embedding model leaves every already-embedded chunk in the
+    # old model's vector space -- stale, but silently so, since nothing else
+    # tracks which model produced a chunk's embedding. Re-embedding a large
+    # fleet is real, billable work (not free like the parser-only checks), so
+    # this is required explicitly rather than triggered automatically just
+    # because embedding_model appeared in the request body.
+    confirm_reembed: bool = False
 
 
 async def _effective_response(session: AsyncSession, row: RuntimeLlmConfig | None) -> LlmSettingsResponse:
@@ -71,6 +84,12 @@ async def update_llm_settings(
     # the check is about what was ALREADY stored, not what this request is setting.
     had_llm_key = bool(row.llm_api_key)
     had_embedding_key = bool(row.embedding_api_key)
+    # Must be read before any mutation below -- row is the same object
+    # resolve_embedding_config() would return again later, so it reflects
+    # whatever row.embedding_model is set to *at the time it's called*, not a
+    # snapshot. Captured as a plain string here so the before/after comparison
+    # further down is actually comparing two different points in time.
+    old_embedding_model = (await resolve_embedding_config(session)).model
 
     if "llm_api_base" in fields_set and "llm_api_key" not in fields_set and had_llm_key:
         raise HTTPException(
@@ -102,6 +121,7 @@ async def update_llm_settings(
     if "embedding_api_base" in fields_set:
         row.embedding_api_base = update.embedding_api_base
 
+    reembed_modules: list[Module] = []
     if "embedding_model" in fields_set:
         # chunks.embedding is a fixed-dimension pgvector column (see
         # alembic/versions/0013_configurable_embedding_dimension.py) — switching to a
@@ -130,6 +150,50 @@ async def update_llm_settings(
                 ),
             )
 
+        # Same dimension or not, a genuinely different model still leaves every
+        # already-embedded chunk in the old model's vector space — silently
+        # stale, since nothing tracks which model produced a chunk's embedding.
+        # Only matters if the model actually changed (not e.g. an identical
+        # value re-sent, or every other field changing with embedding_model
+        # merely present-but-unchanged in the body).
+        if effective.model != old_embedding_model:
+            reembed_modules = list(
+                (await session.scalars(select(Module).where(Module.state == "up_to_date"))).all()
+            )
+            if reembed_modules and not update.confirm_reembed:
+                await session.rollback()
+                raise HTTPException(
+                    status_code=400,
+                    detail=(
+                        f"changing embedding_model from {old_embedding_model} to {effective.model} would leave "
+                        f"{len(reembed_modules)} already-embedded module(s) in the old model's vector space until "
+                        "re-embedded — resend with confirm_reembed: true to proceed (this re-runs real, billable "
+                        "embedding calls for all of them)."
+                    ),
+                )
+            for m in reembed_modules:
+                m.state = "embedding"
+
     await session.commit()
     await session.refresh(row)
-    return await _effective_response(session, row)
+
+    modules_queued = None
+    if reembed_modules:
+        pool = await get_arq_pool()
+        for m in reembed_modules:
+            await pool.enqueue_job(
+                "embed_chunks",
+                m.id,
+                m.current_hash,
+                # Distinct from the job_id synthesize_module would normally use
+                # for this same (module_id, current_hash) pair — the module's
+                # own hash hasn't changed here, only the global embedding
+                # model, so reusing that job_id risks ARQ treating this as a
+                # duplicate of an already-completed job and silently skipping it.
+                _job_id=f"embed:{m.id}:{m.current_hash}:reembed:{effective.model}",
+            )
+        modules_queued = len(reembed_modules)
+
+    response = await _effective_response(session, row)
+    response.modules_queued_for_reembed = modules_queued
+    return response

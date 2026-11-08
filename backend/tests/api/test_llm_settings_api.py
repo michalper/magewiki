@@ -1,3 +1,5 @@
+import uuid
+from datetime import UTC, datetime
 from decimal import Decimal
 
 import pytest
@@ -8,7 +10,8 @@ from app.analyzer.client import LlmCallResult
 from app.config import settings
 from app.db import async_session_factory
 from app.main import app
-from app.models import RuntimeLlmConfig
+from app.models import Module, RuntimeLlmConfig
+from app.tasks.queue import get_arq_pool
 
 
 @pytest.fixture(autouse=True)
@@ -239,3 +242,101 @@ async def test_patch_allows_setting_embedding_api_base_alone_with_no_key_stored_
 
     assert response.status_code == 200
     assert response.json()["embedding_api_base"] == "http://host.docker.internal:11434"
+
+
+@pytest.fixture
+async def up_to_date_module():
+    suffix = uuid.uuid4().hex[:8]
+    async with async_session_factory() as session:
+        module = Module(
+            repo_root=f"/tmp/reembed-{suffix}",
+            name=f"Vendor_Reembed_{suffix}",
+            path=".",
+            source_type="standalone",
+            state="up_to_date",
+            current_hash=f"hash-{suffix}",
+            last_scanned_at=datetime(2026, 1, 1, tzinfo=UTC),
+        )
+        session.add(module)
+        await session.commit()
+        await session.refresh(module)
+    yield module
+    async with async_session_factory() as session:
+        await session.execute(delete(Module).where(Module.id == module.id))
+        await session.commit()
+
+
+@pytest.mark.asyncio
+async def test_patch_changing_embedding_model_without_confirmation_is_rejected_when_modules_are_affected(
+    up_to_date_module,
+):
+    transport = ASGITransport(app=app)
+    async with AsyncClient(transport=transport, base_url="http://test") as client:
+        response = await client.patch("/settings/llm", json={"embedding_model": "openai/text-embedding-3-large"})
+        unchanged = await client.get("/settings/llm")
+
+    assert response.status_code == 400
+    assert "confirm_reembed" in response.json()["detail"]
+    assert "1 " in response.json()["detail"]
+    assert unchanged.json()["embedding_model"] == settings.embedding_model  # rejected, not persisted
+
+    async with async_session_factory() as session:
+        refreshed = await session.get(Module, up_to_date_module.id)
+        assert refreshed.state == "up_to_date"  # untouched
+
+
+@pytest.mark.asyncio
+async def test_patch_changing_embedding_model_with_confirmation_requeues_affected_modules(up_to_date_module):
+    transport = ASGITransport(app=app)
+    async with AsyncClient(transport=transport, base_url="http://test") as client:
+        response = await client.patch(
+            "/settings/llm",
+            json={"embedding_model": "openai/text-embedding-3-large", "confirm_reembed": True},
+        )
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["embedding_model"] == "openai/text-embedding-3-large"
+    assert body["modules_queued_for_reembed"] == 1
+
+    async with async_session_factory() as session:
+        refreshed = await session.get(Module, up_to_date_module.id)
+        assert refreshed.state == "embedding"
+
+    pool = await get_arq_pool()
+    queued_ids = {job.job_id for job in await pool.queued_jobs()}
+    assert (
+        f"embed:{up_to_date_module.id}:{up_to_date_module.current_hash}:reembed:openai/text-embedding-3-large"
+        in queued_ids
+    )
+
+
+@pytest.mark.asyncio
+async def test_patch_setting_embedding_model_to_its_own_current_value_does_not_require_confirmation(
+    up_to_date_module,
+):
+    """embedding_model being present in the request body isn't itself the
+    trigger -- only an actual change is. Re-sending today's already-effective
+    value (e.g. a form that always submits every field) must not demand
+    confirm_reembed or touch any module.
+    """
+    transport = ASGITransport(app=app)
+    async with AsyncClient(transport=transport, base_url="http://test") as client:
+        response = await client.patch("/settings/llm", json={"embedding_model": settings.embedding_model})
+
+    assert response.status_code == 200
+    assert response.json()["modules_queued_for_reembed"] is None
+
+    async with async_session_factory() as session:
+        refreshed = await session.get(Module, up_to_date_module.id)
+        assert refreshed.state == "up_to_date"
+
+
+@pytest.mark.asyncio
+async def test_patch_changing_embedding_model_with_no_affected_modules_needs_no_confirmation():
+    transport = ASGITransport(app=app)
+    async with AsyncClient(transport=transport, base_url="http://test") as client:
+        response = await client.patch("/settings/llm", json={"embedding_model": "openai/text-embedding-3-large"})
+
+    assert response.status_code == 200
+    assert response.json()["modules_queued_for_reembed"] is None
