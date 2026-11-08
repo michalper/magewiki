@@ -70,6 +70,7 @@ describe("StatsPage", () => {
           phpmetrics_issue: 2,
           composer_conflict: 1,
           db_schema_conflict: 1,
+          circular_dependency: 1,
         },
       }),
     ]);
@@ -93,12 +94,12 @@ describe("StatsPage", () => {
       "/modules?finding=phpstan_error,phpmd_issue,phpcs_violation,php_compat_issue,phpmetrics_issue",
     );
 
-    // Cross-module conflicts: plugin_conflict 1 + composer_conflict 1 + db_schema_conflict 1 = 3
+    // Cross-module conflicts: plugin_conflict 1 + composer_conflict 1 + db_schema_conflict 1 + circular_dependency 1 = 4
     const conflictsTile = screen.getByText("Cross-module conflicts").closest("a")!;
-    expect(conflictsTile).toHaveTextContent("3");
+    expect(conflictsTile).toHaveTextContent("4");
     expect(conflictsTile).toHaveAttribute(
       "href",
-      "/modules?finding=plugin_conflict,composer_conflict,webapi_route_conflict,db_schema_conflict",
+      "/modules?finding=plugin_conflict,composer_conflict,webapi_route_conflict,db_schema_conflict,circular_dependency",
     );
   });
 

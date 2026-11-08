@@ -109,6 +109,9 @@ thing — all free, parser-derived, zero AI involved:
 - **db_schema.xml column conflicts** — two modules declaring the same database
   column with a different type or nullability; Magento's declarative schema
   merges modules by sequence order, so one definition silently wins.
+- **Circular module dependencies** — module A sequenced after B, after C, after
+  A in `module.xml`. Unlike the other three, this one is a guaranteed break:
+  Magento's own `setup:upgrade` fails outright on a circular sequence.
 
 ## Roadmap
 

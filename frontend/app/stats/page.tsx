@@ -236,7 +236,8 @@ export default function StatsPage() {
         sumByCheckType(modules, "plugin_conflict") +
         sumByCheckType(modules, "composer_conflict") +
         sumByCheckType(modules, "webapi_route_conflict") +
-        sumByCheckType(modules, "db_schema_conflict"),
+        sumByCheckType(modules, "db_schema_conflict") +
+        sumByCheckType(modules, "circular_dependency"),
     }),
     [modules]
   );
@@ -331,8 +332,14 @@ export default function StatsPage() {
               label="Cross-module conflicts"
               value={totals.crossModuleConflicts}
               accent={totals.crossModuleConflicts > 0 ? palette.status.warning : undefined}
-              description="Two modules silently fighting over the same plugin hook, Composer package version, REST route, or database column — each shows up on both modules involved."
-              findingTypes={["plugin_conflict", "composer_conflict", "webapi_route_conflict", "db_schema_conflict"]}
+              description="Two modules silently fighting over the same plugin hook, Composer package version, REST route, or database column — or a circular module.xml sequence that breaks setup:upgrade outright. Each shows up on every module involved."
+              findingTypes={[
+                "plugin_conflict",
+                "composer_conflict",
+                "webapi_route_conflict",
+                "db_schema_conflict",
+                "circular_dependency",
+              ]}
             />
           </div>
 

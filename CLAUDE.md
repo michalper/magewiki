@@ -861,6 +861,32 @@ today — its `StatTile`s are a separately hand-maintained list, not generic ove
 correctly on the Modules page; see the dedicated note above. `db_schema_conflict` is
 folded into that same new "Cross-module conflicts" tile from day one.
 
+**Circular module.xml dependency detection (recorded 2026-11-08):** the first of a
+second round of roadmap ideas the user asked to brainstorm, then work through "po
+kolei" again, once the original four cross-module conflict checks were done. Module A
+sequenced after B, after C, after A. Unlike the other four checks in this family,
+this one is a guaranteed break, not an ambiguous-but-working merge: Magento's own
+`setup:upgrade` explicitly detects a circular `<sequence>` and fails outright
+("Circular sequence reference ... detected") — the store genuinely can't be installed
+or upgraded until the cycle is broken. Reuses `module_dependencies` (already
+populated from `module.xml`'s `<sequence>`, and already the data source for the
+dependency graph) with zero schema change.
+
+`app/scanner/circular_dependencies.py`'s `detect_circular_dependencies()` builds the
+dependency graph purely from `ModuleDependency` rows (no separate "every module in
+the repo" query needed — a node with no outgoing `<sequence>` edge of its own can
+never close a cycle, so it's structurally irrelevant to this check either way) and
+finds cycles via a standard white/gray/black DFS, reporting one representative path
+per distinct cycle rather than enumerating every possible cycle in a graph with
+multiple overlapping ones — same "flag a concrete, certain conflict" pragmatism as
+the other checks in this file, not an attempt at exhaustive graph analysis. Despite
+being a guaranteed break rather than an ambiguous merge, kept severity `"warning"`
+for consistency with the rest of the cross-module-conflict family (all four existing
+checks already default new check types to `"warning"` per the Phase 12 decision, and
+there's still no "blocking" gate concept for this family specifically). New
+`circular_dependency` check_type (migration `0028`), folded into the "Cross-module
+conflicts" Stats tile alongside the other four.
+
 **Phase 12b decision (recorded 2026-11-06):** this is v1's actual headline feature ("upgrade
 readiness"), deliberately left out of Phase 12 and called out there as "no 'upgrade readiness'
 gate concept yet." Live-tested during planning: Magento's own packages

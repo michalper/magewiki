@@ -22,6 +22,7 @@ export const CHECK_TYPES: { key: string; severity: Severity; label: (n: number) 
   { key: "composer_conflict", severity: "warning", label: (n) => `${n} composer-conflict${n === 1 ? "" : "s"}` },
   { key: "webapi_route_conflict", severity: "warning", label: (n) => `${n} route-conflict${n === 1 ? "" : "s"}` },
   { key: "db_schema_conflict", severity: "warning", label: (n) => `${n} schema-conflict${n === 1 ? "" : "s"}` },
+  { key: "circular_dependency", severity: "warning", label: (n) => `${n} circular-dep${n === 1 ? "" : "s"}` },
 ];
 
 export function sumFindingCounts(findingCounts: Record<string, number>): number {

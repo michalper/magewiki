@@ -33,6 +33,7 @@ from app.models import (
     WebapiRoute,
 )
 from app.scanner.abandoned_dependencies import check_abandoned_outdated
+from app.scanner.circular_dependencies import ModuleDependencyRow, detect_circular_dependencies
 from app.scanner.composer_conflicts import ComposerRequirementRow, detect_composer_conflicts
 from app.scanner.composer_json import composer_completeness_findings, parse_composer_json
 from app.scanner.config_php import parse_config_php
@@ -466,6 +467,9 @@ async def _run_scan(root: Path, session: AsyncSession) -> AsyncIterator[dict]:
     # Same reasoning again: needs every scanned module's db_columns already
     # committed, recomputes across the whole repo_root.
     await _detect_and_persist_db_schema_conflicts(session, root)
+    # Same reasoning again: needs every scanned module's dependencies already
+    # committed, recomputes across the whole repo_root.
+    await _detect_and_persist_circular_dependencies(session, root)
 
     result.tasks_enqueued = tasks_enqueued
     yield {"event": "done", "result": result}
@@ -621,6 +625,38 @@ async def _detect_and_persist_db_schema_conflicts(session: AsyncSession, root: P
     await session.execute(
         delete(ModuleQualityFinding).where(
             ModuleQualityFinding.check_type == "db_schema_conflict",
+            ModuleQualityFinding.module_id.in_(select(Module.id).where(Module.repo_root == str(root))),
+        )
+    )
+    for module_id, finding in findings:
+        session.add(
+            ModuleQualityFinding(
+                module_id=module_id,
+                check_type=finding.check_type,
+                severity=finding.severity,
+                file_path=finding.file_path,
+                line=finding.line,
+                message=finding.message,
+            )
+        )
+    await session.commit()
+
+
+async def _detect_and_persist_circular_dependencies(session: AsyncSession, root: Path) -> None:
+    dependency_rows = (
+        await session.execute(
+            select(ModuleDependency.module_id, Module.name, ModuleDependency.depends_on_name)
+            .join(Module, Module.id == ModuleDependency.module_id)
+            .where(Module.repo_root == str(root))
+        )
+    ).all()
+    deps = [ModuleDependencyRow(*row) for row in dependency_rows]
+
+    findings = detect_circular_dependencies(deps)
+
+    await session.execute(
+        delete(ModuleQualityFinding).where(
+            ModuleQualityFinding.check_type == "circular_dependency",
             ModuleQualityFinding.module_id.in_(select(Module.id).where(Module.repo_root == str(root))),
         )
     )
