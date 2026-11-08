@@ -51,6 +51,10 @@ jobs:
           files: backend/coverage.xml
           flags: backend
           fail_ci_if_error: false
+      - uses: actions/upload-artifact@v4
+        with:
+          name: backend-coverage
+          path: backend/coverage.xml
       - name: pip-audit (dependency vulnerability scan)
         # Non-blocking for now: 2 of today's 3 findings (starlette, filelock) are
         # transitive and blocked by fastapi's own <0.47.0 pin — fixing them needs a
@@ -81,6 +85,10 @@ jobs:
           files: frontend/coverage/lcov.info
           flags: frontend
           fail_ci_if_error: false
+      - uses: actions/upload-artifact@v4
+        with:
+          name: frontend-coverage
+          path: frontend/coverage/lcov.info
       - run: npm run build
       - run: npm audit --audit-level=high
 
@@ -95,11 +103,20 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
   sonar:
+    needs: [backend, frontend]
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
         with:
           fetch-depth: 0 # SonarCloud wants full history, not a shallow clone
+      - uses: actions/download-artifact@v4
+        with:
+          name: backend-coverage
+          path: backend
+      - uses: actions/download-artifact@v4
+        with:
+          name: frontend-coverage
+          path: frontend/coverage
       - uses: SonarSource/sonarqube-scan-action@v8
         env:
           SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
