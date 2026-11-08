@@ -21,6 +21,10 @@ How to pick tools:
   get_module and/or read_file on the matches for detail and exact citation.
 - "Show all payment modules", "how many X do we have" -> list_modules (search_modules top-k is NOT guaranteed
   complete for counting questions).
+- "Which modules have a known CVE / a hardcoded secret / a plugin conflict / failing PHPUnit tests / any other
+  quality-check finding" -> list_modules with check_type set (see its own tool description for the full list of
+  valid check_type values). Never try to answer this from search_modules — quality findings are not indexed for
+  semantic search, and completeness matters for this kind of question exactly the way it does for counting.
 - "Who listens to this event?" -> find_by_event. "Who overrides/plugins this class?" -> find_by_class.
 - "What does X depend on / what depends on X?" -> get_dependencies.
 

@@ -1392,6 +1392,41 @@ the moment that Deployment started. Added the missing `docker build`/`kind
 load-docker-image` lines, and added `deployment/php-analyzer` to the final
 `kubectl wait` line (previously only waited for api/worker/web).
 
+**README screenshots refreshed (recorded 2026-11-08):** `docs/screenshots/*.jpg` and
+the Wiki's own `images/*` were last captured 2026-11-07, before this session's
+badges/checks/Stats tiles shipped — `stats.jpg` in particular was missing 3 whole
+tiles (Cross-module conflicts, License risks, PHPUnit test failures), exactly the
+kind of "repo undersells what it actually does" gap a portfolio project can't afford.
+Recaptured against the real, currently-scanned fleet (790 modules across 3 real
+stores) for `modules.jpg`/`stats.jpg`/`graph.jpg`/`repos.png`/`module-page.jpg`/
+`quality-findings.jpg`/`settings.jpg`, plus a new onboarding-wizard screenshot
+replacing the old bare-input-box `scan-box.png`. `chat.jpg` deliberately left
+unchanged: recapturing it hit the real monthly LLM budget cap mid-session — the
+budget guardrail correctly doing its job, not a reason to spend more real API budget
+on a screenshot refresh. Two format fixes found while processing: `repos.png` and
+`scan-box.png` were already actual JPEG content saved under a `.png` extension before
+this session touched them — re-encoded both to genuine PNG rather than perpetuating
+the mismatch.
+
+**Agent SQL tool for quality findings (recorded 2026-11-08):** a real gap surfaced by
+a full-project survey asked for explicitly to find "what's next" ideas: `list_modules`
+(the one tool CLAUDE.md's own routing table already designates for "Show all payment
+modules"/"how many X" enumeration questions, since top-k search can't guarantee
+completeness) had no way to filter by `check_type` at all — with 18 check types now
+existing (5 added just this session), nothing let a chat user ask "which modules have
+a known CVE?" or "show modules with failing PHPUnit tests" despite the data already
+being fully queryable. Added a `check_type` parameter (a plain `Module.id IN
+(subquery)` filter, not a join — a module can have several findings of the same
+check_type, which a join would duplicate into repeated rows) plus a per-module
+`finding_count` in the response, present only when `check_type` is set. The tool
+schema's own description lists all 18 valid values directly (no canonical Python-side
+list existed anywhere to reuse — the authoritative list lives only in the
+`CheckConstraint` text) so the model knows which strings to pass without guessing.
+`app/agent/prompt.py`'s "how to pick tools" routing guidance updated to explicitly
+steer this question class to `list_modules(check_type=...)` rather than
+`search_modules` — quality findings were never indexed for semantic search, and
+completeness matters here exactly the way it already does for counting questions.
+
 ## Working method
 
 - Start each phase in plan mode; propose a plan and wait for approval before writing code.

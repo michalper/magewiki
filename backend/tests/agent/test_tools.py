@@ -16,7 +16,7 @@ from app.agent.tools import (
     search_modules,
 )
 from app.analyzer.prompts import MODULE_SYNTHESIS_PROMPT_VERSION
-from app.models import AnalysisCache, Chunk, Module, ModuleDocument
+from app.models import AnalysisCache, Chunk, Module, ModuleDocument, ModuleQualityFinding
 from tests.conftest import scan_demo_store
 
 
@@ -323,4 +323,57 @@ async def test_list_modules_filters_by_enabled_and_integration(db_session):
     assert disabled_module.name not in integration_names
 
     await db_session.execute(delete(Module).where(Module.id.in_([enabled_module.id, disabled_module.id])))
+    await db_session.commit()
+
+
+@pytest.mark.asyncio
+async def test_list_modules_filters_by_check_type_and_reports_its_finding_count(db_session):
+    suffix = uuid.uuid4().hex[:8]
+    with_cve = await _make_bare_module(db_session, f"{suffix}-cve", name=f"WithCve_{suffix}")
+    without_cve = await _make_bare_module(db_session, f"{suffix}-nocve", name=f"WithoutCve_{suffix}")
+
+    db_session.add_all(
+        [
+            ModuleQualityFinding(
+                module_id=with_cve.id,
+                check_type="security_advisory",
+                severity="blocking",
+                file_path="composer.json",
+                line=None,
+                message="CVE-1",
+            ),
+            ModuleQualityFinding(
+                module_id=with_cve.id,
+                check_type="security_advisory",
+                severity="blocking",
+                file_path="composer.json",
+                line=None,
+                message="CVE-2",
+            ),
+            ModuleQualityFinding(
+                module_id=without_cve.id,
+                check_type="hardcoded_secret",
+                severity="blocking",
+                file_path="Foo.php",
+                line=1,
+                message="a secret",
+            ),
+        ]
+    )
+    await db_session.commit()
+
+    result = await list_modules(db_session, check_type="security_advisory")
+
+    names = {m["name"]: m for m in result["modules"]}
+    assert with_cve.name in names
+    assert without_cve.name not in names
+    assert names[with_cve.name]["finding_count"] == 2
+
+    no_filter = await list_modules(db_session, status="up_to_date", limit=1000)
+    my_modules = [m for m in no_filter["modules"] if m["name"] in (with_cve.name, without_cve.name)]
+    assert len(my_modules) == 2
+    for m in my_modules:
+        assert "finding_count" not in m
+
+    await db_session.execute(delete(Module).where(Module.id.in_([with_cve.id, without_cve.id])))
     await db_session.commit()

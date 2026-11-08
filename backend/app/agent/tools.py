@@ -1,7 +1,7 @@
 from collections.abc import Awaitable, Callable
 from typing import cast
 
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models import (
@@ -12,6 +12,7 @@ from app.models import (
     Module,
     ModuleDependency,
     ModuleDocument,
+    ModuleQualityFinding,
     PhpClass,
 )
 from app.search.hybrid import hybrid_search
@@ -213,6 +214,7 @@ async def list_modules(
     integration: str | None = None,
     status: str | None = None,
     enabled: bool | None = None,
+    check_type: str | None = None,
     limit: int = 20,
     offset: int = 0,
 ) -> dict:
@@ -221,6 +223,14 @@ async def list_modules(
         query = query.where(Module.state == status)
     if enabled is not None:
         query = query.where(Module.enabled == enabled)
+    if check_type:
+        # A plain IN-subquery, not a join -- a module can have several
+        # findings of the same check_type (e.g. 3 hardcoded_secret rows),
+        # which would otherwise duplicate that module's own row in the
+        # result set.
+        query = query.where(
+            Module.id.in_(select(ModuleQualityFinding.module_id).where(ModuleQualityFinding.check_type == check_type))
+        )
 
     rows = (await session.execute(query.order_by(Module.name))).all()
 
@@ -242,6 +252,19 @@ async def list_modules(
         filtered.append((module, doc))
 
     page = filtered[offset : offset + limit]
+
+    finding_counts: dict[int, int] = {}
+    if check_type:
+        page_ids = [module.id for module, _doc in page]
+        count_rows = (
+            await session.execute(
+                select(ModuleQualityFinding.module_id, func.count())
+                .where(ModuleQualityFinding.module_id.in_(page_ids), ModuleQualityFinding.check_type == check_type)
+                .group_by(ModuleQualityFinding.module_id)
+            )
+        ).all()
+        finding_counts = dict(count_rows)
+
     return {
         "total": len(filtered),
         "modules": [
@@ -252,6 +275,7 @@ async def list_modules(
                 "enabled": module.enabled,
                 "tags": [t.get("name") for t in doc.get("tags", [])],
                 "integrations": [i.get("name") for i in doc.get("integrations", [])],
+                **({"finding_count": finding_counts.get(module.id, 0)} if check_type else {}),
             }
             for module, doc in page
         ],
@@ -364,8 +388,15 @@ TOOL_SCHEMAS = [
         "function": {
             "name": "list_modules",
             "description": (
-                "Enumerate modules by tag/integration/status/enabled, with total count and pagination. Use for "
-                "counting questions ('how many payment modules') where top-k search can't guarantee completeness."
+                "Enumerate modules by tag/integration/status/enabled/check_type, with total count and pagination. "
+                "Use for counting/enumeration questions ('how many payment modules', 'which modules have a known "
+                "CVE', 'show modules with failing PHPUnit tests') where top-k search can't guarantee completeness. "
+                "check_type is one of: composer_completeness, deprecated_annotation, hardcoded_secret, "
+                "security_advisory (known CVEs), abandoned_dependency, outdated_dependency, phpstan_error, "
+                "phpmd_issue, phpcs_violation, php_compat_issue, magento_php_incompatible, magento_version_blocker, "
+                "plugin_conflict, phpmetrics_issue, composer_conflict, webapi_route_conflict, db_schema_conflict, "
+                "circular_dependency, license_risk, phpunit_failure. When check_type is set, each returned module "
+                "also has a finding_count for that specific check_type."
             ),
             "parameters": {
                 "type": "object",
@@ -374,6 +405,7 @@ TOOL_SCHEMAS = [
                     "integration": {"type": "string"},
                     "status": {"type": "string"},
                     "enabled": {"type": "boolean"},
+                    "check_type": {"type": "string"},
                     "limit": {"type": "integer"},
                     "offset": {"type": "integer"},
                 },
