@@ -11,7 +11,7 @@
 ![Docker Compose](https://img.shields.io/badge/Docker-Compose-2496ED?logo=docker&logoColor=white)
 ![Kubernetes](https://img.shields.io/badge/Kubernetes-Kustomize-326CE5?logo=kubernetes&logoColor=white)
 
-An AI-powered catalog and chat agent for Magento 2 codebases. MageWiki-AI scans Magento modules (`module.xml`, `composer.json`, `di.xml`, `events.xml`, `Plugin/` classes), builds a knowledge base in PostgreSQL, and lets developers and PMs ask natural-language questions about the architecture — with every answer citing the module and file it came from. It also runs a battery of quality, security, and Magento-upgrade-readiness checks on every scanned module and surfaces the results as badges, a stats dashboard, and a multi-repo fleet view.
+An AI-powered catalog and chat agent for Magento 2 codebases. MageWiki-AI scans Magento modules (`module.xml`, `composer.json`, `di.xml`, `events.xml`, `Plugin/` classes), builds a knowledge base in PostgreSQL, and lets developers and PMs ask natural-language questions about the architecture — with every answer citing the module and file it came from. It also runs a battery of quality, security, and Magento-upgrade-readiness checks on every scanned module and surfaces the results as badges, a stats dashboard, and a multi-repo fleet view — including **cross-module conflict detection**: two modules fighting over the same plugin hook, a Composer package version range, or a REST route don't fail quietly until someone hits the bug in production; MageWiki flags the exact pair and why.
 
 Project status: **Phases 0–12b and 14 done** (only Phase 13, cloud deployment, is deferred) — the MVP (v1.0, Phases 0–5) plus cron/webhook automation, BYOK in the UI, Ollama support, a per-module dependency graph, an evaluation suite, CI/CD, a local Kubernetes deployment, parser-only quality checks, CVE/dependency intelligence, a multi-repo fleet view, a real PHP static-analysis toolchain (PHPStan/PHPMD/phpcs/Rector), Magento-upgrade-readiness checking, and deeper structural facts (webapi/crontab/db_schema/system.xml). See [Roadmap](#roadmap) below and `CLAUDE.md` for the full design, including the recorded decision behind each phase.
 
@@ -34,7 +34,7 @@ Project status: **Phases 0–12b and 14 done** (only Phase 13, cloud deployment,
 - Frontend: Next.js (App Router), TypeScript, Tailwind, shadcn/ui, TanStack Query
 - Queue: ARQ + Redis (nightly rescan cron + a daily Magento-release-cache refresh cron)
 - LLM: LiteLLM (BYOK — Anthropic Claude for now, DeepSeek/Ollama supported; see `CLAUDE.md`)
-- PHP static analysis: a dedicated `php-analyzer` sidecar (plain PHP, no framework) running PHPStan, PHPMD, phpcs, and Rector against scanned modules, reachable only on the internal Docker network
+- PHP static analysis: a dedicated `php-analyzer` sidecar (plain PHP, no framework) running PHPStan, PHPMD, phpcs, Rector, and PhpMetrics against scanned modules, reachable only on the internal Docker network
 
 Full architecture and phase plan: see `CLAUDE.md`.
 
@@ -90,6 +90,23 @@ to a `paused_budget` state (visible on the Modules page) instead of silently
 continuing to spend — see `CLAUDE.md`'s "Scan, cron, and cost control" for how
 it's enforced and how to resume paused modules once you raise it.
 
+## Cross-module conflict detection
+
+Every quality check above looks at one module at a time. These three look across
+the whole scanned fleet for a pair of modules that silently fight over the same
+thing — all free, parser-derived, zero AI involved:
+
+- **Plugin conflicts** — two modules each hooking the same class/method with an
+  `around` plugin (execution order isn't guaranteed), or colliding on the exact
+  same `sortOrder`.
+- **Composer version conflicts** — two modules requiring incompatible version
+  ranges of the same package (including `magento/module-*` packages between
+  extensions targeting different Magento versions) — `composer install` can only
+  resolve one version for the whole store.
+- **webapi.xml route conflicts** — two modules declaring the exact same REST
+  route (`url` + HTTP method); Magento merges every module's route table, and an
+  exact duplicate means one module's service silently wins.
+
 ## Roadmap
 
 - [x] **Phase 0** — Repo skeleton, docker-compose, migrations
@@ -105,7 +122,7 @@ it's enforced and how to resume paused modules once you raise it.
 - [x] **Phase 9** — Parser-only quality checks (composer completeness, `@deprecated`, hardcoded secrets, test presence) + badge/KPI-ring UI foundation
 - [x] **Phase 10** — Dependency intelligence: CVE/security-advisory check + abandoned/outdated check
 - [x] **Phase 11** — Multi-repo fleet view
-- [x] **Phase 12** — PHP static-analysis toolchain (PHPStan/PHPMD/phpcs/Rector)
+- [x] **Phase 12** — PHP static-analysis toolchain (PHPStan/PHPMD/phpcs/Rector/PhpMetrics)
 - [x] **Phase 12b** — Magento upgrade readiness: PHP-version and `magento/*` dependency compatibility against the latest Magento release, refreshed via a daily cron
 - [ ] **Phase 13** — Cloud deployment (GCP/Azure via Terraform) — deferred, no cloud account/budget yet
 - [x] **Phase 14** — Deeper structural facts: `webapi.xml`, `crontab.xml`, `db_schema.xml`, `system.xml`, `di.xml` `virtualType`, and message-queue topology (`communication.xml`/`queue_topology.xml`/`queue_consumer.xml`)
@@ -168,7 +185,7 @@ running against an unmigrated database, instead of failing only on the
 first real query.
 
 - API health check: http://localhost:8000/health
-- Web UI: http://localhost:3000
+- Web UI: http://localhost:3000 — a first-visit onboarding wizard walks through all of this in-app (reopen anytime from the **?** button in the header)
 
 ### Scan your own Magento store
 
