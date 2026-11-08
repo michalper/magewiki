@@ -67,3 +67,27 @@ def test_flags_a_nullable_only_conflict():
     assert len(findings) == 2
     assert "a different nullable value" in findings[0][1].message
     assert "a different xsi:type" not in findings[0][1].message
+
+
+def test_no_conflict_when_one_module_omits_nullable_and_the_other_declares_true():
+    # nullable's XSD-documented default when omitted is true -- None and True
+    # are the same real value, not a conflict.
+    columns = [
+        _col(1, "Vendor_A", xsi_type="int", nullable=None),
+        _col(2, "Vendor_B", xsi_type="int", nullable=True),
+    ]
+    assert detect_db_schema_conflicts(columns) == []
+
+
+def test_flags_a_conflict_when_one_module_omits_nullable_and_the_other_declares_false():
+    columns = [
+        _col(1, "Vendor_A", xsi_type="int", nullable=None),
+        _col(2, "Vendor_B", xsi_type="int", nullable=False),
+    ]
+
+    findings = detect_db_schema_conflicts(columns)
+
+    assert len(findings) == 2
+    assert "a different nullable value" in findings[0][1].message
+    assert "Vendor_A (int, nullable=True)" in findings[0][1].message
+    assert "Vendor_B (int, nullable=False)" in findings[0][1].message

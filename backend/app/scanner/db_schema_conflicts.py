@@ -31,6 +31,13 @@ def detect_db_schema_conflicts(columns: list[DbColumnRow]) -> list[tuple[int, Qu
     only xsi:type and nullable are compared (not length/identity/default, which
     aren't even parsed), since those two are what every db_schema.xml column
     must declare and a mismatch on either is unambiguous.
+
+    nullable's XSD-documented default when the attribute is omitted is true
+    (the same real default Magento's declarative schema itself applies) --
+    db_schema_xml.py parses an omitted attribute as None, which is normalized
+    back to True here before comparing, so one module omitting nullable and
+    another explicitly declaring nullable="true" are correctly treated as the
+    same value instead of a false conflict.
     """
     groups: dict[tuple[str, str], list[DbColumnRow]] = defaultdict(list)
     for c in columns:
@@ -44,11 +51,18 @@ def detect_db_schema_conflicts(columns: list[DbColumnRow]) -> list[tuple[int, Qu
             continue  # same-author overlap -- not a cross-module conflict
 
         distinct_types = {c.xsi_type for c in group}
-        distinct_nullable = {c.nullable for c in group}
+        distinct_nullable = {True if c.nullable is None else c.nullable for c in group}
         if len(distinct_types) < 2 and len(distinct_nullable) < 2:
             continue  # same shape declared by multiple modules -- not a conflict
 
-        who = ", ".join(sorted({f"{c.module_name} ({c.xsi_type}, nullable={c.nullable})" for c in group}))
+        who = ", ".join(
+            sorted(
+                {
+                    f"{c.module_name} ({c.xsi_type}, nullable={True if c.nullable is None else c.nullable})"
+                    for c in group
+                }
+            )
+        )
         reason = []
         if len(distinct_types) >= 2:
             reason.append("a different xsi:type")
