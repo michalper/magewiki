@@ -651,6 +651,53 @@ against the real Ordo_Automation fixture: 1075 → 1064 `phpstan_error`
 findings, confirming the fix changes real output, not just defensive code
 that never fires.
 
+**Real confidential-client-data leak via README/Wiki screenshots, and the fix
+(recorded 2026-11-08):** a real violation of this section's own first rule. While
+refreshing portfolio screenshots against the live local app, a screenshot of the
+Modules page's "Scannable under" line and the Repos page showed the literal local
+path of a real client's Magento store (configured as a second `MAGEWIKI_SCAN_ROOT`
+alongside `magento-ordo-test` for unrelated real-world testing earlier the same
+session — see the Composer path-repository/enabled-status-filter/multi-store
+decision notes above, all of which used that same real store as genuine test data
+without ever intending it to appear in a *published* artifact), and a third
+screenshot showed real CVE/hardcoded-secret findings from a module inside that
+client's actual deployment. All three were committed and pushed to the public repo
+and wiki before being caught (by the user, not by the model).
+
+Root cause: the model had already treated that store's path as ordinary real-world
+verification data all session (used it directly in chat, in `list_modules` checks,
+in SBOM tests) and knew it was a real client's store — but when the task shifted to
+"capture screenshots of the live app for the README/Wiki," it was treated as a
+purely visual/UI task, and the model never re-ran the "is this specific data safe to
+publish" check this section already states as a hard rule, even though the rule was
+already loaded in context the whole time. Browsing a live app and screenshotting
+whatever happens to be in its database is not content-neutral just because the task
+is framed as "take a screenshot."
+
+Fix, in order: (1) deleted that client's ~741 scanned modules from the local dev
+database entirely (cascaded via the existing `ON DELETE CASCADE` FKs — the client's
+own files on disk were never touched, only this project's local index of having
+scanned them) and removed it from `.env`'s `MAGEWIKI_SCAN_ROOT_*`, leaving only
+`magento-ordo-test` (the real `magento/magento2` checkout + `Ordo_Automation`) as
+configured; (2) recaptured every affected screenshot in both repos against only that
+safe data; (3) used `git-filter-repo --strip-blobs-with-ids` to remove the specific
+leaked blobs from **history**, not just supersede them with a new commit — a plain
+new commit leaves the old blob fetchable by SHA indefinitely; (4) verified on fresh
+clones from GitHub (not the locally-rewritten copies) that the old commit SHAs and
+blob IDs are unreachable and that `git grep` for the client's name across every
+commit in both repos' full history returns nothing; (5) force-pushed both repos
+(explicit user authorization obtained first — this is exactly the kind of
+destructive, public-history-rewriting action this file's own safety discipline
+requires confirming before doing).
+
+Going forward: before capturing or publishing *any* artifact derived from the live
+app's actual current state (a screenshot, an exported CSV, a copy-pasted API
+response, a demo recording), explicitly check what's currently configured/scanned —
+`GET /scan-roots` and `GET /repos` — and confirm it's limited to this section's own
+approved test data, as a deliberate step before capturing, not an afterthought
+checked only if something looks wrong afterward. "It's just a UI screenshot" is not
+an exemption from this file's test-data rule.
+
 ## Phase plan
 
 MVP = Phases 0–5. Each phase is done separately: first a plan for approval, then code with tests, then a small commit. Don't skip phases.
