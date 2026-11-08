@@ -1,12 +1,20 @@
 "use client";
 
 import Link from "next/link";
+import type { MouseEvent } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { QualityBadges } from "@/components/quality-badges";
 import { SeverityBadge } from "@/components/severity-badge";
-import { apiFetch } from "@/lib/api";
+import { Button } from "@/components/ui/button";
+import { apiFetch, apiUrl } from "@/lib/api";
 import type { paths } from "@/lib/api-types";
 import { useDocumentTitle } from "@/lib/use-document-title";
+
+function downloadSbom(e: MouseEvent, repoRoot: string) {
+  e.preventDefault();
+  e.stopPropagation();
+  window.open(`${apiUrl()}/repos/sbom?repo_root=${encodeURIComponent(repoRoot)}`, "_self");
+}
 
 type RepoSummary = paths["/repos"]["get"]["responses"][200]["content"]["application/json"][number];
 type ModuleOverlapEntry =
@@ -62,7 +70,17 @@ export default function ReposPage() {
                 </span>
                 <span>Last scanned {new Date(repo.last_scanned_at).toLocaleString()}</span>
               </div>
-              <QualityBadges findingCounts={repo.finding_counts} />
+              <div className="flex items-center justify-between gap-3">
+                <QualityBadges findingCounts={repo.finding_counts} />
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  onClick={(e) => downloadSbom(e, repo.repo_root)}
+                >
+                  Download SBOM
+                </Button>
+              </div>
             </Link>
           ))}
         </div>

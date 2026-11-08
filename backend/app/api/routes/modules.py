@@ -4,10 +4,11 @@ import time
 from collections import Counter
 from collections.abc import AsyncIterator
 from datetime import datetime
+from pathlib import Path
 from typing import cast
 
 from fastapi import APIRouter, Depends, HTTPException
-from fastapi.responses import PlainTextResponse, StreamingResponse
+from fastapi.responses import JSONResponse, PlainTextResponse, StreamingResponse
 from pydantic import BaseModel
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -36,6 +37,7 @@ from app.models import (
     QueueBinding,
     WebapiRoute,
 )
+from app.sbom import SbomComponentInput, build_cyclonedx_sbom
 from app.scanner.orchestrator import (
     ScanAlreadyInProgressError,
     ScanResult,
@@ -470,6 +472,40 @@ async def list_repos(session: AsyncSession = Depends(get_session)) -> list[RepoS
         repo["last_scanned_at"] = max(repo["last_scanned_at"], last_scanned_at)
 
     return [RepoSummary(repo_root=repo_root, **data) for repo_root, data in sorted(repos.items())]
+
+
+@router.get("/repos/sbom")
+async def get_repo_sbom(repo_root: str, session: AsyncSession = Depends(get_session)) -> JSONResponse:
+    """A CycloneDX 1.5 JSON SBOM for every module currently scanned under one
+    repo_root — one "library" component per module, built purely from data
+    already parsed and persisted (composer name/version/license/homepage), no
+    new scan or external call. Closes a real SCA gap: the existing CVE/
+    abandoned-dependency checks already evaluate this same data, but nothing
+    exported it in a standard, tool-consumable format a security team could
+    feed into Dependency-Track or another SBOM consumer.
+    """
+    rows = (
+        await session.execute(
+            select(Module.name, Module.composer_name, Module.setup_version, Module.license, Module.homepage).where(
+                Module.repo_root == repo_root
+            )
+        )
+    ).all()
+    if not rows:
+        raise HTTPException(status_code=404, detail="no modules scanned under this repo_root")
+
+    components = [
+        SbomComponentInput(name=name, composer_name=composer_name, version=version, license=license_, homepage=homepage)
+        for name, composer_name, version, license_, homepage in rows
+    ]
+    sbom = build_cyclonedx_sbom(repo_root, components)
+
+    safe_name = "".join(c if c.isalnum() or c in "-_." else "_" for c in Path(repo_root).name) or "sbom"
+    return JSONResponse(
+        content=sbom,
+        media_type="application/vnd.cyclonedx+json",
+        headers={"Content-Disposition": f'attachment; filename="sbom-{safe_name}.json"'},
+    )
 
 
 class OverlapStoreEntry(BaseModel):

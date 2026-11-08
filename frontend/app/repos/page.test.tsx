@@ -1,9 +1,10 @@
 import { screen, waitFor } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { renderWithQueryClient } from "../../test-utils";
 import ReposPage from "./page";
 
-vi.mock("@/lib/api", () => ({ apiFetch: vi.fn() }));
+vi.mock("@/lib/api", () => ({ apiFetch: vi.fn(), apiUrl: () => "http://localhost:8000" }));
 
 import { apiFetch } from "@/lib/api";
 
@@ -61,6 +62,22 @@ describe("ReposPage", () => {
 
     const link = screen.getByRole("link", { name: /sites\/store-a/ });
     expect(link).toHaveAttribute("href", "/modules?repo=%2Fsites%2Fstore-a");
+  });
+
+  it("downloads the SBOM for a repo without navigating to its filtered modules list", async () => {
+    fetchMock.mockImplementation(async (path: string) => (path === "/repos" ? [repo()] : []));
+    const openSpy = vi.spyOn(window, "open").mockImplementation(() => null);
+    const user = userEvent.setup();
+    renderWithQueryClient(<ReposPage />);
+
+    await waitFor(() => expect(screen.getByText("/sites/store-a")).toBeInTheDocument());
+    await user.click(screen.getByRole("button", { name: "Download SBOM" }));
+
+    expect(openSpy).toHaveBeenCalledWith(
+      "http://localhost:8000/repos/sbom?repo_root=%2Fsites%2Fstore-a",
+      "_self",
+    );
+    openSpy.mockRestore();
   });
 
   it("singularizes the module count for exactly one module", async () => {

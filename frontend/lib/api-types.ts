@@ -117,6 +117,32 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/repos/sbom": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Repo Sbom
+         * @description A CycloneDX 1.5 JSON SBOM for every module currently scanned under one
+         *     repo_root — one "library" component per module, built purely from data
+         *     already parsed and persisted (composer name/version/license/homepage), no
+         *     new scan or external call. Closes a real SCA gap: the existing CVE/
+         *     abandoned-dependency checks already evaluate this same data, but nothing
+         *     exported it in a standard, tool-consumable format a security team could
+         *     feed into Dependency-Track or another SBOM consumer.
+         */
+        get: operations["get_repo_sbom_repos_sbom_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/modules/overlap": {
         parameters: {
             query?: never;
@@ -422,6 +448,8 @@ export interface components {
             embedding_key_configured: boolean;
             /** Embedding Api Base */
             embedding_api_base: string | null;
+            /** Modules Queued For Reembed */
+            modules_queued_for_reembed?: number | null;
         };
         /** LlmSettingsUpdate */
         LlmSettingsUpdate: {
@@ -437,6 +465,11 @@ export interface components {
             embedding_api_key?: string | null;
             /** Embedding Api Base */
             embedding_api_base?: string | null;
+            /**
+             * Confirm Reembed
+             * @default false
+             */
+            confirm_reembed: boolean;
         };
         /** MethodSummary */
         MethodSummary: {
@@ -803,6 +836,12 @@ export interface components {
             text: string;
             /** Score */
             score: number;
+            /** Semantic Rank */
+            semantic_rank: number | null;
+            /** Keyword Rank */
+            keyword_rank: number | null;
+            /** Identifier Rank */
+            identifier_rank: number | null;
         };
         /** ValidationError */
         ValidationError: {
@@ -988,6 +1027,37 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["RepoSummary"][];
+                };
+            };
+        };
+    };
+    get_repo_sbom_repos_sbom_get: {
+        parameters: {
+            query: {
+                repo_root: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
                 };
             };
         };

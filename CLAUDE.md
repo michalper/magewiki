@@ -887,6 +887,59 @@ there's still no "blocking" gate concept for this family specifically). New
 `circular_dependency` check_type (migration `0028`), folded into the "Cross-module
 conflicts" Stats tile alongside the other four.
 
+**SBOM export (recorded 2026-11-08):** the second roadmap idea from the same
+brainstorm, "po kolei" after circular-dependency detection. Closes a real, named SCA
+gap (flagged when the user directly asked "a czego nam brakuje do SCA?" earlier this
+session): the existing CVE/abandoned-dependency checks already evaluate composer
+name/version/license data per module, but nothing exported it in a standard,
+tool-consumable format a security team could feed into Dependency-Track or another
+SBOM consumer. New `GET /repos/sbom?repo_root=...` (`app/sbom.py`'s pure
+`build_cyclonedx_sbom()`) returns a CycloneDX 1.5 JSON document — one "library"
+component per module currently scanned under that repo_root, built entirely from
+data already parsed and persisted (`Module.composer_name`/`setup_version` — the
+field that actually holds the resolved version, despite its name, per the "Version
+source priority" decision — `license`, `homepage`), no new scan or external call.
+Deliberately a flat `components` list with no `dependencies` graph section (CycloneDX
+allows omitting it) — the existing per-module dependency graph already answers "what
+does X depend on"; this just answers "what's actually installed," which doesn't need
+the edges. `license` entries use CycloneDX's free-text `license.name` field, never
+`license.id` (which requires strict SPDX-identifier validation) — correct for every
+stored value without needing to validate it against the full SPDX list first.
+Frontend: a "Download SBOM" button on each Repos page card, implemented as a real
+`<button>` nested inside the card's existing `<Link>` (valid HTML — only anchor-in-
+anchor nesting is invalid) with `stopPropagation`/`preventDefault` so clicking it
+doesn't trigger the card's own navigation; triggers the download via `window.open(url,
+"_self")` rather than `window.location.href` specifically to avoid a
+`no-location-assign-relative-destination` ESLint false-positive (the rule can't tell
+the destination is cross-origin, to the API server, not an internal Next.js route).
+Verified end-to-end against the real, already-scanned `.../magento-ordo-test/magento`
+repo (not just unit tests): the button genuinely downloaded a 47-component, valid
+CycloneDX document to disk without navigating away from the Repos page.
+
+**Stale generated OpenAPI types, found while regenerating for the SBOM endpoint
+(recorded 2026-11-08):** `frontend/lib/api-types.ts` is generated from the live
+backend (`npm run gen:types`), but nothing in CI or this project's working method
+ever re-ran that generation after a backend schema changed — regenerating it now (a
+necessary step so the new `/repos/sbom` path has a type) surfaced that
+`LlmSettingsUpdate.confirm_reembed` had been completely absent from the committed
+types file since the re-embed-workflow feature shipped, several sessions ago.
+Worse than a types-only gap: `frontend/app/settings/page.tsx`'s embedding-model save
+flow never sent `confirm_reembed` at all and had no UI to handle the backend's actual
+400 response asking for it — meaning changing the embedding model via this page, with
+any `up_to_date` modules present, was silently broken end-to-end (the user would see
+a raw error string with no way to proceed) since the day that backend feature
+shipped, never caught because the stale types file let the mismatched frontend code
+typecheck clean. Fixed properly rather than just satisfying the type: `saveEmbedding()`
+now remembers its attempted update, and a "Confirm re-embed" button appears
+specifically when the save fails with the backend's own re-embed-confirmation message,
+resending the same update with `confirm_reembed: true`. `saveLlm()` and both "Reset to
+.env default" buttons needed `confirm_reembed: false` added too, now that the
+regenerated type makes the field required (openapi-typescript's documented behavior
+for a field with a schema `default`: always-present rather than optional). No CI
+change was made to auto-regenerate this file going forward — flagging here as a
+known gap rather than building out a regeneration-drift-detection step this session
+didn't ask for.
+
 **Phase 12b decision (recorded 2026-11-06):** this is v1's actual headline feature ("upgrade
 readiness"), deliberately left out of Phase 12 and called out there as "no 'upgrade readiness'
 gate concept yet." Live-tested during planning: Magento's own packages
