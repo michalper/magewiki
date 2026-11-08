@@ -318,12 +318,15 @@ function run_phpmetrics(string $root, string $modulePath, string $phpBinary): ar
         // Confirmed empirically: this is a class/interface FQCN (or, for a
         // package-level rule like "Stable Dependencies Principle", a
         // namespace *prefix* ending in "\\") — never a real file path, unlike
-        // every other tool here. The Python client resolves it against this
-        // module's own already-cataloged PhpClass rows (fqcn -> file_path);
-        // a trailing "\\" never matches a real FQCN, so a package-level
-        // violation naturally resolves to no file, which is correct — there
-        // isn't one.
-        $className = rtrim((string) $fileEl['name'], '\\');
+        // every other tool here. The trailing "\\" is deliberately NOT
+        // stripped here: it's the only signal the Python client has to tell
+        // a package-level prefix apart from a real FQCN before doing its
+        // fqcn_to_file lookup. An earlier version stripped it here, which
+        // meant a class genuinely named e.g. "Vendor\Module" (a legitimate
+        // PSR-4 pattern, a class named after its own namespace segment)
+        // could be silently mis-attributed a package-level finding that
+        // wasn't really about it.
+        $className = (string) $fileEl['name'];
         foreach ($fileEl->violation as $violation) {
             $rule = (string) $violation['rule'];
             $message = trim(preg_replace('/\s+/', ' ', (string) $violation) ?? '');

@@ -133,7 +133,16 @@ async def check_php_static_analysis(
     for (tool, check_type), items in zip(tools, results, strict=True):
         for item in items:
             if tool in _CLASS_KEYED_TOOLS:
-                resolved_file = (fqcn_to_file or {}).get(item.get("class", ""))
+                class_name = item.get("class", "")
+                # A trailing "\\" means PhpMetrics reported a namespace
+                # *prefix* (a package-level rule like Stable Dependencies
+                # Principle), never a real FQCN — resolve straight to "no
+                # file" rather than doing the lookup, since a real FQCN can
+                # legitimately equal that same string with the trailing
+                # backslash stripped (e.g. a class literally named
+                # "Vendor\Module"), which would otherwise be mis-attributed
+                # a package-level finding that isn't really about it.
+                resolved_file = None if class_name.endswith("\\") else (fqcn_to_file or {}).get(class_name)
             else:
                 resolved_file = item.get("file") or None
 

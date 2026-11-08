@@ -213,14 +213,16 @@ async def test_check_php_static_analysis_leaves_a_package_level_phpmetrics_findi
     tmp_path, monkeypatch
 ):
     """A package-level rule (e.g. "Stable Dependencies Principle") reports a
-    namespace prefix, not a real class -- it never matches a real FQCN, so
-    there's correctly no file to point to.
+    namespace *prefix*, with a trailing backslash preserved on the wire by
+    php-analyzer -- that trailing backslash, not just "not found in
+    fqcn_to_file", is what must resolve this to no file, since a real FQCN
+    could otherwise coincidentally equal the same string.
     """
     module_root = tmp_path / "Vendor" / "Module"
     module_root.mkdir(parents=True)
     findings_by_tool = {
         "phpmetrics": [
-            {"class": "Vendor\\Module\\Plugin", "line": None, "message": "Stable Dependencies Principle: ..."},
+            {"class": "Vendor\\Module\\Plugin\\", "line": None, "message": "Stable Dependencies Principle: ..."},
         ],
     }
     monkeypatch.setattr(
@@ -233,6 +235,35 @@ async def test_check_php_static_analysis_leaves_a_package_level_phpmetrics_findi
 
     assert len(findings) == 1
     assert findings[0].file_path is None
+
+
+@pytest.mark.asyncio
+async def test_check_php_static_analysis_resolves_a_real_fqcn_matching_a_stripped_prefix_shape(
+    tmp_path, monkeypatch
+):
+    """Regression test: a real class literally named after its own namespace
+    segment (e.g. "Vendor\\Module", a legitimate PSR-4 pattern) has no
+    trailing backslash on the wire and must still resolve to its real file --
+    not be mistaken for a package-level prefix finding just because the
+    string happens to look like one with the backslash stripped.
+    """
+    module_root = tmp_path / "Vendor" / "Module"
+    module_root.mkdir(parents=True)
+    findings_by_tool = {
+        "phpmetrics": [
+            {"class": "Vendor\\Module", "line": None, "message": "Blob / God object: ..."},
+        ],
+    }
+    monkeypatch.setattr(
+        "app.scanner.php_analyzer_client.httpx.AsyncClient", lambda *a, **k: _FakeAsyncClient(findings_by_tool)
+    )
+
+    findings = await check_php_static_analysis(
+        module_root, module_root, fqcn_to_file={"Vendor\\Module": "Module.php"}
+    )
+
+    assert len(findings) == 1
+    assert findings[0].file_path == "Module.php"
 
 
 @pytest.mark.asyncio
