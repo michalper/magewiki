@@ -7,8 +7,9 @@ import pytest
 from sqlalchemy import delete, select
 
 from app.agent import loop as loop_module
-from app.agent.loop import MAX_TOOL_ROUNDS, run_agent
+from app.agent.loop import MAX_TOOL_ROUNDS, _turn_cost, run_agent
 from app.models import AnalysisCache, Module
+from app.observability import LLM_CALL_COST_USD, LLM_CALLS_TOTAL
 
 
 async def _make_module(session, suffix: str) -> Module:
@@ -620,3 +621,20 @@ async def test_run_agent_falls_back_to_computed_cost_when_the_final_stream_repor
 
     await db_session.execute(delete(Module).where(Module.id == module.id))
     await db_session.commit()
+
+
+def test_turn_cost_records_a_chat_metric_per_real_call(monkeypatch):
+    model = "anthropic/claude-haiku-5-5"
+    before_calls = LLM_CALLS_TOTAL.labels(model, "chat")._value.get()
+    before_cost_sum = LLM_CALL_COST_USD.labels(model, "chat")._sum.get()
+
+    monkeypatch.setattr(loop_module.litellm, "completion_cost", lambda **k: 0.0021)
+    response = FakeResponse(choices=[FakeChoice(message=FakeMessage(tool_calls=[], content="hi"))])
+
+    tokens_in, tokens_out, cost = _turn_cost(response, model)
+
+    assert tokens_in == 10
+    assert tokens_out == 5
+    assert cost == Decimal("0.0021")
+    assert LLM_CALLS_TOTAL.labels(model, "chat")._value.get() == before_calls + 1
+    assert LLM_CALL_COST_USD.labels(model, "chat")._sum.get() == pytest.approx(before_cost_sum + 0.0021)

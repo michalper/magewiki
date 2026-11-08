@@ -5,7 +5,7 @@ from decimal import Decimal
 import pytest
 from sqlalchemy import func, select
 
-from app.analyzer.budget import is_budget_exceeded
+from app.analyzer.budget import get_monthly_spend_usd, is_budget_exceeded
 from app.config import settings
 from app.models import AnalysisCache
 
@@ -71,6 +71,16 @@ async def test_budget_treats_a_null_scalar_result_as_zero_spend(db_session, monk
     monkeypatch.setattr(settings, "llm_monthly_budget_usd", 1.0)
 
     assert await is_budget_exceeded(db_session) is False
+
+
+@pytest.mark.asyncio
+async def test_get_monthly_spend_usd_reflects_a_newly_added_row(db_session):
+    baseline = await get_monthly_spend_usd(db_session)
+
+    db_session.add(_cache_row(Decimal("2.50")))
+    await db_session.commit()
+
+    assert await get_monthly_spend_usd(db_session) == baseline + Decimal("2.50")
 
 
 @pytest.mark.asyncio

@@ -17,6 +17,24 @@ def test_no_conflict_when_the_same_module_requires_it_twice():
     assert detect_composer_conflicts(requirements) == []
 
 
+def test_a_module_requiring_the_same_package_twice_does_not_self_conflict_when_a_third_module_is_present():
+    """Same scenario as test_no_conflict_when_the_same_module_requires_it_twice,
+    but with a second module's own requirement present too -- that earlier test's
+    two rows share one module_id, so the function's outer "fewer than 2 distinct
+    requirers" guard already returns before ever reaching the pairwise loop.
+    Adding Vendor_B's row here means the outer guard passes (2 distinct modules),
+    forcing the pairwise loop to actually walk Vendor_A's own two rows against
+    each other -- which must be skipped as a self-pair, not misreported as a
+    conflict with itself, while Vendor_A-vs-Vendor_B is still compared normally.
+    """
+    requirements = [
+        _req(1, "Vendor_A", constraint="^1.0"),
+        _req(1, "Vendor_A", constraint="^1.5"),
+        _req(2, "Vendor_B", constraint="^1.0"),
+    ]
+    assert detect_composer_conflicts(requirements) == []
+
+
 def test_no_conflict_when_ranges_overlap():
     requirements = [_req(1, "Vendor_A", constraint=">=1.0,<2.0"), _req(2, "Vendor_B", constraint=">=1.5,<3.0")]
     assert detect_composer_conflicts(requirements) == []

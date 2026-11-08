@@ -6,6 +6,7 @@ import pytest
 
 from app.analyzer.client import summarize_file, synthesize_module_doc
 from app.analyzer.facts import ModuleFacts
+from app.observability import LLM_CALL_COST_USD, LLM_CALLS_TOTAL
 
 
 def _tool_use_response(arguments: dict) -> SimpleNamespace:
@@ -207,3 +208,21 @@ async def test_summarize_file_falls_back_to_computed_cost_when_litellm_cost_fail
     )
 
     assert result.cost_usd == Decimal("0.0007")
+
+
+@pytest.mark.asyncio
+async def test_summarize_file_records_a_completion_metric_per_real_call(monkeypatch):
+    model = "anthropic/claude-haiku-5-5"
+    before_calls = LLM_CALLS_TOTAL.labels(model, "completion")._value.get()
+    before_cost_sum = LLM_CALL_COST_USD.labels(model, "completion")._sum.get()
+
+    async def fake_acompletion(**kwargs):
+        return _tool_use_response({"file_summary": "Handles checkout totals.", "notable_behavior": None})
+
+    monkeypatch.setattr("app.analyzer.client.litellm.acompletion", fake_acompletion)
+    monkeypatch.setattr("app.analyzer.client.litellm.completion_cost", lambda **k: 0.001)
+
+    await summarize_file("Model/Total.php", "<?php class Total {}", model=model, api_key="test-key")
+
+    assert LLM_CALLS_TOTAL.labels(model, "completion")._value.get() == before_calls + 1
+    assert LLM_CALL_COST_USD.labels(model, "completion")._sum.get() == pytest.approx(before_cost_sum + 0.001)

@@ -13,6 +13,7 @@ from app.analyzer.budget import is_budget_exceeded
 from app.analyzer.pricing import compute_cost_usd
 from app.analyzer.prompts import CHAT_PROMPT_VERSION
 from app.models import AnalysisCache
+from app.observability import LLM_CALL_COST_USD, LLM_CALLS_TOTAL
 from app.runtime_config import resolve_llm_config
 
 MAX_TOOL_ROUNDS = 6
@@ -44,6 +45,8 @@ def _turn_cost(response, model: str) -> tuple[int, int, Decimal]:
         cost = None
     if not cost or cost <= 0:
         cost = compute_cost_usd(model, tokens_in, tokens_out)
+    LLM_CALLS_TOTAL.labels(model, "chat").inc()
+    LLM_CALL_COST_USD.labels(model, "chat").observe(float(cost))
     return tokens_in, tokens_out, cost
 
 

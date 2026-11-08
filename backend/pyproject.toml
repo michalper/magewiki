@@ -30,6 +30,7 @@ mcp = "^2.3"  # litellm's tool-calling path imports this internally; not declare
 pgvector = "^0.5"
 httpx = "^0.28"
 graphql-core = "^3.3"  # parses etc/schema.graphqls into structured facts (Query/Mutation fields), same role lxml plays for di.xml/events.xml
+prometheus-client = "^0.21"
 
 # --- Future phases (not installed yet, documented here per architecture scaffold) ---
 # Testing (RAG eval):        ragas

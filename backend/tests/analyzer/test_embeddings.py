@@ -4,6 +4,7 @@ from types import SimpleNamespace
 import pytest
 
 from app.analyzer.embeddings import embed_query_text, embed_text, hash_text
+from app.observability import LLM_CALL_COST_USD, LLM_CALLS_TOTAL
 
 
 def _fake_response(vector: list[float], prompt_tokens: int = 10) -> SimpleNamespace:
@@ -14,6 +15,24 @@ def test_hash_text_is_a_deterministic_sha256_hex_digest():
     assert hash_text("hello") == hash_text("hello")
     assert hash_text("hello") != hash_text("world")
     assert len(hash_text("hello")) == 64
+
+
+@pytest.mark.asyncio
+async def test_embed_text_records_an_embedding_metric_per_real_call(monkeypatch):
+    model = "openai/text-embedding-3-small"
+    before_calls = LLM_CALLS_TOTAL.labels(model, "embedding")._value.get()
+    before_cost_sum = LLM_CALL_COST_USD.labels(model, "embedding")._sum.get()
+
+    async def fake_aembedding(**kwargs):
+        return _fake_response([0.1, 0.2])
+
+    monkeypatch.setattr("app.analyzer.embeddings.litellm.aembedding", fake_aembedding)
+    monkeypatch.setattr("app.analyzer.embeddings.litellm.completion_cost", lambda **k: 0.002)
+
+    await embed_text("some text", model=model, api_key="k")
+
+    assert LLM_CALLS_TOTAL.labels(model, "embedding")._value.get() == before_calls + 1
+    assert LLM_CALL_COST_USD.labels(model, "embedding")._sum.get() == pytest.approx(before_cost_sum + 0.002)
 
 
 @pytest.mark.asyncio

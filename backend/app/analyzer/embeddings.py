@@ -6,6 +6,7 @@ import litellm
 from app.analyzer.client import LlmCallResult
 from app.analyzer.pricing import compute_cost_usd
 from app.analyzer.schemas import ModuleDoc
+from app.observability import LLM_CALL_COST_USD, LLM_CALLS_TOTAL
 
 
 def hash_text(text: str) -> str:
@@ -27,6 +28,9 @@ async def embed_text(
         cost = None
     if not cost or cost <= 0:
         cost = compute_cost_usd(model, tokens_in, 0)
+
+    LLM_CALLS_TOTAL.labels(model, "embedding").inc()
+    LLM_CALL_COST_USD.labels(model, "embedding").observe(float(cost))
 
     result = LlmCallResult(
         response_json={"embedding": vector},

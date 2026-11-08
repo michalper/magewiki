@@ -38,6 +38,7 @@ from app.models import (
     QueueBinding,
     WebapiRoute,
 )
+from app.observability import SCAN_DURATION_SECONDS
 from app.sbom import SbomComponentInput, SbomRequirementInput, build_cyclonedx_sbom
 from app.scanner.orchestrator import (
     ScanAlreadyInProgressError,
@@ -267,6 +268,7 @@ def _validate_scan_path(path: str) -> None:
 
 
 def _scan_response(result: ScanResult, duration_seconds: float) -> ScanResponse:
+    SCAN_DURATION_SECONDS.observe(duration_seconds)
     return ScanResponse(
         repository=result.repo_root,
         duration_seconds=duration_seconds,

@@ -1,7 +1,9 @@
 import pytest
 from httpx import ASGITransport, AsyncClient
 
+from app.api.routes.modules import _scan_response
 from app.main import app
+from app.observability import SCAN_DURATION_SECONDS
 from app.scanner.orchestrator import ScanAlreadyInProgressError, ScanResult
 
 
@@ -15,6 +17,14 @@ def _parse_sse(raw_text: str) -> list[tuple[str, str]]:
         data = lines[1].removeprefix("data: ")
         events.append((event_type, data))
     return events
+
+
+def test_scan_response_records_the_scan_duration_metric():
+    before_sum = SCAN_DURATION_SECONDS._sum.get()
+
+    _scan_response(ScanResult(repo_root="/tmp/some-repo"), duration_seconds=12.5)
+
+    assert SCAN_DURATION_SECONDS._sum.get() == pytest.approx(before_sum + 12.5)
 
 
 @pytest.mark.asyncio

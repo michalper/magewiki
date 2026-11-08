@@ -66,8 +66,18 @@ def detect_circular_dependencies(deps: list[ModuleDependencyRow]) -> list[tuple[
     findings: list[tuple[int, QualityFinding]] = []
     for cycle in cycles:
         involved_ids = {name_to_id[name] for name in cycle[:-1] if name in name_to_id}
-        if len(involved_ids) < 2:
-            continue  # the names that closed the cycle weren't all real, scanned modules
+        if len(involved_ids) < 2:  # pragma: no cover - defensive, not reachable: see below
+            # Every name in cycle[:-1] was reached by the DFS traversing an
+            # outgoing edge *from* it, and the only way a name becomes a key
+            # in `edges` at all is via being some row's own module_name --
+            # which is exactly how name_to_id is populated too, from the same
+            # row in the same loop iteration. So a name on a real cycle path
+            # can't be missing from name_to_id, and this branch can't
+            # currently fire. Kept anyway as a guard against a future change
+            # to the traversal (e.g. an edge added by some means other than a
+            # module_name row) silently crashing this loop instead of just
+            # skipping a cycle it can't fully attribute.
+            continue
 
         chain = " -> ".join(cycle)
         message = (

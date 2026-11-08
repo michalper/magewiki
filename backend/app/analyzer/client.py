@@ -12,6 +12,7 @@ from app.analyzer.facts import ModuleFacts
 from app.analyzer.pricing import compute_cost_usd
 from app.analyzer.prompts import build_file_summary_prompt, build_module_synthesis_prompt
 from app.analyzer.schemas import FileSummary, ModuleDoc
+from app.observability import LLM_CALL_COST_USD, LLM_CALLS_TOTAL
 
 _FENCE_RE = re.compile(r"^```(?:json)?\s*\n?(.*?)\n?```$", re.DOTALL)
 _MAX_ATTEMPTS = 2
@@ -52,6 +53,9 @@ def _result_from_response(response, response_json: dict, model: str) -> LlmCallR
         cost = None
     if not cost or cost <= 0:
         cost = compute_cost_usd(model, tokens_in, tokens_out)
+
+    LLM_CALLS_TOTAL.labels(model, "completion").inc()
+    LLM_CALL_COST_USD.labels(model, "completion").observe(float(cost))
 
     return LlmCallResult(
         response_json=response_json,

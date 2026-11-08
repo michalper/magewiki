@@ -13,7 +13,7 @@ def _current_utc_month_start() -> datetime:
     return now.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
 
 
-async def is_budget_exceeded(session: AsyncSession) -> bool:
+async def get_monthly_spend_usd(session: AsyncSession) -> Decimal:
     month_start = _current_utc_month_start()
     raw_spent = await session.scalar(
         select(func.coalesce(func.sum(AnalysisCache.cost_usd), 0)).where(
@@ -24,7 +24,11 @@ async def is_budget_exceeded(session: AsyncSession) -> bool:
     # an aggregate-with-no-matching-rows query still always returns exactly one row
     # in Postgres, so this guard is defensive correctness, not dead code bending to
     # satisfy mypy.
-    spent = Decimal(str(raw_spent)) if raw_spent is not None else Decimal(0)
+    return Decimal(str(raw_spent)) if raw_spent is not None else Decimal(0)
+
+
+async def is_budget_exceeded(session: AsyncSession) -> bool:
+    spent = await get_monthly_spend_usd(session)
     return spent >= Decimal(str(settings.llm_monthly_budget_usd))
 
 
