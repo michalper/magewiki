@@ -1,4 +1,4 @@
-from app.sbom import SbomComponentInput, build_cyclonedx_sbom
+from app.sbom import SbomComponentInput, SbomRequirementInput, build_cyclonedx_sbom
 
 
 def _component(**overrides):
@@ -70,3 +70,56 @@ def test_licenses_and_external_references_omitted_when_absent():
 def test_handles_an_empty_module_list():
     sbom = build_cyclonedx_sbom("/stores/store-a", [])
     assert sbom["components"] == []
+
+
+def test_no_dependencies_section_when_requirements_is_omitted():
+    sbom = build_cyclonedx_sbom("/stores/store-a", [_component()])
+    assert "dependencies" not in sbom
+
+
+def test_no_dependencies_section_when_requirements_is_an_empty_list():
+    sbom = build_cyclonedx_sbom("/stores/store-a", [_component()], [])
+    assert "dependencies" not in sbom
+
+
+def test_requirements_add_versionless_package_components_and_a_dependency_edge():
+    sbom = build_cyclonedx_sbom(
+        "/stores/store-a",
+        [_component()],
+        [SbomRequirementInput(module_bom_ref="vendor/module", package_name="guzzlehttp/guzzle")],
+    )
+
+    names = {c["name"] for c in sbom["components"]}
+    assert names == {"vendor/module", "guzzlehttp/guzzle"}
+    package_component = next(c for c in sbom["components"] if c["name"] == "guzzlehttp/guzzle")
+    assert "version" not in package_component
+    assert sbom["dependencies"] == [{"ref": "vendor/module", "dependsOn": ["guzzlehttp/guzzle"]}]
+
+
+def test_multiple_modules_requiring_the_same_package_share_one_component():
+    sbom = build_cyclonedx_sbom(
+        "/stores/store-a",
+        [_component(), _component(name="Other_Module", composer_name="vendor/other")],
+        [
+            SbomRequirementInput(module_bom_ref="vendor/module", package_name="guzzlehttp/guzzle"),
+            SbomRequirementInput(module_bom_ref="vendor/other", package_name="guzzlehttp/guzzle"),
+        ],
+    )
+
+    package_components = [c for c in sbom["components"] if c["name"] == "guzzlehttp/guzzle"]
+    assert len(package_components) == 1
+    assert sorted(sbom["dependencies"], key=lambda d: d["ref"]) == [
+        {"ref": "vendor/module", "dependsOn": ["guzzlehttp/guzzle"]},
+        {"ref": "vendor/other", "dependsOn": ["guzzlehttp/guzzle"]},
+    ]
+
+
+def test_a_requirement_matching_an_already_scanned_module_is_not_duplicated_as_a_package():
+    sbom = build_cyclonedx_sbom(
+        "/stores/store-a",
+        [_component(), _component(name="Other_Module", composer_name="vendor/other")],
+        [SbomRequirementInput(module_bom_ref="vendor/module", package_name="vendor/other")],
+    )
+
+    assert len(sbom["components"]) == 2
+    assert sbom["dependencies"] == [{"ref": "vendor/module", "dependsOn": ["vendor/other"]}]

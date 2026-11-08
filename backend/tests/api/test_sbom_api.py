@@ -7,7 +7,7 @@ from sqlalchemy import delete
 
 from app.db import async_session_factory
 from app.main import app
-from app.models import Module
+from app.models import ComposerPackageRequirement, Module
 
 
 @pytest.fixture
@@ -58,6 +58,35 @@ async def test_get_repo_sbom_returns_a_cyclonedx_document(sbom_fixture):
     assert component["name"] == module.composer_name
     assert component["version"] == "1.2.3"
     assert component["licenses"] == [{"license": {"name": "OSL-3.0"}}]
+    assert "dependencies" not in body
+
+
+@pytest.mark.asyncio
+async def test_get_repo_sbom_includes_production_requirements_as_a_dependency_graph(sbom_fixture):
+    repo_root, module = sbom_fixture
+
+    async with async_session_factory() as session:
+        session.add_all(
+            [
+                ComposerPackageRequirement(
+                    module_id=module.id, package_name="guzzlehttp/guzzle", constraint="^7.0", is_dev=False
+                ),
+                ComposerPackageRequirement(
+                    module_id=module.id, package_name="phpunit/phpunit", constraint="^9.0", is_dev=True
+                ),
+            ]
+        )
+        await session.commit()
+
+    transport = ASGITransport(app=app)
+    async with AsyncClient(transport=transport, base_url="http://test") as client:
+        response = await client.get("/repos/sbom", params={"repo_root": repo_root})
+
+    body = response.json()
+    names = {c["name"] for c in body["components"]}
+    assert "guzzlehttp/guzzle" in names
+    assert "phpunit/phpunit" not in names  # dev-only requirements are excluded
+    assert body["dependencies"] == [{"ref": module.composer_name, "dependsOn": ["guzzlehttp/guzzle"]}]
 
 
 @pytest.mark.asyncio

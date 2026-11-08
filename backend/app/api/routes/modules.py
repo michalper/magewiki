@@ -20,6 +20,7 @@ from app.api.sse import format_sse
 from app.config import settings
 from app.db import get_session
 from app.models import (
+    ComposerPackageRequirement,
     ConfigField,
     CronJob,
     DbTable,
@@ -37,7 +38,7 @@ from app.models import (
     QueueBinding,
     WebapiRoute,
 )
-from app.sbom import SbomComponentInput, build_cyclonedx_sbom
+from app.sbom import SbomComponentInput, SbomRequirementInput, build_cyclonedx_sbom
 from app.scanner.orchestrator import (
     ScanAlreadyInProgressError,
     ScanResult,
@@ -494,22 +495,43 @@ async def get_repo_sbom(repo_root: str, session: AsyncSession = Depends(get_sess
     abandoned-dependency checks already evaluate this same data, but nothing
     exported it in a standard, tool-consumable format a security team could
     feed into Dependency-Track or another SBOM consumer.
+
+    Also includes a one-level dependency graph: each module's own direct,
+    production composer requirements (already parsed into
+    composer_package_requirements for the CVE/abandoned-dependency checks),
+    as CycloneDX `dependencies` entries — see build_cyclonedx_sbom()'s own
+    docstring for why this is "direct," not a fully-resolved transitive tree.
     """
     rows = (
         await session.execute(
-            select(Module.name, Module.composer_name, Module.setup_version, Module.license, Module.homepage).where(
-                Module.repo_root == repo_root
-            )
+            select(
+                Module.id, Module.name, Module.composer_name, Module.setup_version, Module.license, Module.homepage
+            ).where(Module.repo_root == repo_root)
         )
     ).all()
     if not rows:
         raise HTTPException(status_code=404, detail="no modules scanned under this repo_root")
 
+    bom_ref_by_module_id = {module_id: composer_name or name for module_id, name, composer_name, _, _, _ in rows}
     components = [
         SbomComponentInput(name=name, composer_name=composer_name, version=version, license=license_, homepage=homepage)
-        for name, composer_name, version, license_, homepage in rows
+        for _, name, composer_name, version, license_, homepage in rows
     ]
-    sbom = build_cyclonedx_sbom(repo_root, components)
+
+    requirement_rows = (
+        await session.execute(
+            select(ComposerPackageRequirement.module_id, ComposerPackageRequirement.package_name).where(
+                ComposerPackageRequirement.module_id.in_(bom_ref_by_module_id),
+                ComposerPackageRequirement.is_dev.is_(False),
+            )
+        )
+    ).all()
+    requirements = [
+        SbomRequirementInput(module_bom_ref=bom_ref_by_module_id[module_id], package_name=package_name)
+        for module_id, package_name in requirement_rows
+    ]
+
+    sbom = build_cyclonedx_sbom(repo_root, components, requirements)
 
     safe_name = "".join(c if c.isalnum() or c in "-_." else "_" for c in Path(repo_root).name) or "sbom"
     return JSONResponse(
