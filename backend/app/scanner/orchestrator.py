@@ -79,6 +79,23 @@ class ScanAlreadyInProgressError(RuntimeError):
     """Raised when another scan of the same repo_root is already running."""
 
 
+# check_types whose result depends only on this module's own files -- safe to
+# skip recomputing when diff.is_empty() (see _persist_module). Every other
+# check_type (security_advisory, abandoned_dependency, outdated_dependency,
+# magento_php_incompatible, magento_version_blocker, plugin_conflict) depends
+# on external/fleet-wide data that can change independently of this module's
+# own code, so those are never skipped this way.
+_FILE_HASH_DEPENDENT_CHECK_TYPES = (
+    "composer_completeness",
+    "deprecated_annotation",
+    "hardcoded_secret",
+    "phpstan_error",
+    "phpmd_issue",
+    "phpcs_violation",
+    "php_compat_issue",
+)
+
+
 @dataclass
 class ModuleScanOutcome:
     name: str
@@ -581,7 +598,25 @@ async def _persist_module(
         # deleted together with their reinsertion in _sync_module_children below,
         # not here.
         await session.execute(delete(FileHash).where(FileHash.module_id == module.id))
-        await session.execute(delete(ModuleQualityFinding).where(ModuleQualityFinding.module_id == module.id))
+        if diff.is_empty():
+            # Nothing about this module's own files changed, so the checks
+            # purely derived from them (composer-completeness, deprecated-
+            # annotation, hardcoded-secret, and PHP static analysis) can't have
+            # changed either -- leave their existing rows alone rather than
+            # paying for a real round-trip to php-analyzer per tool per module
+            # for a result that's guaranteed identical. Checks that depend on
+            # *external* data (security advisories, abandoned/outdated
+            # dependencies, Magento release compatibility) are deleted and
+            # recomputed below regardless, since that data can change even
+            # when this module's own code hasn't.
+            await session.execute(
+                delete(ModuleQualityFinding).where(
+                    ModuleQualityFinding.module_id == module.id,
+                    ModuleQualityFinding.check_type.notin_(_FILE_HASH_DEPENDENT_CHECK_TYPES),
+                )
+            )
+        else:
+            await session.execute(delete(ModuleQualityFinding).where(ModuleQualityFinding.module_id == module.id))
         await session.execute(
             delete(ComposerPackageRequirement).where(ComposerPackageRequirement.module_id == module.id)
         )
@@ -756,19 +791,24 @@ async def _persist_module(
             ),
         ]
 
-    session_findings, php_static_findings = await asyncio.gather(
-        _session_based_checks(),
-        check_php_static_analysis(
-            pm.discovered.root, repo_root, pm.composer.php_constraint if pm.composer else None
-        ),
-    )
-    quality_findings = [
-        *composer_completeness_findings(pm.composer),
-        *scan_deprecated_annotations(pm.discovered.root),
-        *scan_hardcoded_secrets(pm.discovered.root),
-        *session_findings,
-        *php_static_findings,
-    ]
+    skip_file_hash_dependent_checks = existing is not None and diff.is_empty()
+    if skip_file_hash_dependent_checks:
+        session_findings = await _session_based_checks()
+        quality_findings = [*session_findings]
+    else:
+        session_findings, php_static_findings = await asyncio.gather(
+            _session_based_checks(),
+            check_php_static_analysis(
+                pm.discovered.root, repo_root, pm.composer.php_constraint if pm.composer else None
+            ),
+        )
+        quality_findings = [
+            *composer_completeness_findings(pm.composer),
+            *scan_deprecated_annotations(pm.discovered.root),
+            *scan_hardcoded_secrets(pm.discovered.root),
+            *session_findings,
+            *php_static_findings,
+        ]
     for finding in quality_findings:
         session.add(
             ModuleQualityFinding(

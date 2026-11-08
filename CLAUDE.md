@@ -703,7 +703,26 @@ reflects this; no replacement or follow-up is scheduled for it). All four new ch
 `"warning"` — informational, not blocking, since there's no "upgrade readiness" gate concept yet
 to make a PHP-compat finding a hard blocker the way v1 treats it. Explicit user decision: accept
 full-rescan-every-time for now rather than building a hash-skip-if-unchanged optimization, since
-nothing today is large enough to prove that's actually needed. Also worth flagging: `ModuleSummary`
+nothing today is large enough to prove that's actually needed.
+
+**Hash-skip for file-hash-dependent quality checks (recorded 2026-11-08):** the "nothing today
+is large enough to prove that's actually needed" above got proven wrong — a real 751-module
+store's nightly cron was hammering `php-analyzer` non-stop (confirmed directly: a no-op rescan of
+that same store took 1518s). `_persist_module` (`app/scanner/orchestrator.py`) now skips
+`composer_completeness_findings`/`scan_deprecated_annotations`/`scan_hardcoded_secrets`/
+`check_php_static_analysis` entirely when `diff.is_empty()` (this module's own files are
+byte-for-byte unchanged since last scan) — their result is purely a function of this module's own
+file content, so it can't have changed either, and their existing `module_quality_findings` rows
+are left untouched rather than deleted-and-reinserted. The three checks that depend on *external*
+data (`security_advisory`, `abandoned_dependency`/`outdated_dependency`, Magento upgrade
+readiness) always rerun regardless of `diff.is_empty()` — a new CVE or Magento release can make an
+unchanged module newly non-compliant, so skipping those on file-hash alone would be wrong, not
+just an optimization. `plugin_conflict` (see below) was never affected either way — it's a
+separate fleet-wide pass, not part of this per-module path at all. Verified against the same real
+751-module store, not just the unit test mocking call counts: a second, no-op rescan dropped from
+1518s to 170s (~9x) with identical finding counts.
+
+Also worth flagging: `ModuleSummary`
 now carries 10 flat per-check-type count fields (3 added in Phase 9, 3 more in Phase 10, 4 more
 here) — a generic `dict[check_type, count]` would scale better, but wasn't worth refactoring three
 times' worth of already-shipped, working frontend code for a cleanliness win nobody asked for.

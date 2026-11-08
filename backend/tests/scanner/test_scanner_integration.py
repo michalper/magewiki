@@ -221,6 +221,47 @@ async def test_scan_repository_records_quality_findings_and_replaces_them_on_res
 
 
 @pytest.mark.asyncio
+async def test_scan_repository_skips_file_hash_dependent_checks_on_a_no_op_rescan(
+    demo_store_path: Path, db_session, monkeypatch
+):
+    """Real-world motivation: a 751-module store's nightly cron was hammering
+    php-analyzer non-stop because PHPStan/PHPMD/phpcs/Rector reran for every
+    module on every scan, even when nothing in that module's own files had
+    changed -- their result can't have changed either in that case. Checks that
+    depend on external data (security advisories here) must still rerun every
+    time regardless, since that data can change independently of this module's
+    own code.
+    """
+    repo_root = str(demo_store_path.resolve())
+    await delete_module_if_present(db_session, repo_root, "Vendor_Module")
+
+    php_static_calls = 0
+    security_advisory_calls = 0
+
+    async def fake_php_static(*args, **kwargs):
+        nonlocal php_static_calls
+        php_static_calls += 1
+        return []
+
+    async def fake_security_advisories(*args, **kwargs):
+        nonlocal security_advisory_calls
+        security_advisory_calls += 1
+        return []
+
+    monkeypatch.setattr("app.scanner.orchestrator.check_php_static_analysis", fake_php_static)
+    monkeypatch.setattr("app.scanner.orchestrator.check_security_advisories", fake_security_advisories)
+
+    await scan_repository(repo_root, db_session)
+    assert php_static_calls == 1
+    assert security_advisory_calls == 1
+
+    # Re-scan with no changes at all.
+    await scan_repository(repo_root, db_session)
+    assert php_static_calls == 1  # not called again -- nothing about the module's files changed
+    assert security_advisory_calls == 2  # always rechecked -- advisory data can change independently
+
+
+@pytest.mark.asyncio
 async def test_scan_repository_persists_graphql_fields(demo_store_path: Path, db_session, tmp_path: Path):
     repo_copy = tmp_path / "demo-store"
     shutil.copytree(demo_store_path, repo_copy)
