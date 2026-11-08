@@ -15,7 +15,7 @@ An AI-powered catalog and chat agent for Magento 2 codebases. MageWiki-AI scans 
 
 Project status: **Phases 0–12b and 14 done** (only Phase 13, cloud deployment, is deferred) — the MVP (v1.0, Phases 0–5) plus cron/webhook automation, BYOK in the UI, Ollama support, a per-module dependency graph, an evaluation suite, CI/CD, a local Kubernetes deployment, parser-only quality checks, CVE/dependency intelligence, a multi-repo fleet view, a real PHP static-analysis toolchain (PHPStan/PHPMD/phpcs/Rector), Magento-upgrade-readiness checking, and deeper structural facts (webapi/crontab/db_schema/system.xml). See [Roadmap](#roadmap) below and `CLAUDE.md` for the full design, including the recorded decision behind each phase.
 
-**[See the full Wiki](https://github.com/michalper/magewiki/wiki)** for a screen-by-screen walkthrough — every screenshot there is a real scan of [Ordo_Automation](https://github.com/michalper/ordo), not a synthetic demo.
+**[See the full Wiki](https://github.com/michalper/magewiki/wiki)** for a screen-by-screen walkthrough — every screenshot there is a real scan of [Ordo_Automation](https://github.com/michalper/ordo), not a synthetic demo. **[See `docs/architecture.md`](docs/architecture.md)** for the reasoning behind the retrieval design, the anti-hallucination guarantees, and how LLM cost is kept bounded — the "why", not just the "what".
 
 ## Screenshots
 
