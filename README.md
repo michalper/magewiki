@@ -35,6 +35,7 @@ Project status: **Phases 0–12b and 14 done** (only Phase 13, cloud deployment,
 - Queue: ARQ + Redis (nightly rescan cron + a daily Magento-release-cache refresh cron)
 - LLM: LiteLLM (BYOK — Anthropic Claude for now, DeepSeek/Ollama supported; see `CLAUDE.md`)
 - PHP static analysis: a dedicated `php-analyzer` sidecar (plain PHP, no framework) running PHPStan, PHPMD, phpcs, Rector, and PhpMetrics against scanned modules, reachable only on the internal Docker network
+- Real test execution: the same sidecar actually runs a module's own `Test/Unit/` suite via its own `vendor/bin/phpunit` (when the module ships one) — pass/fail counts and code coverage, sandboxed (no network egress for the container, disabled shell/process functions, a wall-clock timeout)
 
 Full architecture and phase plan: see `CLAUDE.md`.
 
