@@ -71,6 +71,7 @@ describe("StatsPage", () => {
           composer_conflict: 1,
           db_schema_conflict: 1,
           circular_dependency: 1,
+          license_risk: 1,
         },
       }),
     ]);
@@ -101,6 +102,11 @@ describe("StatsPage", () => {
       "href",
       "/modules?finding=plugin_conflict,composer_conflict,webapi_route_conflict,db_schema_conflict,circular_dependency",
     );
+
+    // License risks: 1
+    const licenseTile = screen.getByText("License risks").closest("a")!;
+    expect(licenseTile).toHaveTextContent("1");
+    expect(licenseTile).toHaveAttribute("href", "/modules?finding=license_risk");
   });
 
   it("renders a stat tile as a plain div (not a link) when its count is zero", async () => {

@@ -62,6 +62,7 @@ from app.scanner.events_xml import parse_events_xml
 from app.scanner.graphql_schema import parse_graphql_schema
 from app.scanner.hashing import aggregate_hash, compute_module_file_hashes, diff_file_hashes
 from app.scanner.installed_versions import parse_installed_versions
+from app.scanner.license_check import check_license_risk
 from app.scanner.magento_upgrade import check_magento_upgrade_readiness
 from app.scanner.module_xml import InvalidModuleXmlError, parse_module_xml
 from app.scanner.multi_store import find_store_roots
@@ -103,6 +104,9 @@ _FILE_HASH_DEPENDENT_CHECK_TYPES = (
     # (PhpMetrics shipped after this tuple did) and originally missed here --
     # see the "phpmetrics_issue findings silently wiped" regression note.
     "phpmetrics_issue",
+    # Purely a function of composer.json's own license field, same as
+    # composer_completeness above.
+    "license_risk",
 )
 
 
@@ -984,6 +988,7 @@ async def _persist_module(
         )
         quality_findings = [
             *composer_completeness_findings(pm.composer),
+            *check_license_risk(pm.composer.license if pm.composer else None),
             *scan_deprecated_annotations(pm.discovered.root),
             *scan_hardcoded_secrets(pm.discovered.root),
             *session_findings,

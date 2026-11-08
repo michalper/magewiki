@@ -238,6 +238,7 @@ export default function StatsPage() {
         sumByCheckType(modules, "webapi_route_conflict") +
         sumByCheckType(modules, "db_schema_conflict") +
         sumByCheckType(modules, "circular_dependency"),
+      licenseRisks: sumByCheckType(modules, "license_risk"),
     }),
     [modules]
   );
@@ -340,6 +341,13 @@ export default function StatsPage() {
                 "db_schema_conflict",
                 "circular_dependency",
               ]}
+            />
+            <StatTile
+              label="License risks"
+              value={totals.licenseRisks}
+              accent={totals.licenseRisks > 0 ? palette.status.warning : undefined}
+              description="Modules declaring a strong-copyleft license (GPL/AGPL/SSPL) — bundling one into a commercial store may carry real redistribution obligations worth reviewing."
+              findingTypes={["license_risk"]}
             />
           </div>
 

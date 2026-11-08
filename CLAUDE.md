@@ -957,6 +957,22 @@ real DB before assuming data loss: still showed the original 138 real findings o
 Ordo_Automation, so no module had actually hit a no-op rescan since PhpMetrics
 shipped — this closes a real but not-yet-triggered data-loss bug, not a repair job.
 
+**License-risk check (recorded 2026-11-08):** the third roadmap idea from the same
+brainstorm, "po kolei" after SBOM export. Per-module, not fleet-wide (unlike the
+conflict-detection family above) — `app/scanner/license_check.py`'s
+`check_license_risk()` flags a module whose own composer.json declares a
+strong-copyleft license (`GPL-`/`AGPL-`/`SSPL-` prefixes only; LGPL deliberately
+excluded as lower-risk/debatable, same "flag a concrete, certain signal" pragmatism
+as the rest of this file). Deliberately does *not* duplicate
+`composer_completeness_findings()`'s existing "composer.json is missing license"
+finding — a missing license was already covered; this only adds the complementary
+signal of a license that *is* declared but carries real redistribution obligations.
+New `license_risk` check_type (migration `0029`), added to
+`_FILE_HASH_DEPENDENT_CHECK_TYPES` alongside `composer_completeness` since it's
+purely a function of composer.json's own license field. Own "License risks" Stats
+tile (not folded into "Cross-module conflicts" — this isn't a cross-module conflict
+at all, just a per-module compliance signal).
+
 **Phase 12b decision (recorded 2026-11-06):** this is v1's actual headline feature ("upgrade
 readiness"), deliberately left out of Phase 12 and called out there as "no 'upgrade readiness'
 gate concept yet." Live-tested during planning: Magento's own packages

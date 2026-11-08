@@ -2,7 +2,13 @@ from app.sbom import SbomComponentInput, build_cyclonedx_sbom
 
 
 def _component(**overrides):
-    defaults = dict(name="Vendor_Module", composer_name="vendor/module", version="1.2.3", license=None, homepage=None)
+    defaults = {
+        "name": "Vendor_Module",
+        "composer_name": "vendor/module",
+        "version": "1.2.3",
+        "license": None,
+        "homepage": None,
+    }
     defaults.update(overrides)
     return SbomComponentInput(**defaults)
 
