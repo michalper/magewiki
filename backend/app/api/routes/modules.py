@@ -323,7 +323,11 @@ async def _scan_sse_stream(path: str, session: AsyncSession) -> AsyncIterator[st
         # StreamingResponse connection closed, and the UI stayed on "Scanning..."
         # forever with no indication anything failed. Log the real exception
         # server-side and still tell the client, rather than leaking internals.
-        logger.exception("unexpected error during a streaming scan of %s", path)
+        # %r, not %s: path is user-controlled request input (already validated
+        # against the configured scan roots by this point, but defense in
+        # depth costs nothing) — %r's repr() escapes embedded newlines/control
+        # characters instead of letting them forge or split fake log lines.
+        logger.exception("unexpected error during a streaming scan of %r", path)
         yield format_sse({"event": "error", "detail": "scan failed unexpectedly — check server logs"})
 
 

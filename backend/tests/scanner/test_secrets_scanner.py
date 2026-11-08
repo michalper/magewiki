@@ -28,6 +28,25 @@ def test_scan_hardcoded_secrets_detects_generic_password_literal(tmp_path: Path)
     assert "hunter2hunter2" not in findings[0].message
 
 
+def test_scan_hardcoded_secrets_detects_a_pem_private_key_with_a_type_prefix(tmp_path: Path):
+    (tmp_path / "Config.php").write_text("<?php\n// -----BEGIN RSA PRIVATE KEY-----\n")
+    findings = scan_hardcoded_secrets(tmp_path)
+
+    assert len(findings) == 1
+    assert "PEM private key" in findings[0].message
+
+
+def test_scan_hardcoded_secrets_detects_a_pkcs8_pem_private_key_with_no_type_prefix(tmp_path: Path):
+    # PKCS#8 unencrypted keys have no RSA/EC/OPENSSH/DSA prefix at all --
+    # the regex's optional group must still match a bare "PRIVATE KEY"
+    # header, not just the prefixed variants.
+    (tmp_path / "Config.php").write_text("<?php\n// -----BEGIN PRIVATE KEY-----\n")
+    findings = scan_hardcoded_secrets(tmp_path)
+
+    assert len(findings) == 1
+    assert "PEM private key" in findings[0].message
+
+
 def test_scan_hardcoded_secrets_ignores_placeholders(tmp_path: Path):
     (tmp_path / "Config.php").write_text(
         "<?php\n$password = 'changeme';\n$token = 'your_token_here';\n"

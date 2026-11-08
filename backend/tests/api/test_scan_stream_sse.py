@@ -99,6 +99,36 @@ async def test_scan_stream_relays_an_unexpected_exception_as_an_error_event(tmp_
 
 
 @pytest.mark.asyncio
+async def test_scan_stream_escapes_the_path_in_the_server_side_error_log(tmp_path, monkeypatch, caplog):
+    # SonarCloud python:S5145 (log injection): path is user-controlled request
+    # input, and a raw %s in the error log would let an embedded newline
+    # forge a fake extra log line / splice bogus content into the server log.
+    # A real filesystem path can genuinely contain a newline on Linux (only
+    # "/" and the null byte are forbidden), so this is exercised with a real
+    # directory, not a synthetic string.
+    injected = tmp_path / "store\nFAKE LOG LINE: admin logged in"
+    injected.mkdir()
+
+    async def fake_scan_repository_events(repo_root, session):
+        yield {"event": "discovered", "total": 1}
+        raise RuntimeError("boom")
+
+    monkeypatch.setattr("app.scanner.orchestrator.scan_repository_events", fake_scan_repository_events)
+
+    transport = ASGITransport(app=app)
+    with caplog.at_level("ERROR"):
+        async with (
+            AsyncClient(transport=transport, base_url="http://test") as client,
+            client.stream("POST", "/scan/stream", json={"path": str(injected)}) as response,
+        ):
+            async for _ in response.aiter_text():
+                pass
+
+    assert "\\nFAKE LOG LINE" in caplog.text
+    assert "\nFAKE LOG LINE" not in caplog.text
+
+
+@pytest.mark.asyncio
 async def test_scan_stream_rejects_a_path_outside_any_mounted_scan_root():
     transport = ASGITransport(app=app)
     async with AsyncClient(transport=transport, base_url="http://test") as client:
