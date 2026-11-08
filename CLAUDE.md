@@ -982,6 +982,27 @@ pre-override `3.32.7` (inaccurate). Left open, no action: the 2 remaining npm al
 locked major via `shadcn`/`openapi-typescript`'s own transitive pins, matching the
 existing accepted-risk note above for frontend dev-tooling deps.
 
+**First-run onboarding wizard (recorded 2026-11-08):** flagged by the author relaying a
+colleague's confusion — a fellow developer couldn't tell from the running app alone
+whether MageWiki-AI needed a paid API key/subscription just to start using it, even
+though the README already answers this (scanner is 100% free and local; an API key is
+needed only for the two AI features, billed directly by the provider, capped by
+`LLM_MONTHLY_BUDGET_USD`). That answer living only in the README, not in the app
+itself, was the actual gap. New `components/onboarding-wizard.tsx`: a 4-step modal
+(what MageWiki-AI is / how to configure scan roots and start a scan, with live
+`GET /scan-roots` data inline / that AI features are optional and where to add a key /
+a closing link to the Wiki) built on a new `components/ui/dialog.tsx` primitive
+(`@base-ui/react/dialog`, same wrapping pattern as the existing `tooltip.tsx`). Shows
+automatically on first visit (`localStorage`, never during SSR — read via
+`useSyncExternalStore`, the same pattern `lib/use-query-param.ts` already established
+for "browser-only state, never during SSR," chosen specifically to avoid a
+`react-hooks/set-state-in-effect` lint violation an earlier `useEffect`-based draft
+hit), reachable again anytime via a new "?" button in `SiteHeader` through a small
+`OnboardingProvider`/`useOnboarding()` context (mounted once in `app/providers.tsx`,
+wrapping every page). Verified live in a real browser against the real app, not just
+unit tests: all 4 steps, the live scan-roots data, dismissal persisting across a page
+navigation, and the header button reopening it from any page.
+
 ## Working method
 
 - Start each phase in plan mode; propose a plan and wait for approval before writing code.

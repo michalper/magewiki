@@ -4,9 +4,10 @@ import { useState } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useQuery } from "@tanstack/react-query";
-import { Menu, X } from "lucide-react";
+import { HelpCircle, Menu, X } from "lucide-react";
 import { cn } from "cn";
 import { MageWikiIcon } from "@/components/mage-wiki-icon";
+import { useOnboarding } from "@/components/onboarding-wizard";
 import { ThemeToggle } from "@/components/theme-toggle";
 import { apiFetch } from "@/lib/api";
 
@@ -27,6 +28,7 @@ export function SiteHeader() {
   const healthQuery = useQuery({ queryKey: ["health"], queryFn: fetchHealth, retry: false });
   const healthy = healthQuery.data?.status === "ok";
   const [mobileNavOpen, setMobileNavOpen] = useState(false);
+  const onboarding = useOnboarding();
 
   return (
     <header className="sticky top-0 z-10 border-b border-border/60 bg-background/80 backdrop-blur-md">
@@ -73,6 +75,14 @@ export function SiteHeader() {
             />
             {healthQuery.isLoading ? "Checking API…" : healthy ? "API online" : "API unreachable"}
           </span>
+          <button
+            type="button"
+            onClick={onboarding.open}
+            aria-label="Show setup guide"
+            className="flex size-8 items-center justify-center rounded-lg text-muted-foreground hover:bg-muted hover:text-foreground"
+          >
+            <HelpCircle className="size-4.5" />
+          </button>
           <ThemeToggle />
           <button
             type="button"
