@@ -46,6 +46,17 @@ class Module(Base):
     homepage: Mapped[str | None] = mapped_column(Text)
     authors: Mapped[list[str] | None] = mapped_column(ARRAY(Text))
     php_extensions: Mapped[list[str] | None] = mapped_column(ARRAY(Text))
+    # composer.json facts parsed from the start but never surfaced anywhere --
+    # deliberately deferred per CLAUDE.md's "lower-value, more niche fields"
+    # note next to the homepage/authors/php_extensions decision above, added
+    # once actually asked for. scripts: just the defined script *names* (not
+    # their command content -- not useful for a read-only catalog without
+    # execution, and composer.json is third-party, untrusted input). autoload
+    # map of the real PSR-4 namespace roots. allow_plugins: package name ->
+    # whether composer.json explicitly allows it to run as a plugin.
+    composer_scripts: Mapped[list[str] | None] = mapped_column(ARRAY(Text))
+    composer_autoload_psr4: Mapped[dict | None] = mapped_column(JSONB)
+    composer_allow_plugins: Mapped[dict | None] = mapped_column(JSONB)
     enabled: Mapped[bool | None] = mapped_column(Boolean)
     last_scanned_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())

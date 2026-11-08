@@ -24,6 +24,7 @@ def parse_composer_json(path: Path) -> ComposerResult | None:
     require = raw.get("require") if isinstance(raw.get("require"), dict) else {}
     require_dev = raw.get("require-dev") if isinstance(raw.get("require-dev"), dict) else {}
     autoload = raw.get("autoload") if isinstance(raw.get("autoload"), dict) else {}
+    config = raw.get("config") if isinstance(raw.get("config"), dict) else {}
 
     return ComposerResult(
         name=raw.get("name"),
@@ -42,6 +43,9 @@ def parse_composer_json(path: Path) -> ComposerResult | None:
         homepage=raw.get("homepage") if isinstance(raw.get("homepage"), str) else None,
         authors=_authors(raw.get("authors")),
         php_extensions=sorted(name for name in require if name.startswith("ext-")),
+        scripts=_script_names(raw.get("scripts")),
+        autoload_psr4=_autoload_psr4(autoload.get("psr-4")),
+        allow_plugins=_allow_plugins(config.get("allow-plugins")),
     )
 
 
@@ -58,6 +62,37 @@ def _authors(raw_authors: object) -> list[str]:
         email = author.get("email")
         formatted.append(f"{name} <{email}>" if isinstance(email, str) and email else name)
     return formatted
+
+
+def _script_names(raw_scripts: object) -> list[str]:
+    if not isinstance(raw_scripts, dict):
+        return []
+    return sorted(name for name in raw_scripts if isinstance(name, str))
+
+
+def _autoload_psr4(raw_psr4: object) -> dict[str, str]:
+    """composer.json's autoload.psr-4 maps a namespace to either a single path
+    string or an array of paths — normalized to one string per namespace so
+    the API/frontend don't need to handle both shapes. Keys are always
+    strings here (json.loads never produces non-string object keys), so no
+    separate key-type guard is needed, unlike the value, which genuinely
+    varies in shape.
+    """
+    if not isinstance(raw_psr4, dict):
+        return {}
+    result: dict[str, str] = {}
+    for namespace, target in raw_psr4.items():
+        if isinstance(target, str):
+            result[namespace] = target
+        elif isinstance(target, list):
+            result[namespace] = ", ".join(str(p) for p in target)
+    return result
+
+
+def _allow_plugins(raw_allow_plugins: object) -> dict[str, bool]:
+    if not isinstance(raw_allow_plugins, dict):
+        return {}
+    return {name: value for name, value in raw_allow_plugins.items() if isinstance(value, bool)}
 
 
 def _third_party_packages(require: dict) -> dict[str, str]:

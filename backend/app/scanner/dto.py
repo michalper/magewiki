@@ -50,6 +50,13 @@ class ComposerResult:
     homepage: str | None = None
     authors: list[str] = field(default_factory=list)  # "Name <email>" or just "Name"
     php_extensions: list[str] = field(default_factory=list)  # e.g. "ext-openssl", "ext-curl"
+    # Deliberately deferred alongside homepage/authors/php_extensions above,
+    # then added once actually asked for. scripts: defined script *names*
+    # only (not command content -- composer.json is untrusted third-party
+    # input, and the content isn't useful for a read-only catalog anyway).
+    scripts: list[str] = field(default_factory=list)
+    autoload_psr4: dict[str, str] = field(default_factory=dict)  # namespace -> path
+    allow_plugins: dict[str, bool] = field(default_factory=dict)  # package name -> allowed
 
 
 @dataclass

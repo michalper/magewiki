@@ -218,6 +218,9 @@ class ModuleDetail(ModuleSummary):
     homepage: str | None = None
     authors: list[str] = []
     php_extensions: list[str] = []
+    composer_scripts: list[str] = []
+    composer_autoload_psr4: dict[str, str] = {}
+    composer_allow_plugins: dict[str, bool] = {}
     dependencies: list[str]
     classes: list[PhpClassSummary]
     preferences: list[DiPreferenceSummary]
@@ -659,6 +662,9 @@ async def get_module(module_id: int, session: AsyncSession = Depends(get_session
         homepage=module.homepage,
         authors=module.authors or [],
         php_extensions=module.php_extensions or [],
+        composer_scripts=module.composer_scripts or [],
+        composer_autoload_psr4=module.composer_autoload_psr4 or {},
+        composer_allow_plugins=module.composer_allow_plugins or {},
         class_count=len(classes),
         plugin_count=sum(1 for c in classes if c.is_plugin),
         observer_count=sum(1 for c in classes if c.is_observer),

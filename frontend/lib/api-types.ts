@@ -558,6 +558,25 @@ export interface components {
              * @default []
              */
             php_extensions: string[];
+            /**
+             * Composer Scripts
+             * @default []
+             */
+            composer_scripts: string[];
+            /**
+             * Composer Autoload Psr4
+             * @default {}
+             */
+            composer_autoload_psr4: {
+                [key: string]: string;
+            };
+            /**
+             * Composer Allow Plugins
+             * @default {}
+             */
+            composer_allow_plugins: {
+                [key: string]: boolean;
+            };
             /** Dependencies */
             dependencies: string[];
             /** Classes */

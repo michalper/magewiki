@@ -462,6 +462,37 @@ export default function ModuleDetailClient({ id }: { id: string }) {
                 </>
               )}
 
+              {moduleQuery.data.composer_scripts.length > 0 && (
+                <>
+                  <dt className="text-muted-foreground pt-1.5">Composer scripts</dt>
+                  <dd className="pt-1.5 font-mono text-xs">{moduleQuery.data.composer_scripts.join(", ")}</dd>
+                </>
+              )}
+
+              {Object.keys(moduleQuery.data.composer_autoload_psr4).length > 0 && (
+                <>
+                  <dt className="text-muted-foreground pt-1.5">Autoload (PSR-4)</dt>
+                  <dd className="pt-1.5 font-mono text-xs">
+                    {Object.entries(moduleQuery.data.composer_autoload_psr4).map(([namespace, path]) => (
+                      <div key={namespace}>
+                        {namespace} → {path || "."}
+                      </div>
+                    ))}
+                  </dd>
+                </>
+              )}
+
+              {Object.keys(moduleQuery.data.composer_allow_plugins).length > 0 && (
+                <>
+                  <dt className="text-muted-foreground pt-1.5">Allow-plugins</dt>
+                  <dd className="pt-1.5 font-mono text-xs">
+                    {Object.entries(moduleQuery.data.composer_allow_plugins)
+                      .map(([pkg, allowed]) => `${pkg}: ${allowed ? "allowed" : "denied"}`)
+                      .join(", ")}
+                  </dd>
+                </>
+              )}
+
               {moduleQuery.data.dependencies.length > 0 && (
                 <>
                   <dt className="text-muted-foreground pt-1.5">Depends on</dt>

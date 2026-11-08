@@ -57,6 +57,15 @@ async def test_real_ordo_automation_module(db_session):
     assert module.license == ["OSL-3.0"]
     assert module.homepage == "https://ordo.marketing"
     assert module.enabled is None  # no app/etc/config.php at the standalone module's own root
+    assert module.composer_scripts == sorted(
+        ["cs-fix", "cs-check", "phpcs-check", "phpcs-marketplace-check", "rector-check"]
+    )
+    assert module.composer_autoload_psr4 == {"Ordo\\Automation\\": ""}
+    assert module.composer_allow_plugins == {
+        "magento/composer-dependency-version-audit-plugin": False,
+        "dealerdirect/phpcodesniffer-composer-installer": True,
+        "infection/extension-installer": True,
+    }
 
     deps = (await db_session.scalars(
         select(ModuleDependency).where(ModuleDependency.module_id == module.id)

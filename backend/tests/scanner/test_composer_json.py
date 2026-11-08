@@ -16,6 +16,9 @@ def test_parse_composer_json_with_array_license(demo_module_path: Path):
     assert result.has_autoload_psr4 is True
     assert result.has_autoload_files is True
     assert result.has_phpunit_dev_dependency is False
+    assert result.autoload_psr4 == {"Vendor\\Module\\": ""}
+    assert result.scripts == []
+    assert result.allow_plugins == {}
 
 
 def test_parse_composer_json_missing_file(tmp_path: Path):
@@ -75,3 +78,40 @@ def test_composer_completeness_findings_flags_every_missing_field(tmp_path: Path
 
 def test_composer_completeness_findings_with_no_composer_json():
     assert composer_completeness_findings(None) == []
+
+
+def test_parse_composer_json_scripts_returns_sorted_names_only(tmp_path: Path):
+    (tmp_path / "composer.json").write_text(
+        '{"scripts": {"post-install-cmd": "Foo\\\\Bar::install", "test": ["phpunit"]}}',
+        encoding="utf-8",
+    )
+    result = parse_composer_json(tmp_path / "composer.json")
+    assert result.scripts == ["post-install-cmd", "test"]
+
+
+def test_parse_composer_json_scripts_ignores_a_non_dict_value(tmp_path: Path):
+    (tmp_path / "composer.json").write_text('{"scripts": "not an object"}', encoding="utf-8")
+    result = parse_composer_json(tmp_path / "composer.json")
+    assert result.scripts == []
+
+
+def test_parse_composer_json_autoload_psr4_normalizes_an_array_path_to_a_string(tmp_path: Path):
+    (tmp_path / "composer.json").write_text(
+        '{"autoload": {"psr-4": {"Vendor\\\\Module\\\\": ["src/", "generated/"]}}}',
+        encoding="utf-8",
+    )
+    result = parse_composer_json(tmp_path / "composer.json")
+    assert result.autoload_psr4 == {"Vendor\\Module\\": "src/, generated/"}
+
+
+def test_parse_composer_json_allow_plugins_keeps_only_boolean_values(tmp_path: Path):
+    (tmp_path / "composer.json").write_text(
+        '{"config": {"allow-plugins": {"dealerdirect/phpcodesniffer-composer-installer": true, '
+        '"some/plugin": false, "weird/plugin": "not-a-bool"}}}',
+        encoding="utf-8",
+    )
+    result = parse_composer_json(tmp_path / "composer.json")
+    assert result.allow_plugins == {
+        "dealerdirect/phpcodesniffer-composer-installer": True,
+        "some/plugin": False,
+    }

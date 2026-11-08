@@ -26,6 +26,9 @@ function moduleDetail(overrides: Partial<Record<string, unknown>> = {}) {
     homepage: null,
     authors: [],
     php_extensions: [],
+    composer_scripts: [],
+    composer_autoload_psr4: {},
+    composer_allow_plugins: {},
     dependencies: [],
     last_scanned_at: "2026-01-01T00:00:00Z",
     plugins: [],
@@ -175,6 +178,45 @@ describe("ModuleDetailClient", () => {
     mockApis({ module: moduleDetail({ authors: ["Dev One", "Dev Two"] }) });
     renderWithQueryClient(<ModuleDetailClient id="1" />);
     await waitFor(() => expect(screen.getByText("Authors")).toBeInTheDocument());
+  });
+
+  it("renders composer scripts, autoload psr-4 paths, and allow-plugins", async () => {
+    mockApis({
+      module: moduleDetail({
+        composer_scripts: ["cs-fix", "test"],
+        composer_autoload_psr4: { "Vendor\\Module\\": "src/" },
+        composer_allow_plugins: { "dealerdirect/phpcodesniffer-composer-installer": true, "some/plugin": false },
+      }),
+    });
+    renderWithQueryClient(<ModuleDetailClient id="1" />);
+
+    await waitFor(() => expect(screen.getByText("Composer scripts")).toBeInTheDocument());
+    expect(screen.getByText("cs-fix, test")).toBeInTheDocument();
+    expect(screen.getByText("Autoload (PSR-4)")).toBeInTheDocument();
+    expect(screen.getByText("Vendor\\Module\\ → src/")).toBeInTheDocument();
+    expect(screen.getByText("Allow-plugins")).toBeInTheDocument();
+    expect(
+      screen.getByText("dealerdirect/phpcodesniffer-composer-installer: allowed, some/plugin: denied"),
+    ).toBeInTheDocument();
+  });
+
+  it("falls back to '.' for an empty autoload psr-4 path (package root)", async () => {
+    mockApis({
+      module: moduleDetail({ composer_autoload_psr4: { "Vendor\\Module\\": "" } }),
+    });
+    renderWithQueryClient(<ModuleDetailClient id="1" />);
+
+    await waitFor(() => expect(screen.getByText("Vendor\\Module\\ → .")).toBeInTheDocument());
+  });
+
+  it("omits the composer-scripts/autoload/allow-plugins rows entirely when none are present", async () => {
+    mockApis({ module: moduleDetail() });
+    renderWithQueryClient(<ModuleDetailClient id="1" />);
+
+    await waitFor(() => expect(screen.getByRole("heading", { name: "Vendor_Module" })).toBeInTheDocument());
+    expect(screen.queryByText("Composer scripts")).not.toBeInTheDocument();
+    expect(screen.queryByText("Autoload (PSR-4)")).not.toBeInTheDocument();
+    expect(screen.queryByText("Allow-plugins")).not.toBeInTheDocument();
   });
 
   it("links a dependency that resolves to a module in the same repo, plain text otherwise", async () => {
