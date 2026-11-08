@@ -165,4 +165,28 @@ describe("StatsPage", () => {
     await waitFor(() => expect(screen.getByText("Top modules by quality findings")).toBeInTheDocument());
     expect(screen.queryByText("No quality findings across any scanned module.")).not.toBeInTheDocument();
   });
+
+  describe("a check_type with no curated KPI tile", () => {
+    beforeEach(() => {
+      vi.resetModules();
+      vi.doMock("@/components/quality-badges", async (importOriginal) => {
+        const actual = await importOriginal<typeof import("@/components/quality-badges")>();
+        return {
+          ...actual,
+          CHECK_TYPES: [...actual.CHECK_TYPES, { key: "brand_new_check", severity: "warning", label: () => "1 thing" }],
+        };
+      });
+    });
+
+    it("still gets a plain, auto-generated tile instead of being invisible", async () => {
+      const { default: StatsPageWithExtraCheckType } = await import("./page");
+      fetchMock.mockResolvedValue([mod({ finding_counts: { brand_new_check: 5 } })]);
+      renderWithQueryClient(<StatsPageWithExtraCheckType />);
+
+      await waitFor(() => expect(screen.getByText("Brand new check")).toBeInTheDocument());
+      const tile = screen.getByText("Brand new check").closest("a")!;
+      expect(tile).toHaveTextContent("5");
+      expect(tile).toHaveAttribute("href", "/modules?finding=brand_new_check");
+    });
+  });
 });
