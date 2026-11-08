@@ -3,7 +3,7 @@ from pathlib import Path
 import httpx
 import pytest
 
-from app.scanner.php_analyzer_client import check_php_static_analysis
+from app.scanner.php_analyzer_client import check_php_static_analysis, check_php_unit_tests
 
 
 class _FakeResponse:
@@ -289,4 +289,106 @@ async def test_check_php_static_analysis_fails_open_on_a_non_dict_json_response(
 
     findings = await check_php_static_analysis(module_root, module_root)
 
+    assert findings == []
+
+
+class _PhpunitAsyncClient:
+    def __init__(self, response_json: dict):
+        self._response_json = response_json
+
+    async def __aenter__(self):
+        return self
+
+    async def __aexit__(self, *args):
+        return False
+
+    async def post(self, url, json=None):
+        assert url.endswith("/phpunit")
+        return _FakeResponse(self._response_json)
+
+
+@pytest.mark.asyncio
+async def test_check_php_unit_tests_not_executed_when_sidecar_found_nothing_to_run(tmp_path, monkeypatch):
+    module_root = tmp_path / "Vendor" / "Module"
+    module_root.mkdir(parents=True)
+    monkeypatch.setattr(
+        "app.scanner.php_analyzer_client.httpx.AsyncClient",
+        lambda *a, **k: _PhpunitAsyncClient({"executed": False}),
+    )
+
+    result, findings = await check_php_unit_tests(module_root)
+
+    assert result.executed is False
+    assert findings == []
+
+
+@pytest.mark.asyncio
+async def test_check_php_unit_tests_parses_a_real_passing_run(tmp_path, monkeypatch):
+    module_root = tmp_path / "Vendor" / "Module"
+    module_root.mkdir(parents=True)
+    monkeypatch.setattr(
+        "app.scanner.php_analyzer_client.httpx.AsyncClient",
+        lambda *a, **k: _PhpunitAsyncClient(
+            {"executed": True, "tests_run": 42, "tests_failed": 0, "coverage_percent": 87.5, "failures": []}
+        ),
+    )
+
+    result, findings = await check_php_unit_tests(module_root)
+
+    assert result.executed is True
+    assert result.tests_run == 42
+    assert result.tests_failed == 0
+    assert result.coverage_percent == 87.5
+    assert findings == []
+
+
+@pytest.mark.asyncio
+async def test_check_php_unit_tests_turns_failures_into_quality_findings(tmp_path, monkeypatch):
+    module_root = tmp_path / "Vendor" / "Module"
+    module_root.mkdir(parents=True)
+    monkeypatch.setattr(
+        "app.scanner.php_analyzer_client.httpx.AsyncClient",
+        lambda *a, **k: _PhpunitAsyncClient(
+            {
+                "executed": True,
+                "tests_run": 10,
+                "tests_failed": 1,
+                "coverage_percent": 60.0,
+                "failures": [{"test": "Vendor\\Module\\Test\\Unit\\FooTest::testBar", "message": "boom"}],
+            }
+        ),
+    )
+
+    result, findings = await check_php_unit_tests(module_root)
+
+    assert result.tests_failed == 1
+    assert len(findings) == 1
+    assert findings[0].check_type == "phpunit_failure"
+    assert findings[0].severity == "warning"
+    assert findings[0].message == "Vendor\\Module\\Test\\Unit\\FooTest::testBar: boom"
+
+
+@pytest.mark.asyncio
+async def test_check_php_unit_tests_fails_open_on_connection_error(tmp_path, monkeypatch):
+    module_root = tmp_path / "Vendor" / "Module"
+    module_root.mkdir(parents=True)
+    monkeypatch.setattr("app.scanner.php_analyzer_client.httpx.AsyncClient", lambda *a, **k: _RaisingAsyncClient())
+
+    result, findings = await check_php_unit_tests(module_root)
+
+    assert result.executed is False
+    assert findings == []
+
+
+@pytest.mark.asyncio
+async def test_check_php_unit_tests_fails_open_on_an_empty_200_body(tmp_path, monkeypatch):
+    module_root = tmp_path / "Vendor" / "Module"
+    module_root.mkdir(parents=True)
+    monkeypatch.setattr(
+        "app.scanner.php_analyzer_client.httpx.AsyncClient", lambda *a, **k: _EmptyBodyAsyncClient()
+    )
+
+    result, findings = await check_php_unit_tests(module_root)
+
+    assert result.executed is False
     assert findings == []

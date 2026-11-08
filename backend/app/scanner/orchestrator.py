@@ -66,7 +66,7 @@ from app.scanner.license_check import check_license_risk
 from app.scanner.magento_upgrade import check_magento_upgrade_readiness
 from app.scanner.module_xml import InvalidModuleXmlError, parse_module_xml
 from app.scanner.multi_store import find_store_roots
-from app.scanner.php_analyzer_client import check_php_static_analysis
+from app.scanner.php_analyzer_client import check_php_static_analysis, check_php_unit_tests
 from app.scanner.php_classes import catalog_module_classes
 from app.scanner.plugin_conflicts import PluginRow, detect_plugin_conflicts
 from app.scanner.queue_config import parse_queue_config
@@ -107,6 +107,9 @@ _FILE_HASH_DEPENDENT_CHECK_TYPES = (
     # Purely a function of composer.json's own license field, same as
     # composer_completeness above.
     "license_risk",
+    # A module's own Test/Unit/ result is purely a function of its own code,
+    # same as every check_php_static_analysis finding above -- same reason.
+    "phpunit_failure",
 )
 
 
@@ -980,12 +983,24 @@ async def _persist_module(
         session_findings = await _session_based_checks()
         quality_findings = [*session_findings]
     else:
-        session_findings, php_static_findings = await asyncio.gather(
+        session_findings, php_static_findings, (phpunit_result, phpunit_findings) = await asyncio.gather(
             _session_based_checks(),
             check_php_static_analysis(
                 pm.discovered.root, repo_root, pm.composer.php_constraint if pm.composer else None, fqcn_to_file
             ),
+            check_php_unit_tests(pm.discovered.root, pm.composer.php_constraint if pm.composer else None),
         )
+        # None/None/None (not 0/0/None) means "never executed" -- only
+        # overwrite these when the check actually ran this time, same "leave
+        # it alone when there's nothing new to say" principle as the
+        # findings-preservation skip above. A module that loses its real
+        # Test/Unit directory would keep showing its last real numbers until
+        # a future check revisits this -- same accepted staleness as every
+        # other file-hash-dependent check here.
+        if phpunit_result.executed:
+            module.phpunit_tests_run = phpunit_result.tests_run
+            module.phpunit_tests_failed = phpunit_result.tests_failed
+            module.phpunit_coverage_percent = phpunit_result.coverage_percent
         quality_findings = [
             *composer_completeness_findings(pm.composer),
             *check_license_risk(pm.composer.license if pm.composer else None),
@@ -993,6 +1008,7 @@ async def _persist_module(
             *scan_hardcoded_secrets(pm.discovered.root),
             *session_findings,
             *php_static_findings,
+            *phpunit_findings,
         ]
     for finding in quality_findings:
         session.add(

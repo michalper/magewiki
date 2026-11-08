@@ -105,6 +105,11 @@ class ModuleSummary(BaseModel):
     has_readme: bool = False
     has_tests: bool = False
     has_module_doc: bool = False
+    # None means "never executed" (no real Test/Unit + own vendor/bin/
+    # phpunit) -- see check_php_unit_tests.
+    phpunit_tests_run: int | None = None
+    phpunit_tests_failed: int | None = None
+    phpunit_coverage_percent: float | None = None
     # check_type -> count, e.g. {"phpstan_error": 3, "hardcoded_secret": 1}. A
     # generic dict instead of one flat field per check_type (there were 12,
     # added incrementally across Phases 9/10/12 — CLAUDE.md's own Phase 12
@@ -408,6 +413,9 @@ async def list_modules(session: AsyncSession = Depends(get_session)) -> list[Mod
                 has_readme=module.has_readme,
                 has_tests=module.has_tests,
                 has_module_doc=doc is not None,
+                phpunit_tests_run=module.phpunit_tests_run,
+                phpunit_tests_failed=module.phpunit_tests_failed,
+                phpunit_coverage_percent=module.phpunit_coverage_percent,
                 finding_counts=counts_by_module.get(module.id, {}),
             )
         )
@@ -659,6 +667,9 @@ async def get_module(module_id: int, session: AsyncSession = Depends(get_session
         has_readme=module.has_readme,
         has_tests=module.has_tests,
         has_module_doc=doc_row is not None,
+        phpunit_tests_run=module.phpunit_tests_run,
+        phpunit_tests_failed=module.phpunit_tests_failed,
+        phpunit_coverage_percent=module.phpunit_coverage_percent,
         finding_counts=dict(Counter(f.check_type for f in quality_findings)),
         dependencies=[d.depends_on_name for d in dependencies],
         classes=class_summaries,

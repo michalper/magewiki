@@ -531,6 +531,12 @@ export interface components {
              * @default false
              */
             has_module_doc: boolean;
+            /** Phpunit Tests Run */
+            phpunit_tests_run?: number | null;
+            /** Phpunit Tests Failed */
+            phpunit_tests_failed?: number | null;
+            /** Phpunit Coverage Percent */
+            phpunit_coverage_percent?: number | null;
             /**
              * Finding Counts
              * @default {}
@@ -690,6 +696,12 @@ export interface components {
              * @default false
              */
             has_module_doc: boolean;
+            /** Phpunit Tests Run */
+            phpunit_tests_run?: number | null;
+            /** Phpunit Tests Failed */
+            phpunit_tests_failed?: number | null;
+            /** Phpunit Coverage Percent */
+            phpunit_coverage_percent?: number | null;
             /**
              * Finding Counts
              * @default {}

@@ -114,6 +114,32 @@ describe("ModuleDetailClient", () => {
     );
   });
 
+  it("shows a passing PHPUnit badge with coverage when phpunit was executed", async () => {
+    mockApis({
+      module: moduleDetail({ phpunit_tests_run: 42, phpunit_tests_failed: 0, phpunit_coverage_percent: 87.5 }),
+    });
+    renderWithQueryClient(<ModuleDetailClient id="1" />);
+
+    await waitFor(() => expect(screen.getByText("42 tests passed · 87.5% coverage")).toBeInTheDocument());
+  });
+
+  it("shows a failing PHPUnit badge when some tests failed", async () => {
+    mockApis({
+      module: moduleDetail({ phpunit_tests_run: 10, phpunit_tests_failed: 2, phpunit_coverage_percent: 60 }),
+    });
+    renderWithQueryClient(<ModuleDetailClient id="1" />);
+
+    await waitFor(() => expect(screen.getByText("2/10 tests failed · 60% coverage")).toBeInTheDocument());
+  });
+
+  it("omits the PHPUnit badge entirely when it was never executed", async () => {
+    mockApis({ module: moduleDetail() });
+    renderWithQueryClient(<ModuleDetailClient id="1" />);
+
+    await waitFor(() => expect(screen.getByRole("heading", { name: "Vendor_Module" })).toBeInTheDocument());
+    expect(screen.queryByText(/tests passed|tests failed/)).not.toBeInTheDocument();
+  });
+
   it("shows em-dashes and singular badges for a minimal module", async () => {
     mockApis({ module: moduleDetail({ enabled: null, has_readme: false, has_tests: false, composer_name: null, setup_version: null }) });
     renderWithQueryClient(<ModuleDetailClient id="1" />);

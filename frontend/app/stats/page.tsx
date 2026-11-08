@@ -239,6 +239,7 @@ export default function StatsPage() {
         sumByCheckType(modules, "db_schema_conflict") +
         sumByCheckType(modules, "circular_dependency"),
       licenseRisks: sumByCheckType(modules, "license_risk"),
+      phpunitFailures: sumByCheckType(modules, "phpunit_failure"),
     }),
     [modules]
   );
@@ -348,6 +349,13 @@ export default function StatsPage() {
               accent={totals.licenseRisks > 0 ? palette.status.warning : undefined}
               description="Modules declaring a strong-copyleft license (GPL/AGPL/SSPL) — bundling one into a commercial store may carry real redistribution obligations worth reviewing."
               findingTypes={["license_risk"]}
+            />
+            <StatTile
+              label="PHPUnit test failures"
+              value={totals.phpunitFailures}
+              accent={totals.phpunitFailures > 0 ? palette.status.warning : undefined}
+              description="Failing tests from a module's own Test/Unit/ suite, actually executed via its own vendor/bin/phpunit — only for modules that ship a standalone-runnable phpunit setup."
+              findingTypes={["phpunit_failure"]}
             />
           </div>
 

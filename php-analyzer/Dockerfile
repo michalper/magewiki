@@ -10,13 +10,25 @@
 # which of these three actually runs each tool, per module.
 FROM alpine:edge
 
+# php8X-intl and php8X-pecl-pcov are for run_phpunit() only (see index.php) --
+# the one tool here that actually executes a scanned module's own test code
+# rather than just parsing/analysing it. intl: a real module's Test/Unit
+# commonly exercises Magento\Framework\Stdlib\DateTime\TimezoneInterface,
+# which needs ext-intl's IntlDateFormatter -- confirmed directly, the first
+# real run against Ordo_Automation's own Test/Unit failed with exactly this
+# "Class IntlDateFormatter not found" error without it. pcov: a lightweight
+# coverage driver (no Xdebug overhead) PHPUnit auto-detects and uses for
+# --coverage-clover once loaded.
 RUN apk add --no-cache git unzip \
     php83 php83-phar php83-mbstring php83-tokenizer php83-ctype php83-dom \
         php83-xml php83-xmlwriter php83-simplexml php83-curl php83-openssl php83-iconv \
+        php83-intl php83-pecl-pcov \
     php84 php84-phar php84-mbstring php84-tokenizer php84-ctype php84-dom \
         php84-xml php84-xmlwriter php84-simplexml php84-curl php84-openssl php84-iconv \
+        php84-intl php84-pecl-pcov \
     php85 php85-phar php85-mbstring php85-tokenizer php85-ctype php85-dom \
         php85-xml php85-xmlwriter php85-simplexml php85-curl php85-openssl php85-iconv \
+        php85-intl php85-pecl-pcov \
     && ln -sf /usr/bin/php84 /usr/bin/php \
     && php -r "copy('https://getcomposer.org/installer', 'composer-setup.php');" \
     && php composer-setup.php --install-dir=/usr/local/bin --filename=composer \

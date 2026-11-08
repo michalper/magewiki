@@ -4,7 +4,7 @@ from pathlib import Path
 import httpx
 
 from app.config import settings
-from app.scanner.dto import QualityFinding
+from app.scanner.dto import QualityFinding, TestExecutionResult
 from app.scanner.semver import constraints_overlap
 
 logger = logging.getLogger(__name__)
@@ -163,3 +163,78 @@ async def check_php_static_analysis(
                 )
             )
     return findings
+
+
+async def check_php_unit_tests(
+    module_root: Path, php_constraint: str | None = None
+) -> tuple[TestExecutionResult, list[QualityFinding]]:
+    """Actually run a module's own Test/Unit/ suite via its own
+    vendor/bin/phpunit -- the first check in this file that executes scanned
+    code rather than only parsing/analysing it statically, so it's scoped
+    deliberately narrower than every other check here:
+
+    - Unit tests only, never Integration/ -- those need a real bootstrapped
+      Magento install with a real database, which this sidecar deliberately
+      doesn't have (same boundary check_php_static_analysis already draws
+      around a real vendor/magento/framework).
+    - Only the MODULE's own vendor/bin/phpunit and its own
+      phpunit.xml/phpunit.xml.dist, never a containing store's dev/tests/unit
+      harness -- confirmed empirically against a real module
+      (Ordo_Automation) nested inside a full Magento checkout that the other
+      way genuinely doesn't work: the module's own Test/Unit/bootstrap.php
+      resolves its own "../../vendor/autoload.php" relative to the module's
+      own root, which only exists when that module was composer-installed
+      standalone, not when nested three levels deep inside a store's vendor/
+      tree. A module relying only on a containing store's test harness
+      simply doesn't get this check -- not a regression, the same kind of
+      scope limit Test/Integration/Test/Api already have. No real phpunit +
+      own config means nothing to run -- not a failure, just
+      TestExecutionResult(executed=False).
+
+    Real sandboxing, not just "it's in a container": see php-analyzer's
+    run_phpunit() for the actual hardening (wall-clock timeout,
+    disable_functions blocking shell/process-spawning functions, a capped
+    memory_limit) -- this is the one call in this whole scanner that
+    genuinely executes third-party PHP code, which is a different risk class
+    than everything else here. Verified directly against a real module
+    (Ordo_Automation, 3013 real tests): disable_functions doesn't break a
+    real test suite, and a wall-clock timeout genuinely SIGKILLs a hung
+    process rather than just politely asking it to stop.
+    """
+    payload: dict[str, str] = {
+        "module_path": str(module_root),
+        "php_binary": _pick_php_binary(php_constraint),
+    }
+    try:
+        async with httpx.AsyncClient(timeout=180.0) as client:
+            response = await client.post(f"{settings.php_analyzer_url}/phpunit", json=payload)
+            response.raise_for_status()
+            data = response.json()
+    except httpx.HTTPError:
+        logger.warning("php-analyzer phpunit call failed for %s", module_root, exc_info=True)
+        return TestExecutionResult(executed=False), []
+    except ValueError:
+        logger.warning("php-analyzer phpunit returned an unparseable response for %s", module_root)
+        return TestExecutionResult(executed=False), []
+
+    if not isinstance(data, dict) or not data.get("executed"):
+        return TestExecutionResult(executed=False), []
+
+    result = TestExecutionResult(
+        executed=True,
+        tests_run=int(data.get("tests_run") or 0),
+        tests_failed=int(data.get("tests_failed") or 0),
+        coverage_percent=data.get("coverage_percent"),
+    )
+    findings = [
+        QualityFinding(
+            check_type="phpunit_failure",
+            severity="warning",
+            file_path=None,
+            line=None,
+            message=f"{failure.get('test', 'unknown test')}: {failure.get('message', '')}".strip(": "),
+        )
+        for failure in data.get("failures", [])
+        if isinstance(failure, dict)
+    ]
+    return result, findings

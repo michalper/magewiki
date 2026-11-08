@@ -333,6 +333,152 @@ function run_phpmetrics(string $root, string $modulePath, string $phpBinary): ar
     return $findings;
 }
 
+// A wall-clock cap on run_phpunit() specifically -- the one tool here that
+// actually executes third-party test code rather than only parsing it, so a
+// test's own infinite loop or sleep can't hang this sidecar indefinitely.
+// `timeout -s KILL` (not the gentler default SIGTERM) since a hung PHP
+// process ignoring SIGTERM is exactly the failure mode this exists to catch.
+const PHPUNIT_TIMEOUT_SECONDS = 90;
+
+function run_phpunit(string $modulePath, string $phpBinary): array
+{
+    // Deliberately the MODULE's own vendor/bin/phpunit + its own
+    // phpunit.xml(.dist), never a containing store's dev/tests/unit harness
+    // -- confirmed empirically against a real module (Ordo_Automation)
+    // nested inside a full store checkout that this does NOT work the other
+    // way: the module's own Test/Unit/bootstrap.php resolves its
+    // "../../vendor/autoload.php" relative to ITS OWN root, which only
+    // exists when the module was composer-installed standalone (its own
+    // complete, self-contained checkout), not when nested three levels deep
+    // inside a store's vendor/ tree. A module relying only on a containing
+    // store's test harness simply doesn't get this check -- not a
+    // regression, the same kind of scope limit Ordo's own phpunit.xml.dist
+    // already documents for Test/Integration/Test/Api ("bootstrap a real,
+    // installed Magento application... see the docker-compose environment").
+    $phpunitBinary = $modulePath . '/vendor/bin/phpunit';
+    $unitTestDir = $modulePath . '/Test/Unit';
+    $ownConfig = null;
+    foreach (['phpunit.xml', 'phpunit.xml.dist'] as $candidate) {
+        if (is_file($modulePath . '/' . $candidate)) {
+            $ownConfig = $modulePath . '/' . $candidate;
+            break;
+        }
+    }
+    if (!is_file($phpunitBinary) || !is_dir($unitTestDir) || $ownConfig === null) {
+        return ['executed' => false];
+    }
+
+    $cacheDir = sys_get_temp_dir() . '/phpunit_cache_' . bin2hex(random_bytes(8));
+    $junitFile = tempnam(sys_get_temp_dir(), 'phpunit_junit_');
+    $cloverFile = tempnam(sys_get_temp_dir(), 'phpunit_clover_');
+    if ($junitFile === false || $cloverFile === false) {
+        // tempnam() failing (e.g. a full/unwritable temp dir) -- fail open,
+        // same as every other tool here when its own report can't be
+        // produced.
+        return ['executed' => false];
+    }
+
+    // Real sandboxing for the one call in this whole sidecar that executes
+    // third-party PHP, not just "it's in a container": disable_functions
+    // blocks every shell/process-spawning function a malicious test's
+    // setUp()/test body could call (exec/shell_exec/system/passthru/
+    // proc_open/popen/pcntl_*) -- verified this doesn't break a real test
+    // suite (Ordo_Automation's own 3013 tests still pass with these
+    // disabled). memory_limit caps a memory-exhaustion attempt (PHP fatals
+    // itself on it rather than the container OOM-killing). The `timeout`
+    // wrapper below catches an infinite loop a memory cap wouldn't. Network
+    // egress for this whole container is cut off independently at the
+    // Docker Compose level (see docker-compose.yml) as a second layer that
+    // doesn't depend on this list being complete.
+    $disabledFunctions = 'exec,shell_exec,system,passthru,proc_open,popen,pcntl_exec,pcntl_fork,'
+        . 'proc_nice,proc_terminate,proc_close';
+
+    try {
+        run_command([
+            'timeout', '-s', 'KILL', '-k', '5', (string) PHPUNIT_TIMEOUT_SECONDS,
+            $phpBinary,
+            '-d', 'memory_limit=512M',
+            '-d', "disable_functions=$disabledFunctions",
+            '-d', 'pcov.enabled=1',
+            // Must match the module's own phpunit.xml <source><include> base
+            // (confirmed empirically: PCOV only attributes coverage to files
+            // under this exact directory, and a narrower one than the
+            // <source> base silently produced all-zero coverage even though
+            // the tests genuinely ran and passed).
+            '-d', "pcov.directory=$modulePath",
+            $phpunitBinary,
+            '--configuration=' . $ownConfig,
+            '--do-not-cache-result',
+            '--cache-directory=' . $cacheDir,
+            '--no-progress',
+            '--colors=never',
+            '--log-junit=' . $junitFile,
+            '--coverage-clover=' . $cloverFile,
+            $unitTestDir,
+        ]);
+
+        $junit = is_file($junitFile) ? @simplexml_load_file($junitFile) : false;
+        $clover = is_file($cloverFile) ? @simplexml_load_file($cloverFile) : false;
+    } finally {
+        @unlink($junitFile);
+        @unlink($cloverFile);
+        // $cacheDir is this function's own generated path (random suffix),
+        // never attacker-controlled -- safe to shell out to rm -rf for it
+        // specifically, unlike every other command in this file which stays
+        // array-form/no-shell on principle.
+        if (is_dir($cacheDir)) {
+            run_command(['rm', '-rf', $cacheDir]);
+        }
+    }
+
+    if ($junit === false) {
+        // No parseable JUnit report at all means phpunit never produced real
+        // output (crashed before running anything, or was killed by the
+        // timeout) -- nothing real to report, not a zero-test "pass".
+        return ['executed' => false];
+    }
+
+    // Every individual <testcase>, not the aggregate counts on any one
+    // <testsuite> -- JUnit XML nests a per-class <testsuite> inside the
+    // top-level one, and summing attributes at the wrong nesting level would
+    // double-count. Counting leaf <testcase> elements directly sidesteps the
+    // ambiguity entirely regardless of how deep the suite nesting goes.
+    $testcases = $junit->xpath('//testcase') ?: [];
+    $failingCases = $junit->xpath('//testcase[failure or error]') ?: [];
+    $failures = [];
+    foreach ($failingCases as $testcase) {
+        $problem = isset($testcase->failure) ? $testcase->failure : $testcase->error;
+        $failures[] = [
+            'test' => trim((string) ($testcase['class'] ?? '') . '::' . (string) ($testcase['name'] ?? '')),
+            'message' => trim((string) ($problem['message'] ?? (string) $problem)),
+        ];
+    }
+
+    $coveragePercent = null;
+    // <project><metrics> directly (not //metrics) -- Clover XML also has one
+    // <metrics> per <file> and per <package>, which would double- (or
+    // many-times-over-) count if summed indiscriminately; <project>'s own
+    // direct child already is the real aggregate across the whole report.
+    if ($clover !== false) {
+        $projectMetrics = $clover->project->metrics ?? null;
+        if ($projectMetrics !== null) {
+            $statements = (int) $projectMetrics['statements'];
+            $covered = (int) $projectMetrics['coveredstatements'];
+            if ($statements > 0) {
+                $coveragePercent = round($covered / $statements * 100, 2);
+            }
+        }
+    }
+
+    return [
+        'executed' => true,
+        'tests_run' => count($testcases),
+        'tests_failed' => count($failingCases),
+        'coverage_percent' => $coveragePercent,
+        'failures' => $failures,
+    ];
+}
+
 $analyzerRoot = dirname(__DIR__);
 
 $tools = [
@@ -343,13 +489,17 @@ $tools = [
     '/phpmetrics' => 'run_phpmetrics',
 ];
 
-if (!isset($tools[$requestPath])) {
+if (!isset($tools[$requestPath]) && $requestPath !== '/phpunit') {
     http_response_code(404);
     echo json_encode(['error' => 'unknown tool: ' . $requestPath]);
     exit;
 }
 
 try {
+    if ($requestPath === '/phpunit') {
+        echo json_encode(run_phpunit($realModulePath, $phpBinary));
+        exit;
+    }
     $findings = $requestPath === '/phpstan'
         ? run_phpstan($analyzerRoot, $realModulePath, $magentoRoot, $phpBinary)
         : ($tools[$requestPath])($analyzerRoot, $realModulePath, $phpBinary);

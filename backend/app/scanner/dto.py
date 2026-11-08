@@ -141,6 +141,22 @@ class DbColumnEntry:
 
 
 @dataclass
+class TestExecutionResult:
+    """Outcome of actually running a module's own Test/Unit/ suite via its own
+    vendor/bin/phpunit (see check_php_unit_tests) -- distinct from a
+    QualityFinding list since pass/fail counts and a coverage percentage
+    aren't individually-located findings the way a lint violation is.
+    executed=False means there was nothing to run (no real vendor/bin/phpunit
+    in this checkout, or no Test/Unit directory), not a failure.
+    """
+
+    executed: bool
+    tests_run: int = 0
+    tests_failed: int = 0
+    coverage_percent: float | None = None
+
+
+@dataclass
 class QueueBindingEntry:
     topic: str
     destination: str | None

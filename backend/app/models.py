@@ -8,6 +8,7 @@ from sqlalchemy import (
     CheckConstraint,
     Computed,
     DateTime,
+    Float,
     ForeignKey,
     Index,
     Integer,
@@ -61,6 +62,13 @@ class Module(Base):
     # Phase 9: parser-only quality checks
     has_readme: Mapped[bool] = mapped_column(Boolean, server_default="false")
     has_tests: Mapped[bool] = mapped_column(Boolean, server_default="false")
+
+    # Real PHPUnit execution (see check_php_unit_tests) -- None/None/None
+    # means "never executed" (no real Test/Unit + own vendor/bin/phpunit),
+    # not "0 tests, 0% coverage".
+    phpunit_tests_run: Mapped[int | None] = mapped_column(Integer)
+    phpunit_tests_failed: Mapped[int | None] = mapped_column(Integer)
+    phpunit_coverage_percent: Mapped[float | None] = mapped_column(Float)
 
     dependencies: Mapped[list["ModuleDependency"]] = relationship(
         back_populates="module", cascade="all, delete-orphan"

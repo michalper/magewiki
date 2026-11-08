@@ -63,6 +63,11 @@ services:
       migrate:
         condition: service_completed_successfully
     command: ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000", "--reload"]
+    # default (internet, db/redis) + php_analyzer_net (reaches php-analyzer,
+    # which is on php_analyzer_net ONLY -- see that service's own comment).
+    networks:
+      - default
+      - php_analyzer_net
 
   worker:
     build:
@@ -85,6 +90,9 @@ services:
       migrate:
         condition: service_completed_successfully
     command: ["arq", "app.tasks.worker.WorkerSettings"]
+    networks:
+      - default
+      - php_analyzer_net
 
   php-analyzer:
     build:
@@ -97,6 +105,19 @@ services:
       - ${MAGEWIKI_SCAN_ROOT_1:-/dev/null}:${MAGEWIKI_SCAN_ROOT_1:-/dev/null}:ro
       - ${MAGEWIKI_SCAN_ROOT_2:-/dev/null}:${MAGEWIKI_SCAN_ROOT_2:-/dev/null}:ro
       - ${MAGEWIKI_SCAN_ROOT_3:-/dev/null}:${MAGEWIKI_SCAN_ROOT_3:-/dev/null}:ro
+    # ONLY php_analyzer_net (internal: true, no internet route) -- not the
+    # implicit `default` network every other service gets. run_phpunit()
+    # (see index.php) is the first thing in this whole project that executes
+    # a scanned module's own third-party code, not just parses it; cutting
+    # egress off entirely at the container level is a second, independent
+    # layer of defense that doesn't depend on disable_functions/timeout
+    # inside the PHP process being complete. Nothing this sidecar does at
+    # runtime ever needs the internet (composer install already happened at
+    # image build time) -- api/worker stay on both networks since they
+    # genuinely need internet (Packagist/GitHub/LLM calls) alongside
+    # reaching this service.
+    networks:
+      - php_analyzer_net
 
   web:
     build:
@@ -111,6 +132,12 @@ services:
     depends_on:
       - api
     command: ["npm", "run", "dev"]
+
+networks:
+  # internal: true means Docker gives this network no route to the internet
+  # at all, regardless of anything the containers on it do themselves.
+  php_analyzer_net:
+    internal: true
 
 volumes:
   db_data:

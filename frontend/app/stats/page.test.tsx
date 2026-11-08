@@ -72,6 +72,7 @@ describe("StatsPage", () => {
           db_schema_conflict: 1,
           circular_dependency: 1,
           license_risk: 1,
+          phpunit_failure: 3,
         },
       }),
     ]);
@@ -107,6 +108,11 @@ describe("StatsPage", () => {
     const licenseTile = screen.getByText("License risks").closest("a")!;
     expect(licenseTile).toHaveTextContent("1");
     expect(licenseTile).toHaveAttribute("href", "/modules?finding=license_risk");
+
+    // PHPUnit test failures: 3
+    const phpunitTile = screen.getByText("PHPUnit test failures").closest("a")!;
+    expect(phpunitTile).toHaveTextContent("3");
+    expect(phpunitTile).toHaveAttribute("href", "/modules?finding=phpunit_failure");
   });
 
   it("renders a stat tile as a plain div (not a link) when its count is zero", async () => {

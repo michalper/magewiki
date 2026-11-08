@@ -382,6 +382,25 @@ export default function ModuleDetailClient({ id }: { id: string }) {
                     : "No test files found under Test/ in the module's own source."}
                 </TooltipContent>
               </Tooltip>
+              {moduleQuery.data.phpunit_tests_run !== null && moduleQuery.data.phpunit_tests_run !== undefined && (
+                <Tooltip>
+                  <TooltipTrigger className="inline-flex">
+                    <SeverityBadge severity={moduleQuery.data.phpunit_tests_failed ? "warning" : "ok"}>
+                      {moduleQuery.data.phpunit_tests_failed
+                        ? `${moduleQuery.data.phpunit_tests_failed}/${moduleQuery.data.phpunit_tests_run} tests failed`
+                        : `${moduleQuery.data.phpunit_tests_run} tests passed`}
+                      {moduleQuery.data.phpunit_coverage_percent !== null &&
+                        moduleQuery.data.phpunit_coverage_percent !== undefined &&
+                        ` · ${moduleQuery.data.phpunit_coverage_percent}% coverage`}
+                    </SeverityBadge>
+                  </TooltipTrigger>
+                  <TooltipContent>
+                    Real execution of this module&apos;s own Test/Unit/ suite via its own
+                    vendor/bin/phpunit — only runs when the module ships a standalone-runnable
+                    phpunit setup (its own vendor/bin/phpunit + phpunit.xml).
+                  </TooltipContent>
+                </Tooltip>
+              )}
             </div>
 
             {moduleQuery.data.tags.length > 0 && (

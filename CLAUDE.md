@@ -1261,6 +1261,106 @@ shows either a real configured scan root or the explicit "none configured" messa
 never a blank gap. Runs against the real, fully built app (same `docker compose up`
 the existing smoke test uses), not a mocked API.
 
+**Real PHPUnit test execution (recorded 2026-11-08):** closes the one item left over
+from the "po kolei" roadmap work, explicitly deferred earlier this session as "a
+different risk class: executes scanned code, not just reads it." The user confirmed
+two scoping decisions up front via `AskUserQuestion` before any code was written:
+solid sandbox hardening from day one (not a minimal v1), and Unit-only scope requiring
+the module's own real `vendor/bin/phpunit`.
+
+New `run_phpunit()` (`php-analyzer/public/index.php`) is the **first tool in this
+whole sidecar that actually executes a scanned module's own code**, not just parses or
+statically analyses it — every design decision below was verified empirically against
+a real module (Ordo_Automation, the author's own 1500+-class, 3000+-test standalone
+fixture), not assumed:
+
+- **Scope, found the hard way:** the module's own `vendor/bin/phpunit` + its own
+  `phpunit.xml`/`phpunit.xml.dist`, never a containing store's `dev/tests/unit`
+  harness. Confirmed directly that the other way genuinely doesn't work: Ordo's own
+  `Test/Unit/bootstrap.php` resolves `../../vendor/autoload.php` relative to its own
+  root, which only exists when the module was composer-installed standalone, not when
+  nested three levels deep inside a real store's `vendor/` tree (tried against the
+  real Ordo module nested inside the real `magento-ordo-test/magento` store checkout —
+  `Failed opening required '.../vendor/autoload.php'`). A module relying only on a
+  containing store's test harness simply doesn't get this check — not a regression,
+  the same kind of scope limit Ordo's own `phpunit.xml.dist` already documents for
+  `Test/Integration`/`Test/Api` ("bootstrap a real, installed Magento application").
+- **Coverage driver:** PCOV (`php8X-pecl-pcov`, all three side-by-side PHP versions),
+  not Xdebug — lighter weight, PHPUnit auto-detects it. `pcov.directory` must match
+  the module's own `phpunit.xml`'s `<source><include>` base exactly — confirmed
+  empirically that a narrower directory silently produces all-zero coverage even
+  though the tests genuinely ran and passed (PCOV only attributes coverage to files
+  under its own configured directory).
+- **Real sandboxing, not just "it's in a container":** a wall-clock `timeout -s KILL`
+  (confirmed directly: correctly SIGKILLs a deliberately hung `sleep(10)` after a
+  2-second test window — a memory cap alone wouldn't catch an infinite loop),
+  `disable_functions` blocking every shell/process-spawning function a malicious
+  test's `setUp()`/test body could call (`exec`/`shell_exec`/`system`/`passthru`/
+  `proc_open`/`popen`/`pcntl_*`) — confirmed this doesn't break a real test suite
+  (Ordo's own 3013 tests still pass with these disabled) — and a capped
+  `memory_limit`. Independently, `php-analyzer`'s Docker Compose network membership
+  changed to a new `php_analyzer_net` (`internal: true`, no internet route at all) —
+  **only** this service, not the implicit `default` network every other service gets;
+  `api`/`worker` stay on both, since they genuinely need internet (Packagist/GitHub/
+  LLM calls) alongside reaching this sidecar. Nothing this sidecar does at runtime
+  ever needed the internet to begin with (`composer install` already happened at image
+  build time) — confirmed directly (`wget` to a real host failed with DNS resolution
+  itself failing) that api/worker's own internet access was unaffected.
+- **A real, confirmed, accepted tradeoff from that network cut, not a bug:** Ordo's
+  own `PushEndpointValidatorTest::testAllowsAPublicHttpsHostname` does a genuine DNS
+  lookup to verify its own SSRF-guard logic ("does this hostname resolve to a public,
+  non-private IP") — which can't succeed without network access. This is the one
+  known, reproducible, understood failure in Ordo's otherwise-3013-passing real suite,
+  same category as `Test/Integration`/`Test/Api` being out of scope entirely: the cost
+  of real network isolation for a sandbox that executes arbitrary third-party test
+  code, not swallowed silently — the test asserting this behavior names the specific
+  test by name rather than tolerating "at most N failures," so a genuinely new
+  regression still fails loudly.
+- **`ext-intl` was a real, previously-unnoticed gap:** the first real run against
+  Ordo's own Test/Unit failed 4 tests with `Class "IntlDateFormatter" not found` —
+  never needed by PHPStan/PHPMD/phpcs/Rector/PhpMetrics before, but a real module's
+  real test code commonly exercises `Magento\Framework\Stdlib\DateTime\
+  TimezoneInterface`. Added `php8X-intl` alongside `php8X-pecl-pcov` for all three
+  side-by-side PHP versions.
+- **JUnit parsed by counting every `<testcase>` leaf directly** (not aggregating any
+  one `<testsuite>`'s own attributes), and **Clover's `coveredstatements` read from
+  `<project><metrics>` directly** (not sibling per-file/per-package `<metrics>`
+  elements via a blind `//metrics` search) — both XML shapes nest in a way that would
+  double-count if summed at the wrong level.
+
+New `Module.phpunit_tests_run`/`phpunit_tests_failed`/`phpunit_coverage_percent`
+columns (`None` means "never executed," not "0 tests" — migration `0030`) and a new
+`phpunit_failure` check_type, one finding per failing test. Added to
+`_FILE_HASH_DEPENDENT_CHECK_TYPES` (purely a function of the module's own code, same
+reasoning as every `check_php_static_analysis` finding). Own "PHPUnit test failures"
+Stats tile — deliberately not folded into "Cross-module conflicts" (not a
+cross-module concern) or "PHP static-analysis findings" (a different kind of signal:
+pass/fail + coverage, not lint-style violations). No dedicated check for low coverage
+itself — same "don't invent arbitrary thresholds" principle already applied to
+PhpMetrics; `phpunit_coverage_percent` is exposed as a fact (module badge + API), not
+a pass/fail judgment.
+
+Verified at three independent levels, none mocked for the real-execution path: the
+real `php-analyzer` HTTP endpoint directly (3013 tests, 0 failures, 96.99% coverage,
+matching a manual CLI run of the same module exactly); the real orchestrator against
+the real fixture through the test database (`tests/test_real_ordo_fixture.py`,
+confirming `Module.phpunit_tests_run`/`_failed`/`_coverage_percent` persist correctly
+and the one real network-isolation failure surfaces as a real `phpunit_failure`
+finding); and the Python-side response-parsing/fail-open logic in isolation
+(`tests/scanner/test_php_analyzer_client.py`, mocked HTTP layer, CI-safe and fast —
+the real-execution test is gated behind the same `MAGEWIKI_ORDO_FIXTURE_PATH`-presence
+skip every other real-Ordo test already uses, so it never runs in CI, only locally
+where the real fixture exists).
+
+**Known gap, not yet closed:** the Kubernetes manifests (`k8s/`) don't mirror the new
+`php_analyzer_net` egress restriction — no `NetworkPolicy` resource was added
+restricting the `php-analyzer` Deployment's egress. The Dockerfile's own
+`intl`/`pecv-pcov` additions apply identically regardless of deployment target (same
+image), only the Compose-level network isolation is Compose-specific. Flagging here
+rather than building it out — a correctly configured k8s cluster's own default
+network policy is a separate, cluster-level concern this project doesn't control
+either way, and no one has asked for k8s-level parity on this specific control yet.
+
 ## Working method
 
 - Start each phase in plan mode; propose a plan and wait for approval before writing code.

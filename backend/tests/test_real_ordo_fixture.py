@@ -4,7 +4,14 @@ from pathlib import Path
 import pytest
 from sqlalchemy import select
 
-from app.models import DiPreference, Module, ModuleDependency, PhpClass, PhpClassMethod
+from app.models import (
+    DiPreference,
+    Module,
+    ModuleDependency,
+    ModuleQualityFinding,
+    PhpClass,
+    PhpClassMethod,
+)
 from app.scanner.orchestrator import scan_repository
 from tests.conftest import ORDO_FIXTURE_ENV, requires_ordo_fixture
 
@@ -84,3 +91,55 @@ async def test_real_ordo_automation_module(db_session):
         select(DiPreference).where(DiPreference.module_id == module.id)
     )).all()
     assert len(preferences) > 0
+
+
+@requires_ordo_fixture
+@pytest.mark.asyncio
+async def test_real_ordo_automation_phpunit_execution(db_session):
+    """Real end-to-end verification of check_php_unit_tests against Ordo
+    Automation's own real, non-mocked Test/Unit suite (the module ships its
+    own standalone-runnable vendor/bin/phpunit + phpunit.xml.dist — see
+    CLAUDE.md's "Real PHPUnit test execution" decision note) — not a
+    synthetic fixture, since getting a real module's own standalone PHPUnit
+    bootstrap wired up correctly can't be faked with a toy Test/Unit
+    directory the way every other check in this project could be.
+    """
+    repo_root = str(Path(os.environ[ORDO_FIXTURE_ENV]).resolve())
+
+    await scan_repository(repo_root, db_session)
+
+    module = await db_session.scalar(
+        select(Module).where(Module.repo_root == repo_root, Module.name == "Ordo_Automation")
+    )
+    assert module is not None
+    assert module.phpunit_tests_run is not None
+    # A real, actively-developed module with thousands of real unit tests --
+    # not a toy count, and not asserting an exact number (it grows over
+    # time, same reasoning EXPECTED_PLUGINS/_OBSERVERS above already use).
+    assert module.phpunit_tests_run > 1000
+    assert module.phpunit_coverage_percent is not None
+    assert module.phpunit_coverage_percent > 50.0
+
+    findings = (
+        await db_session.scalars(
+            select(ModuleQualityFinding).where(
+                ModuleQualityFinding.module_id == module.id,
+                ModuleQualityFinding.check_type == "phpunit_failure",
+            )
+        )
+    ).all()
+    # Confirmed real, reproducible, and expected -- NOT a bug in this check:
+    # PushEndpointValidatorTest::testAllowsAPublicHttpsHostname does a real
+    # DNS lookup to verify SSRF-guard logic ("does this hostname resolve to
+    # a public, non-private IP"), which genuinely can't succeed in this
+    # sidecar's own container (php_analyzer_net is `internal: true` -- see
+    # docker-compose.yml and CLAUDE.md's "Real PHPUnit test execution"
+    # decision note). Accepted as the cost of real network isolation for a
+    # sandbox that executes arbitrary third-party test code, same as
+    # Test/Integration/Test/Api being out of scope entirely -- a known,
+    # understood limitation, not swallowed silently: asserting the EXACT
+    # known failure here means a real regression (a different test newly
+    # failing) still fails this test loudly instead of being masked by a
+    # loose "at most N failures" bound.
+    assert len(findings) == 1
+    assert "PushEndpointValidatorTest" in findings[0].message
