@@ -61,10 +61,30 @@ def detect_plugin_conflicts(
     Returns one (module_id, QualityFinding) pair per module involved in each
     flagged conflict, so it surfaces on every affected module's own page.
     """
+    # A plugin class's methods are catalogued once per class, with no way to
+    # tell which specific method was written for which target -- fine when a
+    # class is only ever declared against one intercepted_type (its methods
+    # unambiguously belong to it), but a shared/generic plugin class declared
+    # in di.xml against two *different* intercepted types (e.g. a logging
+    # plugin hooking many unrelated save() methods across types) has no
+    # reliable way to attribute a given beforeX/afterX/aroundX method to the
+    # right one of those targets. Same "an uncertain case is left out rather
+    # than flagged" principle already applied to a class with no known
+    # methods at all -- skip bucketing entirely for such a class rather than
+    # guess, which previously attributed a method written for one target to
+    # every other target the same class also happens to be declared against.
+    class_to_intercepted_types: dict[str, set[str]] = defaultdict(set)
+    for p in plugins:
+        if not p.disabled:
+            class_to_intercepted_types[p.plugin_class].add(p.intercepted_type)
+    ambiguous_classes = {cls for cls, types in class_to_intercepted_types.items() if len(types) > 1}
+
     groups: dict[tuple[str, str], list[_HookEntry]] = defaultdict(list)
 
     for p in plugins:
         if p.disabled:
+            continue
+        if p.plugin_class in ambiguous_classes:
             continue
         methods = class_methods.get(p.plugin_class)
         if not methods:
@@ -94,7 +114,7 @@ def detect_plugin_conflicts(
 
         arounds = [e for e in entries if e.kind == "around"]
         around_module_ids = {e.module_id for e in arounds}
-        message: str | None = None
+        messages: list[str] = []
 
         # Real bug caught verifying against a 751-module production store: the
         # group-level module_ids check above only guarantees the *group* spans
@@ -103,37 +123,45 @@ def detect_plugin_conflicts(
         # satisfied that gate and got reported as "multiple around plugins"
         # even though both arounds were from the same module (the harmless,
         # same-author case this file already excludes everywhere else).
-        if len(arounds) >= 2 and len(around_module_ids) >= 2:
+        has_arounds_conflict = len(arounds) >= 2 and len(around_module_ids) >= 2
+        if has_arounds_conflict:
             who = ", ".join(f"{e.plugin_class} ({e.module_name})" for e in arounds)
-            message = (
+            messages.append(
                 f"Multiple `around` plugins hook `{intercepted_type}::{target_method}`: "
                 f"{who} — execution order between them is not guaranteed and one may "
                 f"silently suppress another's behavior."
             )
-        else:
-            by_sort_order: dict[int, list[_HookEntry]] = defaultdict(list)
-            for e in entries:
-                by_sort_order[e.sort_order if e.sort_order is not None else 0].append(e)
-            colliding = next((group for group in by_sort_order.values() if len({g.module_id for g in group}) >= 2), None)
-            if colliding:
-                effective_sort_order = colliding[0].sort_order if colliding[0].sort_order is not None else 0
-                who = ", ".join(
-                    f"{e.plugin_class} ({e.module_name}, {e.kind})"
-                    + ("" if e.sort_order is not None else ", sortOrder unset -> defaults to 0")
-                    for e in colliding
-                )
-                message = (
-                    f"Plugins from different modules hook `{intercepted_type}::{target_method}` "
-                    f"with the same effective sortOrder ({effective_sort_order}): {who} — their "
-                    f"relative execution order is ambiguous."
-                )
 
-        if message is None:
-            continue
-
-        for module_id in module_ids:
-            findings.append(
-                (module_id, QualityFinding(check_type="plugin_conflict", severity="warning", file_path=None, line=None, message=message))
+        # The sortOrder-collision check runs independently of the arounds check
+        # above, not as its `else` branch — an arounds conflict between modules
+        # A and B must not suppress an unrelated, equally real sortOrder
+        # collision between modules C and D hooking the same method. Once an
+        # arounds conflict is already reported, re-scan only the rest of the
+        # group (excluding the reported arounds) so the common simple case
+        # (just those same 2 arounds, defaulting to the same sortOrder 0)
+        # doesn't also get a redundant second finding for the identical pair.
+        remaining = [e for e in entries if e not in arounds] if has_arounds_conflict else entries
+        by_sort_order: dict[int, list[_HookEntry]] = defaultdict(list)
+        for e in remaining:
+            by_sort_order[e.sort_order if e.sort_order is not None else 0].append(e)
+        colliding = next((group for group in by_sort_order.values() if len({g.module_id for g in group}) >= 2), None)
+        if colliding:
+            effective_sort_order = colliding[0].sort_order if colliding[0].sort_order is not None else 0
+            who = ", ".join(
+                f"{e.plugin_class} ({e.module_name}, {e.kind})"
+                + ("" if e.sort_order is not None else ", sortOrder unset -> defaults to 0")
+                for e in colliding
             )
+            messages.append(
+                f"Plugins from different modules hook `{intercepted_type}::{target_method}` "
+                f"with the same effective sortOrder ({effective_sort_order}): {who} — their "
+                f"relative execution order is ambiguous."
+            )
+
+        for message in messages:
+            for module_id in module_ids:
+                findings.append(
+                    (module_id, QualityFinding(check_type="plugin_conflict", severity="warning", file_path=None, line=None, message=message))
+                )
 
     return findings

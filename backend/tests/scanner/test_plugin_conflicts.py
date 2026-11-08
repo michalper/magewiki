@@ -178,6 +178,83 @@ def test_two_arounds_from_the_same_module_are_not_reported_as_an_around_conflict
     assert findings == []  # distinct sort_orders too, so no sortOrder-collision fallback either
 
 
+def test_an_around_conflict_does_not_suppress_an_unrelated_sort_order_collision():
+    # Modules A and B both hook `around` on Save (a real conflict), while
+    # modules C and D independently hook before/afterSave with a colliding
+    # sortOrder -- two distinct conflicts in the same group, both must be
+    # reported, not merged into just the arounds message.
+    plugins = [
+        _plugin(1, "Vendor_A", plugin_class="Vendor\\A\\Plugin\\Around", plugin_name="a"),
+        _plugin(2, "Vendor_B", plugin_class="Vendor\\B\\Plugin\\Around", plugin_name="b"),
+        _plugin(3, "Vendor_C", plugin_class="Vendor\\C\\Plugin\\Before", plugin_name="c", sort_order=5),
+        _plugin(4, "Vendor_D", plugin_class="Vendor\\D\\Plugin\\After", plugin_name="d", sort_order=5),
+    ]
+    class_methods = {
+        "Vendor\\A\\Plugin\\Around": {"aroundSave"},
+        "Vendor\\B\\Plugin\\Around": {"aroundSave"},
+        "Vendor\\C\\Plugin\\Before": {"beforeSave"},
+        "Vendor\\D\\Plugin\\After": {"afterSave"},
+    }
+
+    findings = detect_plugin_conflicts(plugins, class_methods)
+
+    messages = {finding.message for _, finding in findings}
+    assert len(messages) == 2
+    around_message = next(m for m in messages if "around" in m)
+    sort_order_message = next(m for m in messages if "sortOrder" in m)
+    assert "Vendor\\A\\Plugin\\Around" in around_message
+    assert "Vendor\\C\\Plugin\\Before" in sort_order_message
+    assert "Vendor\\D\\Plugin\\After" in sort_order_message
+    assert "Vendor\\A\\Plugin\\Around" not in sort_order_message
+
+    # Every module in the whole group still gets every emitted message for
+    # that group, matching this file's existing per-group attribution.
+    assert {module_id for module_id, _ in findings} == {1, 2, 3, 4}
+
+
+def test_an_around_conflict_with_no_other_entries_produces_only_one_message():
+    # The common simple case: just the 2 conflicting arounds, both defaulting
+    # to the same sortOrder (0) -- must not also get a redundant, separate
+    # sortOrder-collision finding for the identical pair.
+    plugins = [
+        _plugin(1, "Vendor_A", plugin_class="Vendor\\A\\Plugin\\Around", plugin_name="a"),
+        _plugin(2, "Vendor_B", plugin_class="Vendor\\B\\Plugin\\Around", plugin_name="b"),
+    ]
+    class_methods = {
+        "Vendor\\A\\Plugin\\Around": {"aroundSave"},
+        "Vendor\\B\\Plugin\\Around": {"aroundSave"},
+    }
+
+    findings = detect_plugin_conflicts(plugins, class_methods)
+
+    assert {finding.message for _, finding in findings} == {findings[0][1].message}
+    assert "around" in findings[0][1].message
+
+
+def test_a_plugin_class_declared_against_two_different_intercepted_types_is_skipped():
+    # A shared/generic plugin class declared in di.xml against two different
+    # intercepted types has no reliable way to attribute a given before/
+    # after/around method to the right target -- skip it entirely rather
+    # than mis-bucket a method written for one target under the other.
+    plugins = [
+        _plugin(1, "Vendor_Shared", intercepted_type="Vendor\\A\\Model\\Order", plugin_class="Vendor\\Shared\\Plugin\\Generic", sort_order=5),
+        _plugin(1, "Vendor_Shared", intercepted_type="Vendor\\C\\Model\\Quote", plugin_class="Vendor\\Shared\\Plugin\\Generic", sort_order=5),
+        _plugin(2, "Vendor_B", intercepted_type="Vendor\\A\\Model\\Order", plugin_class="Vendor\\B\\Plugin\\Save", sort_order=5),
+    ]
+    class_methods = {
+        "Vendor\\Shared\\Plugin\\Generic": {"beforeSave"},
+        "Vendor\\B\\Plugin\\Save": {"beforeSave"},
+    }
+
+    # Without the fix, Vendor_Shared's beforeSave (really written for
+    # Quote::save) would also get bucketed under Order::save purely because
+    # the same class is *also* declared against Order elsewhere, falsely
+    # colliding with Vendor_B's genuine Order::save hook at the same
+    # sortOrder (5) even though Vendor_Shared never really hooks Order.
+    findings = detect_plugin_conflicts(plugins, class_methods)
+    assert findings == []
+
+
 def test_different_intercepted_types_do_not_collide_even_with_the_same_method_name():
     plugins = [
         _plugin(1, "Vendor_A", intercepted_type="Vendor\\A\\Model\\Order", plugin_class="Vendor\\A\\Plugin\\Save", sort_order=5),
