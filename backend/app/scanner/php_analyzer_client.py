@@ -70,6 +70,12 @@ async def _call_tool(tool: str, module_path: str, magento_root: str | None, php_
         logger.warning("php-analyzer %s returned an unparseable response for %s", tool, module_path)
         return []
     if not isinstance(data, dict):
+        # Decoded fine as JSON, but not the {"findings": [...]} shape this
+        # endpoint is documented to return (e.g. a bare list, or null) -- a
+        # real sidecar regression or format change, not a genuine "no
+        # findings" result, so this must not look identical to one in the
+        # logs the way it silently did before.
+        logger.warning("php-analyzer %s returned an unexpected JSON shape for %s: %r", tool, module_path, data)
         return []
     return data.get("findings", [])
 
@@ -226,7 +232,14 @@ async def check_php_unit_tests(
         logger.warning("php-analyzer phpunit returned an unparseable response for %s", module_root)
         return TestExecutionResult(executed=False), []
 
-    if not isinstance(data, dict) or not data.get("executed"):
+    if not isinstance(data, dict):
+        # Same distinction as _call_tool(): a wrong-shape-but-valid-JSON
+        # response is a real anomaly worth logging, unlike the dict-shaped
+        # {"executed": false} below, which is the normal, expected outcome
+        # for a module with no real phpunit + own config to run at all.
+        logger.warning("php-analyzer phpunit returned an unexpected JSON shape for %s: %r", module_root, data)
+        return TestExecutionResult(executed=False), []
+    if not data.get("executed"):
         return TestExecutionResult(executed=False), []
 
     result = TestExecutionResult(

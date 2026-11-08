@@ -294,7 +294,7 @@ async def test_check_php_static_analysis_excludes_a_phpmetrics_finding_resolved_
 
 
 @pytest.mark.asyncio
-async def test_check_php_static_analysis_fails_open_on_a_non_dict_json_response(tmp_path, monkeypatch):
+async def test_check_php_static_analysis_fails_open_on_a_non_dict_json_response(tmp_path, monkeypatch, caplog):
     class _BareListResponse:
         def raise_for_status(self) -> None:
             pass
@@ -318,9 +318,13 @@ async def test_check_php_static_analysis_fails_open_on_a_non_dict_json_response(
         "app.scanner.php_analyzer_client.httpx.AsyncClient", lambda *a, **k: _BareListAsyncClient()
     )
 
-    findings = await check_php_static_analysis(module_root, module_root)
+    with caplog.at_level("WARNING"):
+        findings = await check_php_static_analysis(module_root, module_root)
 
     assert findings == []
+    # A wrong-shape-but-valid-JSON response is a real anomaly, not a genuine
+    # "no findings" result -- must not be silently indistinguishable from one.
+    assert "unexpected JSON shape" in caplog.text
 
 
 class _PhpunitAsyncClient:
@@ -339,7 +343,7 @@ class _PhpunitAsyncClient:
 
 
 @pytest.mark.asyncio
-async def test_check_php_unit_tests_not_executed_when_sidecar_found_nothing_to_run(tmp_path, monkeypatch):
+async def test_check_php_unit_tests_not_executed_when_sidecar_found_nothing_to_run(tmp_path, monkeypatch, caplog):
     module_root = tmp_path / "Vendor" / "Module"
     module_root.mkdir(parents=True)
     monkeypatch.setattr(
@@ -347,10 +351,48 @@ async def test_check_php_unit_tests_not_executed_when_sidecar_found_nothing_to_r
         lambda *a, **k: _PhpunitAsyncClient({"executed": False}),
     )
 
-    result, findings = await check_php_unit_tests(module_root)
+    with caplog.at_level("WARNING"):
+        result, findings = await check_php_unit_tests(module_root)
 
     assert result.executed is False
     assert findings == []
+    # The normal, expected outcome for a module with no real phpunit + own
+    # config to run -- must not be logged as if it were an anomaly.
+    assert caplog.text == ""
+
+
+@pytest.mark.asyncio
+async def test_check_php_unit_tests_logs_on_a_non_dict_json_response(tmp_path, monkeypatch, caplog):
+    module_root = tmp_path / "Vendor" / "Module"
+    module_root.mkdir(parents=True)
+
+    class _BareListPhpunitAsyncClient:
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *args):
+            return False
+
+        async def post(self, url, json=None):
+            class _Resp:
+                def raise_for_status(self) -> None:
+                    pass
+
+                def json(self):
+                    return ["not", "a", "dict"]
+
+            return _Resp()
+
+    monkeypatch.setattr(
+        "app.scanner.php_analyzer_client.httpx.AsyncClient", lambda *a, **k: _BareListPhpunitAsyncClient()
+    )
+
+    with caplog.at_level("WARNING"):
+        result, findings = await check_php_unit_tests(module_root)
+
+    assert result.executed is False
+    assert findings == []
+    assert "unexpected JSON shape" in caplog.text
 
 
 @pytest.mark.asyncio
