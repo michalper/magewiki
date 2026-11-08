@@ -1427,6 +1427,22 @@ steer this question class to `list_modules(check_type=...)` rather than
 `search_modules` — quality findings were never indexed for semantic search, and
 completeness matters here exactly the way it already does for counting questions.
 
+**`tini` as `php-analyzer`'s PID 1 (recorded 2026-11-08):** the same project survey's
+second recommendation — `php -S` ran directly as PID 1, with no init process to reap
+children, exactly the failure mode `docs/v1-port-roadmap.md`'s own "operational
+lessons" section already names from v1's real production history (~7000 accumulated
+zombie processes on staging, fixed there with `tini`). More relevant here than when
+that note was first written: `run_phpunit()` now spawns real subprocesses under a
+`timeout -s KILL` wrapper specifically *because* it's the one tool in this sidecar
+that executes third-party test code — exactly the kind of kill-happy subprocess
+pattern that caused v1's incident in the first place. Added `tini` to the Dockerfile's
+`apk add` line and switched to `ENTRYPOINT ["tini", "--"]` / `CMD ["php", "-S", ...]`.
+Verified directly, not assumed from precedent: a real `ps aux` inside the rebuilt
+container confirms `tini` is genuinely PID 1 with `php -S` as its child, and
+triggering a real `timeout -s KILL` against a deliberately hung `sleep(30)` process
+inside the running container left zero zombie (`<defunct>`) processes behind
+afterward.
+
 ## Working method
 
 - Start each phase in plan mode; propose a plan and wait for approval before writing code.

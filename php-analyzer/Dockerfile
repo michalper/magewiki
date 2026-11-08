@@ -19,7 +19,7 @@ FROM alpine:edge
 # "Class IntlDateFormatter not found" error without it. pcov: a lightweight
 # coverage driver (no Xdebug overhead) PHPUnit auto-detects and uses for
 # --coverage-clover once loaded.
-RUN apk add --no-cache git unzip \
+RUN apk add --no-cache git unzip tini \
     php83 php83-phar php83-mbstring php83-tokenizer php83-ctype php83-dom \
         php83-xml php83-xmlwriter php83-simplexml php83-curl php83-openssl php83-iconv \
         php83-intl php83-pecl-pcov \
@@ -81,4 +81,12 @@ COPY backend/tests/fixtures/demo-store /app/tests/fixtures/demo-store
 
 EXPOSE 8080
 
+# tini as PID 1: run_phpunit() (index.php) spawns real subprocesses under a
+# `timeout -s KILL` wrapper (it's the one tool here that actually executes
+# third-party test code) -- plain `php -S` as PID 1 never reaps children,
+# and a real production Magento scanner's own operational history
+# (docs/v1-port-roadmap.md) names exactly this failure mode (~7000 zombie
+# processes accumulated in production) as something to fix proactively
+# rather than rediscover. tini forwards signals and reaps zombies for free.
+ENTRYPOINT ["tini", "--"]
 CMD ["php", "-S", "0.0.0.0:8080", "-t", "public"]
