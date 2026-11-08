@@ -95,6 +95,9 @@ class Module(Base):
     db_tables: Mapped[list["DbTable"]] = relationship(
         back_populates="module", cascade="all, delete-orphan"
     )
+    db_columns: Mapped[list["DbColumn"]] = relationship(
+        back_populates="module", cascade="all, delete-orphan"
+    )
     queue_bindings: Mapped[list["QueueBinding"]] = relationship(
         back_populates="module", cascade="all, delete-orphan"
     )
@@ -272,6 +275,19 @@ class DbTable(Base):
     column_count: Mapped[int] = mapped_column(Integer, default=0)
 
     module: Mapped[Module] = relationship(back_populates="db_tables")
+
+
+class DbColumn(Base):
+    __tablename__ = "db_columns"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    module_id: Mapped[int] = mapped_column(ForeignKey("modules.id", ondelete="CASCADE"))
+    table_name: Mapped[str] = mapped_column(Text, index=True)
+    column_name: Mapped[str] = mapped_column(Text)
+    xsi_type: Mapped[str] = mapped_column(Text)
+    nullable: Mapped[bool | None] = mapped_column(Boolean)
+
+    module: Mapped[Module] = relationship(back_populates="db_columns")
 
 
 class QueueBinding(Base):

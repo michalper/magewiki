@@ -19,7 +19,7 @@ def test_parse_db_schema_xml(tmp_path: Path):
     path = tmp_path / "db_schema.xml"
     path.write_text(_DB_SCHEMA_XML, encoding="utf-8")
 
-    tables = parse_db_schema_xml(path)
+    tables, columns = parse_db_schema_xml(path)
 
     assert len(tables) == 1
     table = tables[0]
@@ -27,18 +27,61 @@ def test_parse_db_schema_xml(tmp_path: Path):
     assert table.comment == "Sample table"
     assert table.column_count == 2
 
+    assert len(columns) == 2
+    entity_id = next(c for c in columns if c.column_name == "entity_id")
+    assert entity_id.table_name == "vendor_module_sample"
+    assert entity_id.xsi_type == "int"
+    assert entity_id.nullable is False
+    name_col = next(c for c in columns if c.column_name == "name")
+    assert name_col.xsi_type == "varchar"
+    assert name_col.nullable is False
+
 
 def test_parse_db_schema_xml_missing_file(tmp_path: Path):
-    assert parse_db_schema_xml(tmp_path / "db_schema.xml") == []
+    assert parse_db_schema_xml(tmp_path / "db_schema.xml") == ([], [])
 
 
 def test_parse_db_schema_xml_malformed_xml(tmp_path: Path):
     path = tmp_path / "db_schema.xml"
     path.write_text("<schema><unclosed>", encoding="utf-8")
-    assert parse_db_schema_xml(path) == []
+    assert parse_db_schema_xml(path) == ([], [])
 
 
 def test_parse_db_schema_xml_skips_a_table_without_a_name(tmp_path: Path):
     path = tmp_path / "db_schema.xml"
     path.write_text('<?xml version="1.0"?>\n<schema><table comment="no name"/></schema>', encoding="utf-8")
-    assert parse_db_schema_xml(path) == []
+    assert parse_db_schema_xml(path) == ([], [])
+
+
+def test_parse_db_schema_xml_skips_a_column_missing_name_or_type(tmp_path: Path):
+    path = tmp_path / "db_schema.xml"
+    path.write_text(
+        """<?xml version="1.0"?>
+<schema xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
+    <table name="vendor_module_sample">
+        <column xsi:type="int" nullable="false"/>
+        <column name="no_type" nullable="false"/>
+    </table>
+</schema>
+""",
+        encoding="utf-8",
+    )
+    tables, columns = parse_db_schema_xml(path)
+    assert tables[0].column_count == 2
+    assert columns == []
+
+
+def test_parse_db_schema_xml_nullable_defaults_to_none_when_absent(tmp_path: Path):
+    path = tmp_path / "db_schema.xml"
+    path.write_text(
+        """<?xml version="1.0"?>
+<schema xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
+    <table name="vendor_module_sample">
+        <column xsi:type="int" name="entity_id"/>
+    </table>
+</schema>
+""",
+        encoding="utf-8",
+    )
+    _, columns = parse_db_schema_xml(path)
+    assert columns[0].nullable is None

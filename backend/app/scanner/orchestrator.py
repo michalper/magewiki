@@ -15,6 +15,7 @@ from app.models import (
     ComposerPackageRequirement,
     ConfigField,
     CronJob,
+    DbColumn,
     DbTable,
     DiPlugin,
     DiPreference,
@@ -36,6 +37,7 @@ from app.scanner.composer_conflicts import ComposerRequirementRow, detect_compos
 from app.scanner.composer_json import composer_completeness_findings, parse_composer_json
 from app.scanner.config_php import parse_config_php
 from app.scanner.crontab_xml import parse_crontab_xml
+from app.scanner.db_schema_conflicts import DbColumnRow, detect_db_schema_conflicts
 from app.scanner.db_schema_xml import parse_db_schema_xml
 from app.scanner.deprecated_scanner import scan_deprecated_annotations
 from app.scanner.di_xml import parse_di_xml
@@ -44,6 +46,7 @@ from app.scanner.dto import (
     ComposerResult,
     ConfigFieldEntry,
     CronJobEntry,
+    DbColumnEntry,
     DbTableEntry,
     DiscoveredModule,
     DiXmlResult,
@@ -142,6 +145,7 @@ class _ParsedModule:
     webapi_routes: list[WebapiRouteEntry]
     config_fields: list[ConfigFieldEntry]
     db_tables: list[DbTableEntry]
+    db_columns: list[DbColumnEntry]
     queue_bindings: list[QueueBindingEntry]
 
 
@@ -310,7 +314,7 @@ async def _run_scan(root: Path, session: AsyncSession) -> AsyncIterator[dict]:
             cron_jobs = parse_crontab_xml(d.root / "etc" / "crontab.xml")
             webapi_routes = parse_webapi_xml(d.root / "etc" / "webapi.xml")
             config_fields = parse_system_xml(d.root / "etc" / "adminhtml" / "system.xml")
-            db_tables = parse_db_schema_xml(d.root / "etc" / "db_schema.xml")
+            db_tables, db_columns = parse_db_schema_xml(d.root / "etc" / "db_schema.xml")
             queue_bindings = parse_queue_config(
                 d.root / "etc" / "communication.xml",
                 d.root / "etc" / "queue_topology.xml",
@@ -348,6 +352,7 @@ async def _run_scan(root: Path, session: AsyncSession) -> AsyncIterator[dict]:
                 webapi_routes=webapi_routes,
                 config_fields=config_fields,
                 db_tables=db_tables,
+                db_columns=db_columns,
                 queue_bindings=queue_bindings,
             )
         )
@@ -458,6 +463,9 @@ async def _run_scan(root: Path, session: AsyncSession) -> AsyncIterator[dict]:
     # Same reasoning again: needs every scanned module's webapi_routes
     # already committed, recomputes across the whole repo_root.
     await _detect_and_persist_webapi_route_conflicts(session, root)
+    # Same reasoning again: needs every scanned module's db_columns already
+    # committed, recomputes across the whole repo_root.
+    await _detect_and_persist_db_schema_conflicts(session, root)
 
     result.tasks_enqueued = tasks_enqueued
     yield {"event": "done", "result": result}
@@ -591,6 +599,45 @@ async def _detect_and_persist_webapi_route_conflicts(session: AsyncSession, root
     await session.commit()
 
 
+async def _detect_and_persist_db_schema_conflicts(session: AsyncSession, root: Path) -> None:
+    column_rows = (
+        await session.execute(
+            select(
+                DbColumn.module_id,
+                Module.name,
+                DbColumn.table_name,
+                DbColumn.column_name,
+                DbColumn.xsi_type,
+                DbColumn.nullable,
+            )
+            .join(Module, Module.id == DbColumn.module_id)
+            .where(Module.repo_root == str(root))
+        )
+    ).all()
+    columns = [DbColumnRow(*row) for row in column_rows]
+
+    findings = detect_db_schema_conflicts(columns)
+
+    await session.execute(
+        delete(ModuleQualityFinding).where(
+            ModuleQualityFinding.check_type == "db_schema_conflict",
+            ModuleQualityFinding.module_id.in_(select(Module.id).where(Module.repo_root == str(root))),
+        )
+    )
+    for module_id, finding in findings:
+        session.add(
+            ModuleQualityFinding(
+                module_id=module_id,
+                check_type=finding.check_type,
+                severity=finding.severity,
+                file_path=finding.file_path,
+                line=finding.line,
+                message=finding.message,
+            )
+        )
+    await session.commit()
+
+
 _ModuleChildModel = (
     type[DiPreference]
     | type[DiPlugin]
@@ -601,6 +648,7 @@ _ModuleChildModel = (
     | type[WebapiRoute]
     | type[ConfigField]
     | type[DbTable]
+    | type[DbColumn]
     | type[QueueBinding]
 )
 
@@ -796,6 +844,7 @@ async def _persist_module(
     await _sync_module_children(session, module.id, WebapiRoute, pm.webapi_routes)
     await _sync_module_children(session, module.id, ConfigField, pm.config_fields)
     await _sync_module_children(session, module.id, DbTable, pm.db_tables)
+    await _sync_module_children(session, module.id, DbColumn, pm.db_columns)
     await _sync_module_children(session, module.id, QueueBinding, pm.queue_bindings)
 
     classes = catalog_module_classes(pm.discovered.root)

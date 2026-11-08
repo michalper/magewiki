@@ -64,7 +64,13 @@ describe("StatsPage", () => {
       mod({
         id: 2,
         name: "Vendor_Other",
-        finding_counts: { hardcoded_secret: 1, phpmd_issue: 4, phpmetrics_issue: 2, composer_conflict: 1 },
+        finding_counts: {
+          hardcoded_secret: 1,
+          phpmd_issue: 4,
+          phpmetrics_issue: 2,
+          composer_conflict: 1,
+          db_schema_conflict: 1,
+        },
       }),
     ]);
     renderWithQueryClient(<StatsPage />);
@@ -87,12 +93,12 @@ describe("StatsPage", () => {
       "/modules?finding=phpstan_error,phpmd_issue,phpcs_violation,php_compat_issue,phpmetrics_issue",
     );
 
-    // Cross-module conflicts: plugin_conflict 1 + composer_conflict 1 = 2
+    // Cross-module conflicts: plugin_conflict 1 + composer_conflict 1 + db_schema_conflict 1 = 3
     const conflictsTile = screen.getByText("Cross-module conflicts").closest("a")!;
-    expect(conflictsTile).toHaveTextContent("2");
+    expect(conflictsTile).toHaveTextContent("3");
     expect(conflictsTile).toHaveAttribute(
       "href",
-      "/modules?finding=plugin_conflict,composer_conflict,webapi_route_conflict",
+      "/modules?finding=plugin_conflict,composer_conflict,webapi_route_conflict,db_schema_conflict",
     );
   });
 

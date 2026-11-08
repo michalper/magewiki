@@ -828,6 +828,39 @@ deliberately conservative, same "flag a concrete, certain conflict" pragmatism a
 above, to avoid a false positive MageWiki can't actually be sure about. New
 `webapi_route_conflict` check_type (migration `0025`), severity `"warning"`.
 
+**db_schema.xml column-conflict detection (recorded 2026-11-08):** the fourth and
+last of the "po kolei" cross-module conflict checks. Unlike the three above, this one
+needed the parser extended first: `db_schema_xml.py`'s scope was deliberately
+table-level only since Phase 14 (name/comment/column count — "a column child table as
+a natural later extension if ever needed," per that decision note), so there was no
+per-column data to compare across modules yet. `parse_db_schema_xml()` now also
+returns a flat `DbColumnEntry` per column (`table_name`/`column_name`/`xsi_type`/
+`nullable`, read via lxml's Clark-notation `{http://www.w3.org/2001/XMLSchema-instance}type`
+for the namespaced `xsi:type` attribute — verified empirically against a real
+namespaced fixture rather than assumed) — still not a full breakdown
+(length/identity/default aren't captured, since nothing needs them yet), persisted to
+a new `db_columns` table (migration `0026`) via the same generic
+`_sync_module_children` helper every other 1:N fact table already uses.
+
+The conflict itself: two or more modules declaring the same `(table_name,
+column_name)` with a different `xsi:type` or a different `nullable` value. Real
+impact, not theoretical — Magento's declarative schema merges every module's
+db_schema.xml by table/column name into one final definition in module-sequence
+order, so a genuine type/nullability disagreement means one module's definition
+silently wins and the other module's own assumption about that column can be wrong at
+runtime. Same fleet-wide Phase-C pattern as the three checks above, same "flag a
+concrete, certain conflict" pragmatism (only `xsi:type`/`nullable` compared, not the
+unparsed length/identity/default). New `db_schema_conflict` check_type (migration
+`0027`).
+
+Also folded into the same session: the Stats page (`frontend/app/stats/page.tsx`)
+had a real gap found while refreshing the README/Wiki for everything added
+today — its `StatTile`s are a separately hand-maintained list, not generic over
+`CHECK_TYPES`, so `phpmetrics_issue`/`plugin_conflict`/`composer_conflict`/
+`webapi_route_conflict` were all invisible there even though they already showed up
+correctly on the Modules page; see the dedicated note above. `db_schema_conflict` is
+folded into that same new "Cross-module conflicts" tile from day one.
+
 **Phase 12b decision (recorded 2026-11-06):** this is v1's actual headline feature ("upgrade
 readiness"), deliberately left out of Phase 12 and called out there as "no 'upgrade readiness'
 gate concept yet." Live-tested during planning: Magento's own packages

@@ -133,6 +133,14 @@ class DbTableEntry:
 
 
 @dataclass
+class DbColumnEntry:
+    table_name: str
+    column_name: str
+    xsi_type: str
+    nullable: bool | None
+
+
+@dataclass
 class QueueBindingEntry:
     topic: str
     destination: str | None
