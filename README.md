@@ -2,6 +2,7 @@
 
 ![CI](https://github.com/michalper/magewiki/actions/workflows/ci.yml/badge.svg)
 [![codecov](https://codecov.io/gh/michalper/magewiki/branch/main/graph/badge.svg)](https://codecov.io/gh/michalper/magewiki)
+[![Quality Gate](https://sonarcloud.io/api/project_badges/measure?project=michalper_magewiki&metric=alert_status)](https://sonarcloud.io/summary/new_code?id=michalper_magewiki)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 ![Python](https://img.shields.io/badge/python-3.13-blue?logo=python&logoColor=white)
 ![FastAPI](https://img.shields.io/badge/FastAPI-0.162-009688?logo=fastapi&logoColor=white)
