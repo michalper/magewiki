@@ -23,6 +23,14 @@ class Source:
     module_id: int
     module_name: str
     relative_path: str | None = None
+    # Retrieval-debugging detail -- only ever populated for a source that came
+    # from search_modules (hybrid_search); every other tool (get_module,
+    # find_by_class, etc.) has no ranking signal of its own, so these stay
+    # None for those.
+    score: float | None = None
+    semantic_rank: int | None = None
+    keyword_rank: int | None = None
+    identifier_rank: int | None = None
 
 
 def _turn_cost(response, model: str) -> tuple[int, int, Decimal]:
@@ -60,16 +68,40 @@ async def _persist_chat_cost(
 def _collect_sources(tool_name: str, args: dict, result: dict, sources: dict[tuple, Source]) -> None:
     """Record (module_id, relative_path) refs a tool call actually touched, deduped."""
 
-    def _add(module_id: int | None, module_name: str | None, relative_path: str | None = None) -> None:
+    def _add(
+        module_id: int | None,
+        module_name: str | None,
+        relative_path: str | None = None,
+        score: float | None = None,
+        semantic_rank: int | None = None,
+        keyword_rank: int | None = None,
+        identifier_rank: int | None = None,
+    ) -> None:
         if module_id is None:
             return
         key = (module_id, relative_path)
         if key not in sources:
-            sources[key] = Source(module_id=module_id, module_name=module_name or "", relative_path=relative_path)
+            sources[key] = Source(
+                module_id=module_id,
+                module_name=module_name or "",
+                relative_path=relative_path,
+                score=score,
+                semantic_rank=semantic_rank,
+                keyword_rank=keyword_rank,
+                identifier_rank=identifier_rank,
+            )
 
     if tool_name == "search_modules":
         for r in result.get("results", []):
-            _add(r.get("module_id"), r.get("module_name"), r.get("relative_path"))
+            _add(
+                r.get("module_id"),
+                r.get("module_name"),
+                r.get("relative_path"),
+                score=r.get("score"),
+                semantic_rank=r.get("semantic_rank"),
+                keyword_rank=r.get("keyword_rank"),
+                identifier_rank=r.get("identifier_rank"),
+            )
     elif tool_name == "get_module":
         if result.get("found"):
             _add(result.get("module_id"), result.get("name"))

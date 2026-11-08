@@ -135,7 +135,17 @@ async def test_run_agent_executes_tool_then_streams_final_answer(db_session, mon
     events = [e async for e in run_agent(db_session, [{"role": "user", "content": "list modules"}], "dev")]
 
     sources_event = next(e for e in events if e["event"] == "sources")
-    assert sources_event["sources"] == [{"module_id": module.id, "module_name": module.name, "relative_path": None}]
+    assert sources_event["sources"] == [
+        {
+            "module_id": module.id,
+            "module_name": module.name,
+            "relative_path": None,
+            "score": None,
+            "semantic_rank": None,
+            "keyword_rank": None,
+            "identifier_rank": None,
+        }
+    ]
 
     token_events = [e for e in events if e["event"] == "token"]
     assert "".join(e["text"] for e in token_events) == "Hello world"
@@ -188,7 +198,15 @@ async def test_run_agent_read_file_citation_includes_module_name(db_session, mon
 
     sources_event = next(e for e in events if e["event"] == "sources")
     assert sources_event["sources"] == [
-        {"module_id": module.id, "module_name": module.name, "relative_path": "etc/module.xml"}
+        {
+            "module_id": module.id,
+            "module_name": module.name,
+            "relative_path": "etc/module.xml",
+            "score": None,
+            "semantic_rank": None,
+            "keyword_rank": None,
+            "identifier_rank": None,
+        }
     ]
 
     await db_session.execute(delete(Module).where(Module.id == module.id))
@@ -266,7 +284,17 @@ async def test_run_agent_forces_a_retry_when_first_turn_skips_tools(db_session, 
     )
 
     sources_event = next(e for e in events if e["event"] == "sources")
-    assert sources_event["sources"] == [{"module_id": module.id, "module_name": module.name, "relative_path": None}]
+    assert sources_event["sources"] == [
+        {
+            "module_id": module.id,
+            "module_name": module.name,
+            "relative_path": None,
+            "score": None,
+            "semantic_rank": None,
+            "keyword_rank": None,
+            "identifier_rank": None,
+        }
+    ]
 
     await db_session.execute(delete(Module).where(Module.id == module.id))
     await db_session.commit()
@@ -402,7 +430,17 @@ async def test_run_agent_rechecks_budget_mid_loop_not_just_once_before_it(db_ses
     # Round 1's tool call already ran and found a module — that partial result
     # must still be surfaced, not silently dropped.
     sources_event = next(e for e in events if e["event"] == "sources")
-    assert sources_event["sources"] == [{"module_id": module.id, "module_name": module.name, "relative_path": None}]
+    assert sources_event["sources"] == [
+        {
+            "module_id": module.id,
+            "module_name": module.name,
+            "relative_path": None,
+            "score": None,
+            "semantic_rank": None,
+            "keyword_rank": None,
+            "identifier_rank": None,
+        }
+    ]
 
     await db_session.execute(delete(Module).where(Module.id == module.id))
     await db_session.commit()

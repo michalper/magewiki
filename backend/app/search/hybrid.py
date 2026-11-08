@@ -72,16 +72,26 @@ identifiers AS (
     ORDER BY sim DESC
     LIMIT :topk
 ),
+combined AS (
+    -- Tagged by signal so the final SELECT can surface each one's own rank
+    -- alongside the fused score, for a retrieval-debugging view ("found via
+    -- keyword #2, not found by semantic") — not just used to compute
+    -- rrf_score and then discarded.
+    SELECT chunk_id, rnk, 'semantic' AS signal FROM semantic
+    UNION ALL SELECT chunk_id, rnk, 'keyword' FROM keyword
+    UNION ALL SELECT chunk_id, rnk, 'identifier' FROM identifiers
+),
 fused AS (
-    SELECT chunk_id, SUM(1.0 / (60 + rnk)) AS rrf_score
-    FROM (
-        SELECT chunk_id, rnk FROM semantic
-        UNION ALL SELECT chunk_id, rnk FROM keyword
-        UNION ALL SELECT chunk_id, rnk FROM identifiers
-    ) combined
+    SELECT chunk_id,
+           SUM(1.0 / (60 + rnk)) AS rrf_score,
+           MAX(rnk) FILTER (WHERE signal = 'semantic') AS semantic_rank,
+           MAX(rnk) FILTER (WHERE signal = 'keyword') AS keyword_rank,
+           MAX(rnk) FILTER (WHERE signal = 'identifier') AS identifier_rank
+    FROM combined
     GROUP BY chunk_id
 )
-SELECT c.id, c.chunk_type, c.module_id, m.name AS module_name, c.relative_path, c.text, f.rrf_score
+SELECT c.id, c.chunk_type, c.module_id, m.name AS module_name, c.relative_path, c.text,
+       f.rrf_score, f.semantic_rank, f.keyword_rank, f.identifier_rank
 FROM fused f
 JOIN chunks c ON c.id = f.chunk_id
 JOIN modules m ON m.id = c.module_id
@@ -99,6 +109,15 @@ class SearchResult:
     relative_path: str | None
     text: str
     score: float
+    # Each signal's own rank among its own :topk candidates (1-based), or None
+    # if that signal never surfaced this chunk at all -- the per-signal detail
+    # RRF fusion otherwise discards, for a retrieval-debugging view. Default
+    # None since the eval suite's isolated single-signal searches (vector-only/
+    # keyword-only, app/evaluation/isolated_retrieval.py) construct this same
+    # dataclass without ever computing the other signals' ranks at all.
+    semantic_rank: int | None = None
+    keyword_rank: int | None = None
+    identifier_rank: int | None = None
 
 
 async def hybrid_search(
@@ -133,6 +152,9 @@ async def hybrid_search(
             relative_path=row.relative_path,
             text=row.text,
             score=float(row.rrf_score),
+            semantic_rank=row.semantic_rank,
+            keyword_rank=row.keyword_rank,
+            identifier_rank=row.identifier_rank,
         )
         for row in rows
     ]

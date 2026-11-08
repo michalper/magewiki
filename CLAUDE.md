@@ -275,7 +275,26 @@ Enumeration questions go through SQL, because top-k retrieval doesn't guarantee 
 
 System prompt enforces: answer only from tool results, every claim cited, no results means "not found."
 
-Explicitly **not** chosen: pure vector RAG, GraphRAG, a separate vector database, LangChain as the core. Post-1.0: reranking, query rewriting, a retrieval-debugging panel in the UI.
+Explicitly **not** chosen: pure vector RAG, GraphRAG, a separate vector database, LangChain as the core. Post-1.0: reranking, query rewriting — the retrieval-debugging panel itself is now done (see below); reranking/query rewriting stay deferred since either adds a real per-query LLM cost decision against the budget cap that wasn't made yet.
+
+**Retrieval-debugging panel (recorded 2026-11-07):** RRF fusion summed every signal's
+rank into one `rrf_score` and discarded the per-signal detail entirely — no way to see
+*why* a result was found (or why an expected one wasn't). `app/search/hybrid.py`'s
+`_SEARCH_SQL` now tags each signal's CTE rows before fusing them and carries
+`semantic_rank`/`keyword_rank`/`identifier_rank` (each `NULL` if that signal never
+surfaced the chunk at all) through to `SearchResult`, both existing consumers
+(`GET /search`, the agent's `search_modules` tool), and — the part that previously
+stopped at the tool boundary — `_collect_sources`/`Source` in `app/agent/loop.py`,
+which used to strip a `search_modules` result down to just `module_id`/`module_name`/
+`relative_path` before it ever reached the `sources` SSE event. Every other tool
+(`get_module`, `find_by_class`, etc.) has no ranking signal of its own, so these fields
+stay `null` for sources that came from them — only a `search_modules` citation ever
+carries real values. Frontend: `frontend/lib/chat-types.ts`'s `Source` type grew the
+same four fields, and the chat page's `SourceChips` shows a small info-icon/tooltip
+next to a source chip (reusing the same `Tooltip` primitive and pattern as the Stats
+page's description tooltips) with e.g. "Semantic #2 · Keyword not found · Identifier
+not found · RRF score 0.0328" — rendered only when at least one field is non-null, so
+a plain `get_module`/`find_by_class` citation shows no icon at all.
 
 **Configurable embedding dimension (recorded 2026-11-06):** real bug, found while
 actually running the Phase 7 eval suite against Ollama's `bge-m3` after hitting an

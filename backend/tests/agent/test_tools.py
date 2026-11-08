@@ -67,6 +67,13 @@ async def test_search_modules_wraps_hybrid_search(db_session, monkeypatch):
     result_ids = {r["module_id"] for r in result["results"]}
     assert module.id in result_ids
 
+    # Per-signal rank detail (retrieval-debugging) must survive the hybrid_search
+    # -> tool-output boundary, not just the raw fused score.
+    our_result = next(r for r in result["results"] if r["module_id"] == module.id)
+    assert our_result["semantic_rank"] == 1
+    assert "keyword_rank" in our_result
+    assert "identifier_rank" in our_result
+
     await db_session.execute(delete(Module).where(Module.id == module.id))
     await db_session.commit()
 

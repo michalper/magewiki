@@ -2,11 +2,18 @@
 
 import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
+import { Info } from "lucide-react";
 import ReactMarkdown, { type Components } from "react-markdown";
 import remarkGfm from "remark-gfm";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+} from "@/components/ui/tooltip";
 import { apiUrl } from "@/lib/api";
 import type { Audience, ChatEvent, Source } from "@/lib/chat-types";
 import { streamSse } from "@/lib/sse";
@@ -49,18 +56,52 @@ async function streamChat(
   await streamSse<ChatEvent>(`${apiUrl()}/chat`, { messages, audience }, onEvent, signal);
 }
 
+// How a source was actually found, per signal -- only ever set for a source
+// that came from the hybrid-search tool (get_module/find_by_class/etc. have
+// no ranking signal of their own, so this is null for those, and no icon
+// renders at all).
+function retrievalDebugText(s: Source): string | null {
+  if (s.score === null && s.semantic_rank === null && s.keyword_rank === null && s.identifier_rank === null) {
+    return null;
+  }
+  const rank = (label: string, r: number | null) => `${label} ${r === null ? "not found" : `#${r}`}`;
+  const parts = [
+    rank("Semantic", s.semantic_rank),
+    rank("Keyword", s.keyword_rank),
+    rank("Identifier", s.identifier_rank),
+  ];
+  if (s.score !== null) parts.push(`RRF score ${s.score.toFixed(4)}`);
+  return parts.join(" · ");
+}
+
 function SourceChips({ sources }: { sources: Source[] }) {
   if (sources.length === 0) return null;
   return (
     <div className="flex flex-wrap gap-2 mt-2">
-      {sources.map((s, i) => (
-        <Link key={`${s.module_id}-${s.relative_path ?? ""}-${i}`} href={`/modules/${s.module_id}`}>
-          <Badge variant="outline" className="cursor-pointer hover:bg-accent">
-            {s.module_name}
-            {s.relative_path ? `:${s.relative_path}` : ""}
-          </Badge>
-        </Link>
-      ))}
+      {sources.map((s, i) => {
+        const debugText = retrievalDebugText(s);
+        return (
+          <span key={`${s.module_id}-${s.relative_path ?? ""}-${i}`} className="inline-flex items-center gap-1">
+            <Link href={`/modules/${s.module_id}`}>
+              <Badge variant="outline" className="cursor-pointer hover:bg-accent">
+                {s.module_name}
+                {s.relative_path ? `:${s.relative_path}` : ""}
+              </Badge>
+            </Link>
+            {debugText && (
+              <Tooltip>
+                <TooltipTrigger
+                  className="inline-flex text-muted-foreground/70 hover:text-foreground"
+                  aria-label={`How "${s.module_name}" was found`}
+                >
+                  <Info className="size-3" />
+                </TooltipTrigger>
+                <TooltipContent>{debugText}</TooltipContent>
+              </Tooltip>
+            )}
+          </span>
+        );
+      })}
     </div>
   );
 }
@@ -129,6 +170,7 @@ export default function ChatPage() {
   }
 
   return (
+    <TooltipProvider>
     <div className="flex flex-col flex-1 gap-6 p-8 max-w-4xl mx-auto w-full">
       <div className="flex items-center justify-between">
         <h1 className="text-2xl font-semibold tracking-tight">Chat</h1>
@@ -195,5 +237,6 @@ export default function ChatPage() {
         </Button>
       </form>
     </div>
+    </TooltipProvider>
   );
 }

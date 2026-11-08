@@ -380,3 +380,49 @@ async def test_identifier_signal_maps_a_class_hit_only_to_its_file_chunk_not_eve
 
     await db_session.execute(delete(Module).where(Module.id.in_([fan_module.id, beta_module.id])))
     await db_session.commit()
+
+
+@pytest.mark.asyncio
+async def test_each_signal_surfaces_its_own_rank_independently(db_session, monkeypatch):
+    """RRF fusion sums every signal's rank into one score and used to discard
+    the per-signal detail entirely -- this is what a retrieval-debugging view
+    needs: which signal(s) actually found a given chunk, and at what rank.
+    """
+    suffix = uuid.uuid4().hex[:8]
+    module = await _make_module(db_session, suffix)
+    distinctive_word = f"zyzzyva{suffix}"
+
+    # Matches only the semantic signal (embedding), with generic, non-matching text.
+    semantic_only = Chunk(
+        module_id=module.id, chunk_type="file", relative_path="semantic_only.php",
+        content_hash=f"sem-{suffix}", text="This file does something entirely unrelated.",
+        embedding=_vector({0: 1.0}),
+    )
+    # Matches only the keyword signal (distinctive text), with an orthogonal embedding.
+    keyword_only = Chunk(
+        module_id=module.id, chunk_type="file", relative_path="keyword_only.php",
+        content_hash=f"kw-{suffix}", text=f"This file mentions {distinctive_word} explicitly.",
+        embedding=_vector({1: 1.0}),
+    )
+    db_session.add_all([semantic_only, keyword_only])
+    await db_session.commit()
+
+    async def _fake_embed(q, **kwargs):
+        return _vector({0: 1.0})
+
+    monkeypatch.setattr("app.search.hybrid.embed_query_text", _fake_embed)
+
+    results = await hybrid_search(db_session, distinctive_word, limit=200, topk=200)
+    by_id = {r.chunk_id: r for r in results}
+
+    semantic_result = by_id[semantic_only.id]
+    assert semantic_result.semantic_rank == 1  # the only chunk aligned with the fake query embedding
+    assert semantic_result.keyword_rank is None
+    assert semantic_result.identifier_rank is None
+
+    keyword_result = by_id[keyword_only.id]
+    assert keyword_result.keyword_rank == 1  # the only chunk whose text matches the query word
+    assert keyword_result.identifier_rank is None
+
+    await db_session.execute(delete(Module).where(Module.id == module.id))
+    await db_session.commit()

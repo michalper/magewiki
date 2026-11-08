@@ -73,7 +73,17 @@ describe("ChatPage", () => {
     streamSseMock.mockImplementation(async (_url, _body, onEvent: (e: ChatEvent) => void) => {
       onEvent({
         event: "sources",
-        sources: [{ module_id: 7, module_name: "Vendor_Module", relative_path: "Plugin/Foo.php" }],
+        sources: [
+          {
+            module_id: 7,
+            module_name: "Vendor_Module",
+            relative_path: "Plugin/Foo.php",
+            score: null,
+            semantic_rank: null,
+            keyword_rank: null,
+            identifier_rank: null,
+          },
+        ],
       });
       onEvent({ event: "done", tokens_in: 1, tokens_out: 1, cost_usd: "0" });
     });
@@ -86,13 +96,25 @@ describe("ChatPage", () => {
     await waitFor(() => expect(screen.getByText("Vendor_Module:Plugin/Foo.php")).toBeInTheDocument());
     const link = screen.getByRole("link", { name: "Vendor_Module:Plugin/Foo.php" });
     expect(link).toHaveAttribute("href", "/modules/7");
+    // No retrieval-debug info was sent for this source (every field null) -- no icon.
+    expect(screen.queryByLabelText(/How "Vendor_Module" was found/)).not.toBeInTheDocument();
   });
 
   it("renders a source chip without a relative_path suffix", async () => {
     streamSseMock.mockImplementation(async (_url, _body, onEvent: (e: ChatEvent) => void) => {
       onEvent({
         event: "sources",
-        sources: [{ module_id: 3, module_name: "Vendor_Other", relative_path: null }],
+        sources: [
+          {
+            module_id: 3,
+            module_name: "Vendor_Other",
+            relative_path: null,
+            score: null,
+            semantic_rank: null,
+            keyword_rank: null,
+            identifier_rank: null,
+          },
+        ],
       });
       onEvent({ event: "done", tokens_in: 1, tokens_out: 1, cost_usd: "0" });
     });
@@ -103,6 +125,35 @@ describe("ChatPage", () => {
     await user.click(screen.getByRole("button", { name: "Send" }));
 
     await waitFor(() => expect(screen.getByText("Vendor_Other")).toBeInTheDocument());
+  });
+
+  it("shows a retrieval-debug info trigger for a source with per-signal rank data", async () => {
+    streamSseMock.mockImplementation(async (_url, _body, onEvent: (e: ChatEvent) => void) => {
+      onEvent({
+        event: "sources",
+        sources: [
+          {
+            module_id: 9,
+            module_name: "Vendor_Ranked",
+            relative_path: null,
+            score: 0.03284,
+            semantic_rank: 2,
+            keyword_rank: null,
+            identifier_rank: null,
+          },
+        ],
+      });
+      onEvent({ event: "done", tokens_in: 1, tokens_out: 1, cost_usd: "0" });
+    });
+    const user = userEvent.setup();
+    render(<ChatPage />);
+
+    await user.type(screen.getByLabelText("Chat message"), "hi");
+    await user.click(screen.getByRole("button", { name: "Send" }));
+
+    await waitFor(() =>
+      expect(screen.getByLabelText('How "Vendor_Ranked" was found')).toBeInTheDocument(),
+    );
   });
 
   it("renders no source chips for an empty sources list", async () => {

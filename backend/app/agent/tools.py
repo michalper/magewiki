@@ -28,6 +28,9 @@ async def search_modules(session: AsyncSession, query: str, limit: int = 10) -> 
                 "relative_path": r.relative_path,
                 "text": r.text,
                 "score": r.score,
+                "semantic_rank": r.semantic_rank,
+                "keyword_rank": r.keyword_rank,
+                "identifier_rank": r.identifier_rank,
             }
             for r in results
         ]

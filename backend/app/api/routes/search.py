@@ -16,6 +16,9 @@ class SearchResultResponse(BaseModel):
     relative_path: str | None
     text: str
     score: float
+    semantic_rank: int | None
+    keyword_rank: int | None
+    identifier_rank: int | None
 
 
 @router.get("/search", response_model=list[SearchResultResponse])
@@ -32,6 +35,9 @@ async def search(
             relative_path=r.relative_path,
             text=r.text,
             score=r.score,
+            semantic_rank=r.semantic_rank,
+            keyword_rank=r.keyword_rank,
+            identifier_rank=r.identifier_rank,
         )
         for r in results
     ]
