@@ -276,10 +276,16 @@ function run_rector(string $root, string $modulePath, string $phpBinary): array
         // per the Dockerfile's WORKDIR), not absolute like every other tool
         // here — resolve it so downstream relativization against the module
         // root actually works instead of producing a "../../Users/..." path.
+        // realpath() can genuinely fail here (a TOCTOU race: the flagged
+        // file deleted/moved between Rector's own dry-run analysis and this
+        // call) — fall back to null (no file), not the raw, still-CWD-
+        // relative string, which _relativize() on the Python side can't
+        // resolve against module_root either and would otherwise persist
+        // verbatim as a nonsensical path like "../../module/File.php".
         $rawFile = $diff['file'] ?? '';
         $resolvedFile = realpath($rawFile);
         $findings[] = [
-            'file' => $resolvedFile !== false ? $resolvedFile : $rawFile,
+            'file' => $resolvedFile !== false ? $resolvedFile : null,
             'line' => null,
             'message' => 'Rector would apply: ' . ($rules !== '' ? $rules : 'unknown rule'),
         ];
