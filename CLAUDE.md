@@ -962,10 +962,19 @@ component per module currently scanned under that repo_root, built entirely from
 data already parsed and persisted (`Module.composer_name`/`setup_version` — the
 field that actually holds the resolved version, despite its name, per the "Version
 source priority" decision — `license`, `homepage`), no new scan or external call.
-Deliberately a flat `components` list with no `dependencies` graph section (CycloneDX
-allows omitting it) — the existing per-module dependency graph already answers "what
-does X depend on"; this just answers "what's actually installed," which doesn't need
-the edges. `license` entries use CycloneDX's free-text `license.name` field, never
+Originally a flat `components` list with no `dependencies` graph section (CycloneDX
+allows omitting it) — the existing per-module dependency graph already answered "what
+does X depend on"; this just answered "what's actually installed," which didn't need
+the edges. Revisited once actually asked for (recorded 2026-11-08, same session as the
+license-risk-prefixes and composer scripts/autoload/allow-plugins follow-ups): each
+module's own direct, production (non-dev) `composer_package_requirements` rows (already
+parsed for the CVE/abandoned-dependency checks) now become versionless "library"
+components plus a real CycloneDX `dependencies` section — deliberately one level deep,
+since this project parses a package's name and never installs it, so it has no way to
+know that package's own further dependencies; "transitive" here means "what a scanned
+module requires," not a fully resolved multi-level tree. Omitting the new optional
+`requirements` parameter reproduces the original graph-less SBOM exactly. `license`
+entries use CycloneDX's free-text `license.name` field, never
 `license.id` (which requires strict SPDX-identifier validation) — correct for every
 stored value without needing to validate it against the full SPDX list first.
 Frontend: a "Download SBOM" button on each Repos page card, implemented as a real
