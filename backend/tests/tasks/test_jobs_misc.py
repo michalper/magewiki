@@ -6,7 +6,7 @@ import pytest
 from sqlalchemy import select, update
 
 from app.analyzer.client import LlmCallResult
-from app.models import AnalysisCache, Chunk, PhpClass
+from app.models import AnalysisCache, Chunk, PhpClass, PhpClassMethod
 from app.scanner.orchestrator import ScanAlreadyInProgressError
 from app.tasks import jobs as jobs_module
 from app.tasks.jobs import (
@@ -66,8 +66,20 @@ async def test_embed_chunks_falls_back_to_empty_source_when_a_method_file_is_unr
 ):
     module = await _reach_embedding_state(demo_store_path, db_session, monkeypatch)
 
+    # Deterministic, not "whichever row Postgres happens to return first" --
+    # without an explicit order_by + limit, a module with more than one
+    # plugin class (or more than one method chunk below) could pick a
+    # *different* plugin_class than the method_chunk query picks, making
+    # this test's actual pass/fail depend on an undefined row order rather
+    # than the real "unreadable file" behavior it's meant to exercise. Real,
+    # observed flake: CI once picked a method_chunk from an unrelated,
+    # perfectly-readable class and failed with its real source text instead
+    # of the empty-source fallback.
     plugin_class = await db_session.scalar(
-        select(PhpClass).where(PhpClass.module_id == module.id, PhpClass.is_plugin.is_(True))
+        select(PhpClass)
+        .where(PhpClass.module_id == module.id, PhpClass.is_plugin.is_(True))
+        .order_by(PhpClass.id)
+        .limit(1)
     )
     await db_session.execute(
         update(PhpClass).where(PhpClass.id == plugin_class.id).values(file_path="NoSuchFile/DoesNotExist.php")
@@ -79,8 +91,12 @@ async def test_embed_chunks_falls_back_to_empty_source_when_a_method_file_is_unr
 
     await embed_chunks(None, module.id, module.current_hash)
 
+    # Scoped to a method of the specific class whose file was just corrupted
+    # above, via its own methods -- not "any method chunk in the module."
     method_chunk = await db_session.scalar(
-        select(Chunk).where(Chunk.module_id == module.id, Chunk.chunk_type == "method", Chunk.method_id.isnot(None))
+        select(Chunk)
+        .join(PhpClassMethod, Chunk.method_id == PhpClassMethod.id)
+        .where(Chunk.module_id == module.id, Chunk.chunk_type == "method", PhpClassMethod.class_id == plugin_class.id)
     )
     assert method_chunk is not None
     # build_method_chunk_text(fqcn, method_name, "") -- empty source, not a crash.
