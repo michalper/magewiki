@@ -67,6 +67,7 @@ describe("SettingsPage", () => {
           body: JSON.stringify({
             llm_model: "anthropic/claude-sonnet-5-5",
             llm_api_key: "sk-new-key",
+            confirm_reembed: false,
           }),
         }),
       ),
@@ -129,7 +130,12 @@ describe("SettingsPage", () => {
       expect(fetchMock).toHaveBeenCalledWith(
         "/settings/llm",
         expect.objectContaining({
-          body: JSON.stringify({ llm_model: null, llm_api_key: null, llm_api_base: null }),
+          body: JSON.stringify({
+            llm_model: null,
+            llm_api_key: null,
+            llm_api_base: null,
+            confirm_reembed: false,
+          }),
         }),
       ),
     );
@@ -154,6 +160,7 @@ describe("SettingsPage", () => {
             embedding_model: "ollama/bge-m3",
             embedding_api_key: "sk-real-secret",
             embedding_api_base: "http://host.docker.internal:11434",
+            confirm_reembed: false,
           }),
         }),
       ),
@@ -176,6 +183,7 @@ describe("SettingsPage", () => {
             embedding_model: null,
             embedding_api_key: null,
             embedding_api_base: null,
+            confirm_reembed: false,
           }),
         }),
       ),
@@ -201,5 +209,39 @@ describe("SettingsPage", () => {
         screen.getByText("changing llm_api_base requires providing llm_api_key again"),
       ).toBeInTheDocument(),
     );
+  });
+
+  it("offers a Confirm re-embed button when the backend asks for confirmation, and resends with it set", async () => {
+    const patchCalls: unknown[] = [];
+    fetchMock.mockImplementation(async (path: string, init?: RequestInit) => {
+      if (init?.method === "PATCH") {
+        const body = JSON.parse(init.body as string);
+        patchCalls.push(body);
+        if (!body.confirm_reembed) {
+          throw new Error(
+            "changing embedding_model from openai/text-embedding-3-small to ollama/bge-m3 would leave " +
+              "3 already-embedded module(s) in the old model's vector space until re-embedded — resend " +
+              "with confirm_reembed: true to proceed (this re-runs real, billable embedding calls for " +
+              "all of them).",
+          );
+        }
+        return settings();
+      }
+      return settings();
+    });
+    const user = userEvent.setup();
+    renderWithQueryClient(<SettingsPage />);
+
+    await waitFor(() => expect(screen.getByText("openai/text-embedding-3-small")).toBeInTheDocument());
+    await user.type(screen.getByLabelText("Embedding model"), "ollama/bge-m3");
+    await user.click(screen.getAllByRole("button", { name: "Save" })[1]);
+
+    const confirmButton = await screen.findByRole("button", { name: "Confirm re-embed" });
+    expect(screen.getByText(/resend with confirm_reembed: true/)).toBeInTheDocument();
+
+    await user.click(confirmButton);
+
+    await waitFor(() => expect(patchCalls).toHaveLength(2));
+    expect(patchCalls[1]).toEqual({ embedding_model: "ollama/bge-m3", confirm_reembed: true });
   });
 });

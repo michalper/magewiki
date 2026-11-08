@@ -47,30 +47,49 @@ export default function SettingsPage() {
   const [embeddingApiKey, setEmbeddingApiKey] = useState("");
   const [embeddingApiBase, setEmbeddingApiBase] = useState("");
 
+  const [pendingEmbeddingUpdate, setPendingEmbeddingUpdate] = useState<LlmSettingsUpdate | null>(null);
+
   const patchMutation = useMutation({
     mutationFn: patchSettings,
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["llm-settings"] });
       setLlmApiKey("");
       setEmbeddingApiKey("");
+      setPendingEmbeddingUpdate(null);
     },
   });
 
   function saveLlm() {
-    const update: LlmSettingsUpdate = {};
+    const update: Partial<LlmSettingsUpdate> = {};
     if (llmModel.trim()) update.llm_model = llmModel.trim();
     if (llmApiKey.trim()) update.llm_api_key = llmApiKey.trim();
     if (llmApiBase.trim()) update.llm_api_base = llmApiBase.trim();
-    if (Object.keys(update).length > 0) patchMutation.mutate(update);
+    if (Object.keys(update).length > 0) patchMutation.mutate({ ...update, confirm_reembed: false });
   }
 
-  function saveEmbedding() {
-    const update: LlmSettingsUpdate = {};
+  // embedding_model changes alone can require confirm_reembed (see
+  // CLAUDE.md's "Re-embed workflow on embedding-model change") — the backend
+  // 400s with an actionable message instead of silently re-embedding a
+  // potentially large, billable fleet. Remember the attempted update so a
+  // "Confirm re-embed" button can resend it with confirm_reembed: true
+  // rather than making the user retype everything.
+  function saveEmbedding(confirmReembed = false) {
+    const update: Partial<LlmSettingsUpdate> = {};
     if (embeddingModel.trim()) update.embedding_model = embeddingModel.trim();
     if (embeddingApiKey.trim()) update.embedding_api_key = embeddingApiKey.trim();
     if (embeddingApiBase.trim()) update.embedding_api_base = embeddingApiBase.trim();
-    if (Object.keys(update).length > 0) patchMutation.mutate(update);
+    if (Object.keys(update).length === 0) return;
+    const full: LlmSettingsUpdate = { ...update, confirm_reembed: confirmReembed };
+    setPendingEmbeddingUpdate(full);
+    patchMutation.mutate(full);
   }
+
+  const reembedConfirmMessage =
+    patchMutation.isError &&
+    patchMutation.error instanceof Error &&
+    patchMutation.error.message.includes("confirm_reembed: true")
+      ? patchMutation.error.message
+      : null;
 
   return (
     <div className="flex flex-col flex-1 gap-8 p-8 max-w-2xl mx-auto w-full">
@@ -128,7 +147,12 @@ export default function SettingsPage() {
               <Button
                 variant="outline"
                 onClick={() =>
-                  patchMutation.mutate({ llm_model: null, llm_api_key: null, llm_api_base: null })
+                  patchMutation.mutate({
+                    llm_model: null,
+                    llm_api_key: null,
+                    llm_api_base: null,
+                    confirm_reembed: false,
+                  })
                 }
                 disabled={patchMutation.isPending}
               >
@@ -173,18 +197,21 @@ export default function SettingsPage() {
               className="font-mono"
             />
             <div className="flex gap-2">
-              <Button onClick={saveEmbedding} disabled={patchMutation.isPending}>
+              <Button onClick={() => saveEmbedding()} disabled={patchMutation.isPending}>
                 Save
               </Button>
               <Button
                 variant="outline"
-                onClick={() =>
-                  patchMutation.mutate({
+                onClick={() => {
+                  const full: LlmSettingsUpdate = {
                     embedding_model: null,
                     embedding_api_key: null,
                     embedding_api_base: null,
-                  })
-                }
+                    confirm_reembed: false,
+                  };
+                  setPendingEmbeddingUpdate(full);
+                  patchMutation.mutate(full);
+                }}
                 disabled={patchMutation.isPending}
               >
                 Reset to .env default
@@ -192,7 +219,22 @@ export default function SettingsPage() {
             </div>
           </section>
 
-          {patchMutation.isError && (
+          {reembedConfirmMessage && pendingEmbeddingUpdate && (
+            <div className="flex flex-col gap-2 rounded-2xl bg-card p-5 shadow-sm">
+              <p className="text-destructive text-sm">{reembedConfirmMessage}</p>
+              <Button
+                variant="destructive"
+                size="sm"
+                className="self-start"
+                onClick={() => patchMutation.mutate({ ...pendingEmbeddingUpdate, confirm_reembed: true })}
+                disabled={patchMutation.isPending}
+              >
+                Confirm re-embed
+              </Button>
+            </div>
+          )}
+
+          {patchMutation.isError && !reembedConfirmMessage && (
             <p className="text-destructive text-sm">
               {patchMutation.error instanceof Error ? patchMutation.error.message : "Failed to save settings."}
             </p>
