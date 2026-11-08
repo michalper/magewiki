@@ -794,7 +794,21 @@ exclusion exists only because Magento's packages aren't resolvable via public Pa
 check never calls Packagist at all, just compares constraint strings directly. New
 `composer_conflict` check_type (migration `0024`), severity `"warning"`, one row per involved
 module — the `finding_counts`/`CHECK_TYPES` registration note right after the Phase 12 decision
-above covers this and the other two new check types added the same session.
+above covers this and the other new check types added the same session.
+
+**webapi.xml route-conflict detection (recorded 2026-11-08):** the third of a run of
+"po kolei" (one after another) cross-module conflict checks the user asked for in one sitting,
+after the composer-conflict one above. Same fleet-wide Phase-C pattern again, this time over
+`webapi_routes` (Phase 14's structured REST-endpoint facts): two or more modules declaring the
+exact same `(url, http_method)` pair is a real conflict, not theoretical — Magento merges every
+installed module's route declarations into one table keyed by `(url, method)` at compile time,
+and an exact duplicate is genuinely ambiguous (one module's service silently wins depending on
+compilation order, not a documented override mechanism the way a deliberate route override
+works). Matched on the literal `url` string only, not on path-parameter shape — `/V1/foo/:id` and
+`/V1/foo/:bar` are treated as different routes even though both would collide on a real request —
+deliberately conservative, same "flag a concrete, certain conflict" pragmatism as the two checks
+above, to avoid a false positive MageWiki can't actually be sure about. New
+`webapi_route_conflict` check_type (migration `0025`), severity `"warning"`.
 
 **Phase 12b decision (recorded 2026-11-06):** this is v1's actual headline feature ("upgrade
 readiness"), deliberately left out of Phase 12 and called out there as "no 'upgrade readiness'

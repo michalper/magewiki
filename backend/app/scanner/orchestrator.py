@@ -70,6 +70,7 @@ from app.scanner.secrets_scanner import scan_hardcoded_secrets
 from app.scanner.security_advisories import check_security_advisories
 from app.scanner.system_xml import parse_system_xml
 from app.scanner.test_presence import has_tests
+from app.scanner.webapi_conflicts import WebapiRouteRow, detect_webapi_route_conflicts
 from app.scanner.webapi_xml import parse_webapi_xml
 from app.tasks.queue import get_arq_pool
 
@@ -454,6 +455,9 @@ async def _run_scan(root: Path, session: AsyncSession) -> AsyncIterator[dict]:
     # module's composer_package_requirements already committed, recomputes
     # across the whole repo_root's already-persisted modules.
     await _detect_and_persist_composer_conflicts(session, root)
+    # Same reasoning again: needs every scanned module's webapi_routes
+    # already committed, recomputes across the whole repo_root.
+    await _detect_and_persist_webapi_route_conflicts(session, root)
 
     result.tasks_enqueued = tasks_enqueued
     yield {"event": "done", "result": result}
@@ -531,6 +535,45 @@ async def _detect_and_persist_composer_conflicts(session: AsyncSession, root: Pa
     await session.execute(
         delete(ModuleQualityFinding).where(
             ModuleQualityFinding.check_type == "composer_conflict",
+            ModuleQualityFinding.module_id.in_(select(Module.id).where(Module.repo_root == str(root))),
+        )
+    )
+    for module_id, finding in findings:
+        session.add(
+            ModuleQualityFinding(
+                module_id=module_id,
+                check_type=finding.check_type,
+                severity=finding.severity,
+                file_path=finding.file_path,
+                line=finding.line,
+                message=finding.message,
+            )
+        )
+    await session.commit()
+
+
+async def _detect_and_persist_webapi_route_conflicts(session: AsyncSession, root: Path) -> None:
+    route_rows = (
+        await session.execute(
+            select(
+                WebapiRoute.module_id,
+                Module.name,
+                WebapiRoute.url,
+                WebapiRoute.http_method,
+                WebapiRoute.service_class,
+                WebapiRoute.service_method,
+            )
+            .join(Module, Module.id == WebapiRoute.module_id)
+            .where(Module.repo_root == str(root))
+        )
+    ).all()
+    routes = [WebapiRouteRow(*row) for row in route_rows]
+
+    findings = detect_webapi_route_conflicts(routes)
+
+    await session.execute(
+        delete(ModuleQualityFinding).where(
+            ModuleQualityFinding.check_type == "webapi_route_conflict",
             ModuleQualityFinding.module_id.in_(select(Module.id).where(Module.repo_root == str(root))),
         )
     )
