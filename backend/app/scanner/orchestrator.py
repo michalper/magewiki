@@ -99,6 +99,10 @@ _FILE_HASH_DEPENDENT_CHECK_TYPES = (
     "phpmd_issue",
     "phpcs_violation",
     "php_compat_issue",
+    # Added later than the other check_php_static_analysis findings above
+    # (PhpMetrics shipped after this tuple did) and originally missed here --
+    # see the "phpmetrics_issue findings silently wiped" regression note.
+    "phpmetrics_issue",
 )
 
 

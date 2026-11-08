@@ -940,6 +940,23 @@ change was made to auto-regenerate this file going forward — flagging here as 
 known gap rather than building out a regeneration-drift-detection step this session
 didn't ask for.
 
+**Regression found while reading this same hash-skip code for the next roadmap item
+(recorded 2026-11-08):** `_FILE_HASH_DEPENDENT_CHECK_TYPES` (see "Hash-skip for
+file-hash-dependent quality checks" above) listed `phpstan_error`/`phpmd_issue`/
+`phpcs_violation`/`php_compat_issue` but not `phpmetrics_issue` — PhpMetrics shipped
+in a later session than the hash-skip tuple did, and nothing updated it. Net effect,
+confirmed with a new regression test before fixing it (seeded a real
+`phpmetrics_issue` finding, rescanned with no file changes, found it deleted and
+never restored): a no-op rescan's early cleanup deletes every finding whose
+check_type isn't in this tuple, while the later skip of `check_php_static_analysis`
+itself (the same function that would recompute `phpmetrics_issue`) means it was never
+replaced — a module's PhpMetrics findings were silently wiped on the very first
+no-op rescan after they were created, and wouldn't come back until that module's
+files changed again. Fixed by adding `phpmetrics_issue` to the tuple. Checked the
+real DB before assuming data loss: still showed the original 138 real findings on
+Ordo_Automation, so no module had actually hit a no-op rescan since PhpMetrics
+shipped — this closes a real but not-yet-triggered data-loss bug, not a repair job.
+
 **Phase 12b decision (recorded 2026-11-06):** this is v1's actual headline feature ("upgrade
 readiness"), deliberately left out of Phase 12 and called out there as "no 'upgrade readiness'
 gate concept yet." Live-tested during planning: Magento's own packages

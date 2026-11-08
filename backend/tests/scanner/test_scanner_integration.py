@@ -21,6 +21,7 @@ from app.models import (
     QueueBinding,
     WebapiRoute,
 )
+from app.scanner.dto import QualityFinding
 from app.scanner.orchestrator import scan_repository
 from tests.conftest import delete_module_if_present
 
@@ -259,6 +260,61 @@ async def test_scan_repository_skips_file_hash_dependent_checks_on_a_no_op_resca
     await scan_repository(repo_root, db_session)
     assert php_static_calls == 1  # not called again -- nothing about the module's files changed
     assert security_advisory_calls == 2  # always rechecked -- advisory data can change independently
+
+
+@pytest.mark.asyncio
+async def test_scan_repository_preserves_phpmetrics_findings_on_a_no_op_rescan(
+    demo_store_path: Path, db_session, monkeypatch
+):
+    """Regression test: _FILE_HASH_DEPENDENT_CHECK_TYPES originally listed
+    phpstan_error/phpmd_issue/phpcs_violation/php_compat_issue but not
+    phpmetrics_issue (added later, in the same check_php_static_analysis
+    call) -- a no-op rescan's early cleanup deletes every finding whose
+    check_type isn't in that tuple, while the later skip of
+    check_php_static_analysis itself means phpmetrics_issue findings were
+    never recomputed to replace them. Net effect: a module's phpmetrics_issue
+    findings were silently wiped on the very first no-op rescan after they
+    were created, and never came back until the module's files changed again.
+    """
+    repo_root = str(demo_store_path.resolve())
+    await delete_module_if_present(db_session, repo_root, "Vendor_Module")
+
+    async def fake_php_static(*args, **kwargs):
+        return [
+            QualityFinding(
+                check_type="phpmetrics_issue",
+                severity="warning",
+                file_path="Foo.php",
+                line=None,
+                message="Too complex method",
+            )
+        ]
+
+    monkeypatch.setattr("app.scanner.orchestrator.check_php_static_analysis", fake_php_static)
+
+    await scan_repository(repo_root, db_session)
+    module = await db_session.scalar(
+        select(Module).where(Module.repo_root == repo_root, Module.name == "Vendor_Module")
+    )
+    findings = (
+        await db_session.scalars(
+            select(ModuleQualityFinding).where(
+                ModuleQualityFinding.module_id == module.id, ModuleQualityFinding.check_type == "phpmetrics_issue"
+            )
+        )
+    ).all()
+    assert len(findings) == 1
+
+    # Re-scan with no changes at all -- the phpmetrics_issue finding must survive.
+    await scan_repository(repo_root, db_session)
+    findings_after_rescan = (
+        await db_session.scalars(
+            select(ModuleQualityFinding).where(
+                ModuleQualityFinding.module_id == module.id, ModuleQualityFinding.check_type == "phpmetrics_issue"
+            )
+        )
+    ).all()
+    assert len(findings_after_rescan) == 1
 
 
 @pytest.mark.asyncio
