@@ -59,8 +59,12 @@ class SavePlugin
     done = next(e for e in events if e["event"] == "done")
     assert done["result"].modules_created == 2
 
-    module_a = await db_session.scalar(select(Module).where(Module.name == "Vendor_A"))
-    module_b = await db_session.scalar(select(Module).where(Module.name == "Vendor_B"))
+    module_a = await db_session.scalar(
+        select(Module).where(Module.repo_root == str(repo_root), Module.name == "Vendor_A")
+    )
+    module_b = await db_session.scalar(
+        select(Module).where(Module.repo_root == str(repo_root), Module.name == "Vendor_B")
+    )
 
     findings_a = (
         await db_session.scalars(

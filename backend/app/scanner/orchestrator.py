@@ -32,6 +32,7 @@ from app.models import (
     WebapiRoute,
 )
 from app.scanner.abandoned_dependencies import check_abandoned_outdated
+from app.scanner.composer_conflicts import ComposerRequirementRow, detect_composer_conflicts
 from app.scanner.composer_json import composer_completeness_findings, parse_composer_json
 from app.scanner.config_php import parse_config_php
 from app.scanner.crontab_xml import parse_crontab_xml
@@ -449,6 +450,10 @@ async def _run_scan(root: Path, session: AsyncSession) -> AsyncIterator[dict]:
     # modules, not just the ones in this scan, so a single-module scan still
     # catches a conflict against a module scanned previously.
     await _detect_and_persist_plugin_conflicts(session, root)
+    # Same reasoning as plugin-conflict detection above: needs every scanned
+    # module's composer_package_requirements already committed, recomputes
+    # across the whole repo_root's already-persisted modules.
+    await _detect_and_persist_composer_conflicts(session, root)
 
     result.tasks_enqueued = tasks_enqueued
     yield {"event": "done", "result": result}
@@ -489,6 +494,43 @@ async def _detect_and_persist_plugin_conflicts(session: AsyncSession, root: Path
     await session.execute(
         delete(ModuleQualityFinding).where(
             ModuleQualityFinding.check_type == "plugin_conflict",
+            ModuleQualityFinding.module_id.in_(select(Module.id).where(Module.repo_root == str(root))),
+        )
+    )
+    for module_id, finding in findings:
+        session.add(
+            ModuleQualityFinding(
+                module_id=module_id,
+                check_type=finding.check_type,
+                severity=finding.severity,
+                file_path=finding.file_path,
+                line=finding.line,
+                message=finding.message,
+            )
+        )
+    await session.commit()
+
+
+async def _detect_and_persist_composer_conflicts(session: AsyncSession, root: Path) -> None:
+    requirement_rows = (
+        await session.execute(
+            select(
+                ComposerPackageRequirement.module_id,
+                Module.name,
+                ComposerPackageRequirement.package_name,
+                ComposerPackageRequirement.constraint,
+            )
+            .join(Module, Module.id == ComposerPackageRequirement.module_id)
+            .where(Module.repo_root == str(root))
+        )
+    ).all()
+    requirements = [ComposerRequirementRow(*row) for row in requirement_rows]
+
+    findings = detect_composer_conflicts(requirements)
+
+    await session.execute(
+        delete(ModuleQualityFinding).where(
+            ModuleQualityFinding.check_type == "composer_conflict",
             ModuleQualityFinding.module_id.in_(select(Module.id).where(Module.repo_root == str(root))),
         )
     )
