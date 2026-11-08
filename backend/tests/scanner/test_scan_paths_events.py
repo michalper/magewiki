@@ -2,9 +2,10 @@ import shutil
 from pathlib import Path
 
 import pytest
+from sqlalchemy import text
 
 from app.config import settings
-from app.db import async_session_factory
+from app.db import async_session_factory, engine
 from app.scanner.orchestrator import scan_paths_events
 
 
@@ -133,3 +134,41 @@ async def test_a_symlinked_child_outside_the_scan_roots_is_skipped_not_scanned(
             await session.scalars(select(Module).where(Module.name.in_(["Vendor_Allowed", "Vendor_Secret"])))
         ).all()
     assert {m.name for m in modules} == {"Vendor_Allowed"}
+
+
+@pytest.mark.asyncio
+async def test_a_store_already_being_scanned_is_skipped_not_fatal(
+    tmp_path: Path, demo_module_path: Path, db_session
+):
+    """Regression test: one store already holding the per-repo_root advisory
+    lock (e.g. a concurrent nightly cron run) must not abort the whole
+    multi-store scan -- the other, unlocked stores must still scan
+    successfully, same "skip it, not a failure" treatment every other
+    ScanAlreadyInProgressError call site already gives this exception.
+    """
+    sites = tmp_path / "sites"
+    store_a = sites / "store-a"
+    store_b = sites / "store-b"
+    _make_module(store_a, demo_module_path, "FromA")
+    _make_module(store_b, demo_module_path, "FromB")
+
+    lock_key = {"repo_root": str(store_a.resolve())}
+    async with engine.connect() as lock_connection:
+        locked = await lock_connection.scalar(
+            text("SELECT pg_try_advisory_lock(hashtextextended(:repo_root, 0))"), lock_key
+        )
+        assert locked is True
+
+        events = [event async for event in scan_paths_events(str(sites), db_session)]
+
+        await lock_connection.scalar(
+            text("SELECT pg_advisory_unlock(hashtextextended(:repo_root, 0))"), lock_key
+        )
+
+    module_events = [e for e in events if e["event"] == "module"]
+    assert {e["name"] for e in module_events} == {"Vendor_FromB"}
+
+    result = events[-1]["result"]
+    assert events[-1]["event"] == "done"
+    assert result.modules_created == 1
+    assert any("store-a" in w and "already in progress" in w for w in result.warnings)

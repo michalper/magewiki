@@ -220,20 +220,28 @@ async def scan_paths_events(path: str, session: AsyncSession) -> AsyncIterator[d
         )
     for index, root in enumerate(roots, start=1):
         yield {"event": "store", "name": root.name, "index": index, "total": len(roots)}
-        async for event in scan_repository_events(str(root), session):
-            if event["event"] == "done":
-                store_result: ScanResult = event["result"]
-                combined.modules_found += store_result.modules_found
-                combined.modules_created += store_result.modules_created
-                combined.modules_updated += store_result.modules_updated
-                combined.classes_total += store_result.classes_total
-                combined.plugins_total += store_result.plugins_total
-                combined.observers_total += store_result.observers_total
-                combined.tasks_enqueued += store_result.tasks_enqueued
-                combined.warnings.extend(f"[{root.name}] {w}" for w in store_result.warnings)
-                combined.modules.extend(store_result.modules)
-            else:
-                yield event
+        try:
+            async for event in scan_repository_events(str(root), session):
+                if event["event"] == "done":
+                    store_result: ScanResult = event["result"]
+                    combined.modules_found += store_result.modules_found
+                    combined.modules_created += store_result.modules_created
+                    combined.modules_updated += store_result.modules_updated
+                    combined.classes_total += store_result.classes_total
+                    combined.plugins_total += store_result.plugins_total
+                    combined.observers_total += store_result.observers_total
+                    combined.tasks_enqueued += store_result.tasks_enqueued
+                    combined.warnings.extend(f"[{root.name}] {w}" for w in store_result.warnings)
+                    combined.modules.extend(store_result.modules)
+                else:
+                    yield event
+        except ScanAlreadyInProgressError:
+            # Same "another trigger got there first, not a failure" treatment
+            # every other caller of scan_repository_events/scan_repository
+            # gives this exception (jobs.py, the API routes, the CLI) --
+            # one locked store (e.g. a concurrent nightly cron run) must not
+            # abort the stores that weren't locked and could scan fine.
+            combined.warnings.append(f"skipped {root.name}: a scan of this store is already in progress")
     yield {"event": "done", "result": combined}
 
 
