@@ -18,11 +18,10 @@ _BRANDED_PATTERNS: list[tuple[str, re.Pattern[str]]] = [
     ("Slack token", re.compile(r"xox[baprs]-[0-9A-Za-z-]{10,}")),
     ("Stripe live key", re.compile(r"sk_live_[0-9A-Za-z]{24,}")),
     # The type prefix (RSA/EC/OPENSSH/DSA) is itself optional via the
-    # trailing "?" -- PKCS#8 unencrypted keys use a bare
-    # "-----BEGIN PRIVATE KEY-----" with no prefix at all. No empty
-    # alternative inside the group itself (flagged by SonarCloud
-    # python:S5842/S6323): that would be redundant with the outer "?" and
-    # match the empty string pointlessly.
+    # trailing "?" -- PKCS#8 unencrypted keys use a PEM header with no type
+    # prefix at all. No empty alternative inside the group itself (flagged
+    # by SonarCloud python:S5842/S6323): that would be redundant with the
+    # outer "?" and match the empty string pointlessly.
     ("PEM private key", re.compile(r"-----BEGIN (RSA |EC |OPENSSH |DSA )?PRIVATE KEY-----")),
     ("Basic-auth URL credential", re.compile(r"[a-z][a-z0-9+.-]*://[^\s/'\"]+:[^\s/'\"@]+@")),
 ]
