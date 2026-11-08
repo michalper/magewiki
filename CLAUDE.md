@@ -1363,6 +1363,28 @@ up real CI-based analysis with a committed, version-controlled properties file �
 worth doing only if (a) turns out to be too tedious to repeat as new noise
 accumulates.
 
+**Update, same day:** the author picked (b). Wiring it up surfaced two real CI
+problems, both fixed: (1) a brand-new `SONAR_TOKEN` (generated as a *Project
+Analysis Token*) got a 403 from every `api.sonarcloud.io` endpoint the scanner
+calls, including generic bootstrap ones (`/analysis/jres`, `/analysis/engine`) —
+not a scope issue on one endpoint, the token just wasn't accepted at all;
+regenerating it as a plain *User Token* fixed every call. Also had to turn off
+the SonarCloud project's own "Automatic Analysis" toggle (Administration →
+Analysis Method) — confirmed via the project's own settings page it was still
+on — since SonarCloud explicitly documents the two analysis methods as
+mutually exclusive, though in this case it turned out not to be the actual
+cause of the 403 (the token was). (2) A `SONAR_SCANNER_SKIP_JRE_PROVISIONING`
+workaround tried mid-diagnosis to isolate the 403 became actively harmful once
+the token was fixed — it forced the scanner onto `ubuntu-latest`'s preinstalled
+Java 17, and this scanner version requires Java 21+; reverted once the real
+fix (new token) landed and auto-provisioning could do its job again. Final
+result verified against the real, public SonarCloud API: 214 open issues → 5,
+all five read directly (not assumed) and genuinely false positives (`array.sort()`
+on plain string enums; ReactMarkdown's `h1`/`h2`/`h3` overrides carrying their
+real content through a `{...props}` spread Sonar's static check can't see
+through) — added to `sonar-project.properties` as e44/e45 rather than left
+open.
+
 **First-run onboarding wizard (recorded 2026-11-08):** flagged by the author relaying a
 colleague's confusion — a fellow developer couldn't tell from the running app alone
 whether MageWiki-AI needed a paid API key/subscription just to start using it, even
