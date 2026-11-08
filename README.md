@@ -106,6 +106,9 @@ thing — all free, parser-derived, zero AI involved:
 - **webapi.xml route conflicts** — two modules declaring the exact same REST
   route (`url` + HTTP method); Magento merges every module's route table, and an
   exact duplicate means one module's service silently wins.
+- **db_schema.xml column conflicts** — two modules declaring the same database
+  column with a different type or nullability; Magento's declarative schema
+  merges modules by sequence order, so one definition silently wins.
 
 ## Roadmap
 
