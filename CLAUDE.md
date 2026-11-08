@@ -730,9 +730,27 @@ Worth doing if an even 5th wave of check types ever shows up. **Update (2026-11-
 refactor happened by the time Phase 14 and the plugin-conflict/PhpMetrics check types below were
 added — `finding_counts` is a plain `dict[str, int]` today (`app/schemas.py`), and
 `frontend/components/quality-badges.tsx`'s `CHECK_TYPES` array is the one place a new check type
-needs registering on the frontend. Two more waves since this was first flagged, zero backend/
-frontend-shape changes needed either time — the "worth doing if a 5th wave shows up" bar was
-already cleared.
+needs registering on the frontend **for the Modules list and per-module badges.** Two more waves
+since this was first flagged, zero backend/frontend-shape changes needed either time — the "worth
+doing if a 5th wave shows up" bar was already cleared. **Correction (2026-11-08):** "the one
+place" was incomplete — see the Stats-page gap noted right below; `CHECK_TYPES` was never the only
+frontend registration point to begin with, just the only one that happened to already cover every
+check type that existed until this session.
+
+**Stats page gap: four new check types had no tile (recorded 2026-11-08):** found
+while refreshing the README/Wiki to reflect everything added this session —
+`CHECK_TYPES` above already covered `phpmetrics_issue`/`plugin_conflict`/
+`composer_conflict`/`webapi_route_conflict`, but `app/stats/page.tsx`'s `StatTile`s
+are a separately hand-maintained list (unlike the badges, it groups several check
+types into one human-readable tile, e.g. "Magento upgrade blockers," so it can't just
+iterate `CHECK_TYPES` generically) — all four new check types were invisible on the
+Stats dashboard even though they showed up correctly on the Modules page. Folded
+`phpmetrics_issue` into the existing "PHP static-analysis findings" tile (same
+conceptual bucket as phpstan/phpmd/phpcs/php-compat) and added a new "Cross-module
+conflicts" tile summing `plugin_conflict`/`composer_conflict`/`webapi_route_conflict`.
+Verified against the real, already-scanned fleet (not just the unit test's synthetic
+counts): the real Stats page now shows "PHP static-analysis findings: 8659" and
+"Cross-module conflicts: 316" instead of omitting them entirely.
 
 **PhpMetrics added (recorded 2026-11-08):** closes the "dropped during scoping" gap immediately
 above, flagged by the author asking directly what free scanners from `modularz`/v1's original

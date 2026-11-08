@@ -229,8 +229,13 @@ export default function StatsPage() {
       phpmdIssues: sumByCheckType(modules, "phpmd_issue"),
       phpcsViolations: sumByCheckType(modules, "phpcs_violation"),
       phpCompatIssues: sumByCheckType(modules, "php_compat_issue"),
+      phpmetricsIssues: sumByCheckType(modules, "phpmetrics_issue"),
       magentoUpgradeBlockers:
         sumByCheckType(modules, "magento_php_incompatible") + sumByCheckType(modules, "magento_version_blocker"),
+      crossModuleConflicts:
+        sumByCheckType(modules, "plugin_conflict") +
+        sumByCheckType(modules, "composer_conflict") +
+        sumByCheckType(modules, "webapi_route_conflict"),
     }),
     [modules]
   );
@@ -301,14 +306,32 @@ export default function StatsPage() {
             />
             <StatTile
               label="PHP static-analysis findings"
-              value={totals.phpstanErrors + totals.phpmdIssues + totals.phpcsViolations + totals.phpCompatIssues}
+              value={
+                totals.phpstanErrors +
+                totals.phpmdIssues +
+                totals.phpcsViolations +
+                totals.phpCompatIssues +
+                totals.phpmetricsIssues
+              }
               accent={
-                totals.phpstanErrors + totals.phpmdIssues + totals.phpcsViolations + totals.phpCompatIssues > 0
+                totals.phpstanErrors +
+                  totals.phpmdIssues +
+                  totals.phpcsViolations +
+                  totals.phpCompatIssues +
+                  totals.phpmetricsIssues >
+                0
                   ? palette.status.warning
                   : undefined
               }
-              description="Code-quality issues caught by automated PHP analysis tools (bugs, style violations, overly complex code) — a proxy for how much technical debt a module carries."
-              findingTypes={["phpstan_error", "phpmd_issue", "phpcs_violation", "php_compat_issue"]}
+              description="Code-quality issues caught by automated PHP analysis tools (bugs, style violations, overly complex code, risky metrics) — a proxy for how much technical debt a module carries."
+              findingTypes={["phpstan_error", "phpmd_issue", "phpcs_violation", "php_compat_issue", "phpmetrics_issue"]}
+            />
+            <StatTile
+              label="Cross-module conflicts"
+              value={totals.crossModuleConflicts}
+              accent={totals.crossModuleConflicts > 0 ? palette.status.warning : undefined}
+              description="Two modules silently fighting over the same plugin hook, Composer package version, or REST route — each shows up on both modules involved."
+              findingTypes={["plugin_conflict", "composer_conflict", "webapi_route_conflict"]}
             />
           </div>
 

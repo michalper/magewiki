@@ -58,9 +58,14 @@ describe("StatsPage", () => {
           abandoned_dependency: 1,
           magento_php_incompatible: 1,
           magento_version_blocker: 1,
+          plugin_conflict: 1,
         },
       }),
-      mod({ id: 2, name: "Vendor_Other", finding_counts: { hardcoded_secret: 1, phpmd_issue: 4 } }),
+      mod({
+        id: 2,
+        name: "Vendor_Other",
+        finding_counts: { hardcoded_secret: 1, phpmd_issue: 4, phpmetrics_issue: 2, composer_conflict: 1 },
+      }),
     ]);
     renderWithQueryClient(<StatsPage />);
 
@@ -74,12 +79,20 @@ describe("StatsPage", () => {
     const cveTile = screen.getByText("Known vulnerabilities").closest("a")!;
     expect(cveTile).toHaveTextContent("1");
 
-    // PHP static-analysis findings: phpstan 3 + phpmd 4 = 7
+    // PHP static-analysis findings: phpstan 3 + phpmd 4 + phpmetrics 2 = 9
     const staticTile = screen.getByText("PHP static-analysis findings").closest("a")!;
-    expect(staticTile).toHaveTextContent("7");
+    expect(staticTile).toHaveTextContent("9");
     expect(staticTile).toHaveAttribute(
       "href",
-      "/modules?finding=phpstan_error,phpmd_issue,phpcs_violation,php_compat_issue",
+      "/modules?finding=phpstan_error,phpmd_issue,phpcs_violation,php_compat_issue,phpmetrics_issue",
+    );
+
+    // Cross-module conflicts: plugin_conflict 1 + composer_conflict 1 = 2
+    const conflictsTile = screen.getByText("Cross-module conflicts").closest("a")!;
+    expect(conflictsTile).toHaveTextContent("2");
+    expect(conflictsTile).toHaveAttribute(
+      "href",
+      "/modules?finding=plugin_conflict,composer_conflict,webapi_route_conflict",
     );
   });
 
