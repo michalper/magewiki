@@ -103,10 +103,6 @@ jobs:
       - uses: SonarSource/sonarqube-scan-action@v8
         env:
           SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
-          # The managed-JRE-metadata endpoint (api.sonarcloud.io/analysis/jres)
-          # 403s for this project's token even with Automatic Analysis off --
-          # skip it and run on ubuntu-latest's own preinstalled JRE instead.
-          SONAR_SCANNER_SKIP_JRE_PROVISIONING: "true"
 
   docker-build:
     runs-on: ubuntu-latest
