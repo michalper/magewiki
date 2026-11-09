@@ -103,7 +103,7 @@ Enumeration questions go through SQL, because top-k retrieval doesn't guarantee 
 
 System prompt enforces: answer only from tool results, every claim cited, no results means "not found."
 
-Explicitly **not** chosen: pure vector RAG, GraphRAG, a separate vector database, LangChain as the core. Post-1.0: query rewriting — the retrieval-debugging panel is done (see below), and reranking is done too (see "LLM-based reranking" below); query rewriting stays deferred since it's a separate per-query LLM cost decision that hasn't been made yet.
+Explicitly **not** chosen: pure vector RAG, GraphRAG, a separate vector database, LangChain as the core. Post-1.0 wishlist is now fully closed: the retrieval-debugging panel, reranking, and query rewriting (Phase 17) are all done — see the `project-decision-log` skill for each one's design.
 
 ## Test data
 

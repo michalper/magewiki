@@ -419,8 +419,15 @@ class AnalysisCache(Base):
     __tablename__ = "analysis_cache"
     __table_args__ = (
         UniqueConstraint("content_hash", "model", "prompt_version", "kind", name="uq_analysis_cache_key"),
+        # Kept in sync with the cumulative effect of every ck_analysis_cache_kind
+        # migration (0004 through the latest) for the same reason as
+        # ModuleQualityFinding's own CheckConstraint comment above -- this text
+        # is never applied directly (alembic upgrade head is the real schema
+        # source), but had already drifted out of sync once (missing 'rerank')
+        # before this comment was added.
         CheckConstraint(
-            "kind IN ('file_summary','module_synthesis','embedding','chat')", name="ck_analysis_cache_kind"
+            "kind IN ('file_summary','module_synthesis','embedding','chat','rerank','query_rewrite')",
+            name="ck_analysis_cache_kind",
         ),
     )
 

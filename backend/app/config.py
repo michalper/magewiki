@@ -51,6 +51,12 @@ class Settings(BaseSettings):
     # default so enabling it is a deliberate operator choice against
     # LLM_MONTHLY_BUDGET_USD, not a silent cost increase on every chat search.
     rerank_enabled: bool = False
+    # Phase 17: closes the other half of that same "What this doesn't do
+    # (yet)" note -- query rewriting is a second, independent per-query LLM
+    # cost decision from reranking, so it gets its own flag rather than
+    # riding on rerank_enabled. Same reasoning, same default: off until an
+    # operator deliberately opts in.
+    query_rewrite_enabled: bool = False
 
     @property
     def cors_origin_list(self) -> list[str]:

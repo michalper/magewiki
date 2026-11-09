@@ -6,6 +6,7 @@ MODULE_SYNTHESIS_PROMPT_VERSION = "module_synthesis_v1"
 EMBEDDING_PROMPT_VERSION = "embedding_v1"
 CHAT_PROMPT_VERSION = "chat_v1"
 RERANK_PROMPT_VERSION = "rerank_v1"
+QUERY_REWRITE_PROMPT_VERSION = "query_rewrite_v1"
 
 MAX_FILE_CONTENT_CHARS = 50_000
 # Reranking sees many candidates at once (vs. one file per analyze_file call) --
@@ -42,6 +43,25 @@ def build_rerank_prompt(query: str, candidates: list[tuple[int, str]]) -> str:
         "least relevant to the query. Include every id exactly once."
     )
     return "".join(lines)
+
+
+def build_query_rewrite_prompt(query: str) -> str:
+    """A different problem from reranking (see rerank's own prompt above):
+    this reformulates the query itself, before retrieval ever runs, rather
+    than reordering what retrieval already found.
+    """
+    return (
+        "You are rewriting a user's search query for a hybrid (semantic + keyword + "
+        "identifier) search engine over a Magento 2 module knowledge base. Rewrite the "
+        "query into a clearer, more specific one that will retrieve better results -- "
+        "expand vague phrasing, spell out likely technical terms (class names, config "
+        "keys, integration names) the user might mean, and translate non-English terms "
+        "into their likely English/Magento-ecosystem equivalent. Preserve the original "
+        "intent exactly -- never add a constraint, filter, or fact the user didn't ask "
+        "for. If the query is already clear and specific, return it unchanged.\n\n"
+        f"Original query: {query}\n\n"
+        "Return only the rewritten query."
+    )
 
 
 def build_file_summary_prompt(relative_path: str, content: str) -> str:

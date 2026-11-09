@@ -165,14 +165,37 @@ occasionally a no-op; and a hallucinated id the model invents gets dropped
 while a real candidate it forgot to mention keeps its place at the end,
 rather than either silently vanishing or corrupting the result.
 
-## What this doesn't do (yet), and why
+## Query rewriting: the other half of the cost decision
 
-Query rewriting is still explicitly deferred: reformulating a vague query
-into a better one is a different problem than reordering what retrieval
-already found, and it's a second place a per-query LLM cost decision would
-need making independently of the reranking one above. The multi-level index
-(module → file → code fragment) and the retrieval-debugging panel were the
-priorities that directly served "can the agent find the right thing and can a
-developer tell why" — both reranking and query rewriting optimize an
-already-working retriever rather than fixing a gap, which is why they were
-never the first thing built.
+Reformulating a vague query into a better one is a different problem than
+reordering what retrieval already found (reranking, above) — it runs
+*before* `hybrid_search`, not after, and it's a second, independent
+per-query LLM cost decision rather than a free extension of reranking. Both
+were deliberately left deferred until each cost decision was actually made
+on its own, not bundled together just because they're both "retrieval
+quality" knobs.
+
+Once made (`QUERY_REWRITE_ENABLED`, default `false`, same as reranking),
+query rewriting was built the same way reranking was, for the same reasons:
+a second LLM call through the same LiteLLM/BYOK path (no new dependency, no
+new vendor), independently budget-checked, failing open to the original
+query on any error (a provider error, a missing tool call, an empty or
+malformed rewrite) rather than ever risking retrieval running against
+something the user didn't actually ask for. `search_modules` runs it first
+when enabled, then feeds the *rewritten* query into `hybrid_search` and, if
+also enabled, into reranking too — each stage consuming the previous
+stage's best output, not the raw user string every time.
+
+Both flags are independent on purpose: enabling query rewriting doesn't
+require reranking, and vice versa. Rewrite cost shares the same
+`analysis_cache` ledger and `LLM_CALLS_TOTAL`/`LLM_CALL_COST_USD` Prometheus
+metrics as every other cost center in this app (`kind`/`call_type` =
+`"query_rewrite"`), the same pattern reranking's own `"rerank"` kind
+already established.
+
+With both shipped, this closes the RAG section's own "post-1.0" wishlist —
+the multi-level index and the retrieval-debugging panel were the priorities
+that directly served "can the agent find the right thing and can a
+developer tell why," and reranking/query rewriting were always framed as
+optimizing an already-working retriever, not fixing a gap, which is why
+they came last.

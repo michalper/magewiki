@@ -17,6 +17,7 @@ from app.models import (
     PhpClass,
 )
 from app.search.hybrid import hybrid_search
+from app.search.query_rewrite import rewrite_query
 from app.search.rerank import rerank_results
 
 # Reranking needs more raw candidates than the final answer to actually have
@@ -26,11 +27,18 @@ _RERANK_CANDIDATE_POOL = 20
 
 
 async def search_modules(session: AsyncSession, query: str, limit: int = 10) -> dict:
+    # Two independent, independently-costed optimizations over the same base
+    # hybrid_search call -- rewriting reformulates the query *before*
+    # retrieval runs, reranking reorders what retrieval found *after*. Each
+    # is its own per-query LLM cost decision (see each module's own docstring
+    # and docs/architecture.md's "What this doesn't do (yet)" note), so each
+    # has its own settings flag rather than one gating the other.
+    effective_query = await rewrite_query(session, query) if settings.query_rewrite_enabled else query
     if settings.rerank_enabled:
-        candidates = await hybrid_search(session, query, limit=max(limit, _RERANK_CANDIDATE_POOL))
-        results = await rerank_results(session, query, candidates, top_k=limit)
+        candidates = await hybrid_search(session, effective_query, limit=max(limit, _RERANK_CANDIDATE_POOL))
+        results = await rerank_results(session, effective_query, candidates, top_k=limit)
     else:
-        results = await hybrid_search(session, query, limit=limit)
+        results = await hybrid_search(session, effective_query, limit=limit)
     return {
         "results": [
             {

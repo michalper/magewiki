@@ -158,6 +158,64 @@ async def test_search_modules_skips_reranking_when_disabled(db_session, monkeypa
 
 
 @pytest.mark.asyncio
+async def test_search_modules_rewrites_query_when_enabled(db_session, monkeypatch):
+    from app.config import settings
+
+    monkeypatch.setattr(settings, "query_rewrite_enabled", True)
+    monkeypatch.setattr(settings, "rerank_enabled", False)
+
+    rewrite_calls: list[str] = []
+
+    async def fake_rewrite(session, query):
+        rewrite_calls.append(query)
+        return "rewritten query"
+
+    hybrid_calls: list[str] = []
+
+    async def fake_hybrid_search(session, query, limit=10, **kwargs):
+        hybrid_calls.append(query)
+        return []
+
+    monkeypatch.setattr("app.agent.tools.rewrite_query", fake_rewrite)
+    monkeypatch.setattr("app.agent.tools.hybrid_search", fake_hybrid_search)
+
+    await search_modules(db_session, query="original query", limit=5)
+
+    assert rewrite_calls == ["original query"]
+    # hybrid_search must receive the rewrite's own output, not the original.
+    assert hybrid_calls == ["rewritten query"]
+
+
+@pytest.mark.asyncio
+async def test_search_modules_skips_query_rewriting_when_disabled(db_session, monkeypatch):
+    from app.config import settings
+
+    monkeypatch.setattr(settings, "query_rewrite_enabled", False)
+    monkeypatch.setattr(settings, "rerank_enabled", False)
+
+    called = False
+
+    async def fake_rewrite(*args, **kwargs):
+        nonlocal called
+        called = True
+        raise AssertionError("rewrite_query must not be called when query_rewrite_enabled is False")
+
+    hybrid_calls: list[str] = []
+
+    async def fake_hybrid_search(session, query, limit=10, **kwargs):
+        hybrid_calls.append(query)
+        return []
+
+    monkeypatch.setattr("app.agent.tools.rewrite_query", fake_rewrite)
+    monkeypatch.setattr("app.agent.tools.hybrid_search", fake_hybrid_search)
+
+    await search_modules(db_session, query="original query", limit=5)
+
+    assert called is False
+    assert hybrid_calls == ["original query"]
+
+
+@pytest.mark.asyncio
 async def test_get_module_not_found(db_session):
     result = await get_module(db_session, module_id=-1)
     assert result == {"found": False}
