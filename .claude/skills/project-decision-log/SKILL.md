@@ -1808,3 +1808,47 @@ throughout. Lesson for next time: confirm a previous background pytest
 invocation's own completion marker (not just a point-in-time `ps aux`) before
 starting another, and prefer `tests/scanner` (or narrower) over the full
 ~10-17 minute suite when re-verifying a scoped change.
+
+**sonar.tests broke the CI sonar job outright (recorded 2026-11-09):** the
+`sonar.tests` fix for the Python-only analysis warning (above) was itself
+broken -- added `frontend/**/*.test.ts,frontend/**/*.test.tsx` alongside
+the two real directories, and SonarCloud's scanner doesn't accept
+wildcards in `sonar.tests`/`sonar.sources` at all ("Invalid value of
+sonar.tests... Wildcards ** and * are not supported"), failing the whole
+job with no analysis run. Caught via a real CI run, not predicted.
+Frontend's own tests are co-located (`*.test.tsx` next to the component it
+tests, scattered across `app/`, `components/`, `lib/`) with no dedicated
+test directory other than `frontend/tests` (the Playwright e2e specs) --
+there's no clean way to mark them via `sonar.tests` without also
+mis-marking their sibling production files as tests, so narrowed back to
+just `backend/tests,frontend/tests` and accepted that the co-located files
+stay unclassified. Verified against a real run after the fix: `sonar` job
+green in 56s.
+
+**Phase 16: module history (recorded 2026-11-09):** closes the roadmap's
+third item alongside Phase 15 and the (still-pending) RAG query rewriting.
+New `module_history_snapshots` table -- one row per module per *change*
+(hash/state/enabled/finding_counts), not per scan, written in
+`orchestrator.py` right after Phase C's cross-module conflict detection
+(a module's finding_counts aren't complete until conflicts involving it
+are persisted). Dedup at write time (`app/scanner/history.py`'s
+`snapshot_changed()`) is the load-bearing guard against the exact
+unbounded-growth failure this file's own "Operational lessons" section
+already names from v1's real production history (an insert-only history
+table that grew to 3.7GB before a manual cleanup) -- discussed directly
+with the user before writing any code ("a nie zajedzie nam to bazy?"),
+with concrete worst-case numbers (~190MB/year even if every one of 750
+modules changed every single day, which doesn't happen in practice) and a
+second line of defense: a new nightly `prune_module_history` cron
+(`worker.py`) deleting snapshots older than a year except each module's
+own oldest row, kept forever as a baseline. New `GET /modules/{id}/history`
+endpoint (newest first). Frontend: a "History" card on the module detail
+page, diffing each entry against the next-older one client-side (nothing
+server-side needed to diff consecutive entries, since each already carries
+its own full `finding_counts`) -- hash/state/enabled changes plus
+per-check-type finding-count deltas with ▲/▼. Scoped to module-level only,
+not a repo-level aggregate, as a deliberate cut to avoid scope creep.
+Verified: 15 new backend tests + the full `tests/scanner` suite (314
+tests) passing in one clean, isolated run; frontend 100% lines/statements/
+functions on the changed file (96.38% branches, consistent with this
+project's own already-established branch-coverage tolerance).
