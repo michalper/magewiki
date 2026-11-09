@@ -46,6 +46,11 @@ class Settings(BaseSettings):
     # an operator who's already reviewed their fleet's licenses and decided
     # none of this matters to them should be able to turn it off outright.
     license_risk_prefixes: str = "GPL-,AGPL-,SSPL-"
+    # Reranking is a real per-query LLM cost (see docs/architecture.md's "What
+    # this doesn't do (yet)" note on why it was originally deferred) -- off by
+    # default so enabling it is a deliberate operator choice against
+    # LLM_MONTHLY_BUDGET_USD, not a silent cost increase on every chat search.
+    rerank_enabled: bool = False
 
     @property
     def cors_origin_list(self) -> list[str]:

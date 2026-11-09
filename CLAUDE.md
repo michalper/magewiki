@@ -275,7 +275,7 @@ Enumeration questions go through SQL, because top-k retrieval doesn't guarantee 
 
 System prompt enforces: answer only from tool results, every claim cited, no results means "not found."
 
-Explicitly **not** chosen: pure vector RAG, GraphRAG, a separate vector database, LangChain as the core. Post-1.0: reranking, query rewriting — the retrieval-debugging panel itself is now done (see below); reranking/query rewriting stay deferred since either adds a real per-query LLM cost decision against the budget cap that wasn't made yet.
+Explicitly **not** chosen: pure vector RAG, GraphRAG, a separate vector database, LangChain as the core. Post-1.0: query rewriting — the retrieval-debugging panel is done (see below), and reranking is done too (see "LLM-based reranking" below); query rewriting stays deferred since it's a separate per-query LLM cost decision that hasn't been made yet.
 
 **Retrieval-debugging panel (recorded 2026-11-07):** RRF fusion summed every signal's
 rank into one `rrf_score` and discarded the per-signal detail entirely — no way to see
@@ -295,6 +295,35 @@ next to a source chip (reusing the same `Tooltip` primitive and pattern as the S
 page's description tooltips) with e.g. "Semantic #2 · Keyword not found · Identifier
 not found · RRF score 0.0328" — rendered only when at least one field is non-null, so
 a plain `get_module`/`find_by_class` citation shows no icon at all.
+
+**LLM-based reranking, opt-in (recorded 2026-11-09):** closes the "reranking...
+stay deferred" item right above, once the cost decision was actually made. New
+`RERANK_ENABLED` setting (`.env`, default `false` — enabling it is a
+deliberate operator choice against `LLM_MONTHLY_BUDGET_USD`, not a silent
+per-query cost increase). Built as a second LLM call through the same
+LiteLLM/BYOK path every other call in this app already uses, not a dedicated
+cross-encoder model — the latter would mean either a new heavyweight ML
+dependency (sentence-transformers) or a new vendor (a hosted rerank API),
+both against this project's own stated minimalism. `app/search/rerank.py`'s
+`rerank_results()` is purely best-effort: it checks `is_budget_exceeded()`
+itself before spending anything (independent of the chat loop's own budget
+checks, since this is an extra call beyond what the loop already accounts
+for), and falls back to the hybrid retriever's untouched order on *any*
+failure — a provider error, no tool call, malformed JSON — because a
+reranker that silently breaks search is a worse failure mode than one that's
+occasionally a no-op. A hallucinated chunk id the model invents is dropped;
+a real candidate it forgot to mention keeps its place, appended after
+whatever it did rank, rather than either silently disappearing or corrupting
+the result. `search_modules` (`app/agent/tools.py`) asks `hybrid_search` for
+a wider candidate pool (20) than the caller's requested `limit` when
+reranking is on — reranking a list already trimmed to the final size would
+have nothing real to reorder. Rerank cost shares the same `analysis_cache`
+ledger as every other LLM call (new `kind='rerank'`, migration `0032`) so it
+counts toward the monthly budget the same way, and reuses the `llm_calls_total`/
+`llm_call_cost_usd` Prometheus metrics (`call_type="rerank"`) the observability
+work above already wired in — built two sessions apart, but the metrics
+module was designed generically enough that adding a new cost center needed
+zero changes there.
 
 **Configurable embedding dimension (recorded 2026-11-06):** real bug, found while
 actually running the Phase 7 eval suite against Ollama's `bge-m3` after hitting an

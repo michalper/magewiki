@@ -4,6 +4,7 @@ from typing import cast
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.config import settings
 from app.models import (
     Chunk,
     DiPlugin,
@@ -16,10 +17,20 @@ from app.models import (
     PhpClass,
 )
 from app.search.hybrid import hybrid_search
+from app.search.rerank import rerank_results
+
+# Reranking needs more raw candidates than the final answer to actually have
+# something to reorder -- asking a hybrid search for exactly `limit` results
+# and then "reranking" them would just reshuffle an already-narrow list.
+_RERANK_CANDIDATE_POOL = 20
 
 
 async def search_modules(session: AsyncSession, query: str, limit: int = 10) -> dict:
-    results = await hybrid_search(session, query, limit=limit)
+    if settings.rerank_enabled:
+        candidates = await hybrid_search(session, query, limit=max(limit, _RERANK_CANDIDATE_POOL))
+        results = await rerank_results(session, query, candidates, top_k=limit)
+    else:
+        results = await hybrid_search(session, query, limit=limit)
     return {
         "results": [
             {

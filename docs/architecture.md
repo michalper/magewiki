@@ -140,12 +140,39 @@ bare string into a well-formed tag rather than spending a retry on a shape the
 model kept not producing on its own — fixing what's correctable cheaply, and
 reserving retries for failures that are actually worth another round trip.
 
+## Reranking: an LLM call, not a cross-encoder
+
+Once the cost decision above was actually made (`RERANK_ENABLED`, default
+`false`), reranking was built as a second LLM call rather than a dedicated
+cross-encoder model. A real cross-encoder (sentence-transformers, or a hosted
+rerank API like Cohere's) is the more common production choice, but it means
+either a new heavyweight ML dependency or a new vendor — both cut against
+this project's own stated defaults (LiteLLM as the one LLM abstraction, BYOK,
+no framework pulled in to save writing a few dozen lines). An LLM call reuses
+the exact same provider credentials, budget tracking, and cost metrics every
+other call in this app already goes through.
+
+Mechanically: when enabled, `search_modules` asks `hybrid_search` for a wider
+candidate pool (20, not the caller's requested `limit`) and hands it to a
+single forced-tool-use call asking the model to return every candidate's id
+reordered by true relevance. Three things make this safe to turn on without
+it becoming a new failure mode: it checks `is_budget_exceeded()` itself,
+independently of the chat loop's own budget checks, before spending anything;
+any failure (a provider error, a missing tool call, malformed JSON) falls
+straight back to the hybrid retriever's own order rather than raising,
+because a reranker that silently breaks search is worse than one that's
+occasionally a no-op; and a hallucinated id the model invents gets dropped
+while a real candidate it forgot to mention keeps its place at the end,
+rather than either silently vanishing or corrupting the result.
+
 ## What this doesn't do (yet), and why
 
-Reranking and query rewriting are both explicitly deferred, not forgotten: each
-adds a real per-query LLM cost decision against a hard budget cap that hasn't
-been made yet for this project. The multi-level index (module → file → code
-fragment) and the retrieval-debugging panel were the priorities that directly
-served "can the agent find the right thing and can a developer tell why" —
-reranking optimizes an already-working retriever rather than fixing a gap, so
-it waited.
+Query rewriting is still explicitly deferred: reformulating a vague query
+into a better one is a different problem than reordering what retrieval
+already found, and it's a second place a per-query LLM cost decision would
+need making independently of the reranking one above. The multi-level index
+(module → file → code fragment) and the retrieval-debugging panel were the
+priorities that directly served "can the agent find the right thing and can a
+developer tell why" — both reranking and query rewriting optimize an
+already-working retriever rather than fixing a gap, which is why they were
+never the first thing built.

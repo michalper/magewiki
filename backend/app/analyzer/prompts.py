@@ -5,8 +5,43 @@ FILE_SUMMARY_PROMPT_VERSION = "file_summary_v1"
 MODULE_SYNTHESIS_PROMPT_VERSION = "module_synthesis_v1"
 EMBEDDING_PROMPT_VERSION = "embedding_v1"
 CHAT_PROMPT_VERSION = "chat_v1"
+RERANK_PROMPT_VERSION = "rerank_v1"
 
 MAX_FILE_CONTENT_CHARS = 50_000
+# Reranking sees many candidates at once (vs. one file per analyze_file call) --
+# capped much shorter per candidate to keep the prompt (and its cost) bounded.
+# Relevance can usually be judged from the opening of a chunk; the full text is
+# still what gets cited to the user afterward, this truncation is only for the
+# reranker's own judgment.
+MAX_RERANK_CANDIDATE_CHARS = 500
+
+
+def build_rerank_prompt(query: str, candidates: list[tuple[int, str]]) -> str:
+    """candidates: (chunk_id, text) pairs, already in the retriever's own
+    (RRF-fused) order -- that order is itself a real signal, so it's presented
+    as the starting point to re-rank, not hidden from the model.
+    """
+    lines = [
+        (
+            "You are reranking search results for a Magento 2 codebase knowledge base. "
+            "Below is a user's query and a numbered list of candidate text chunks, already "
+            "ordered by a hybrid retriever's best guess. Reorder them by true relevance to "
+            "the query -- a chunk that only superficially shares keywords with the query but "
+            "doesn't actually answer it should rank lower than the retriever's guess; a chunk "
+            "that's genuinely relevant should rank higher.\n\n"
+        ),
+        f"Query: {query}\n\n",
+        "Candidates:\n",
+    ]
+    for chunk_id, text in candidates:
+        truncated = text[:MAX_RERANK_CANDIDATE_CHARS]
+        note = "..." if len(text) > MAX_RERANK_CANDIDATE_CHARS else ""
+        lines.append(f"[{chunk_id}] {truncated}{note}\n")
+    lines.append(
+        "\nReturn every candidate's id (the number in brackets), ordered from most to "
+        "least relevant to the query. Include every id exactly once."
+    )
+    return "".join(lines)
 
 
 def build_file_summary_prompt(relative_path: str, content: str) -> str:

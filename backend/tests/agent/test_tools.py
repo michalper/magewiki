@@ -79,6 +79,85 @@ async def test_search_modules_wraps_hybrid_search(db_session, monkeypatch):
 
 
 @pytest.mark.asyncio
+async def test_search_modules_reranks_when_enabled(db_session, monkeypatch):
+    from app.config import settings
+    from app.search.hybrid import SearchResult
+
+    monkeypatch.setattr(settings, "rerank_enabled", True)
+
+    candidates = [
+        SearchResult(chunk_id=1, chunk_type="file", module_id=10, module_name="A", relative_path="a.php", text="a", score=0.9),
+        SearchResult(chunk_id=2, chunk_type="file", module_id=20, module_name="B", relative_path="b.php", text="b", score=0.5),
+    ]
+    hybrid_calls: list[int] = []
+
+    async def fake_hybrid_search(session, query, limit=10, **kwargs):
+        hybrid_calls.append(limit)
+        return candidates
+
+    rerank_calls: list[list[int]] = []
+
+    async def fake_rerank(session, query, results, *, top_k):
+        rerank_calls.append([r.chunk_id for r in results])
+        return list(reversed(results))[:top_k]  # deterministic, known transform
+
+    monkeypatch.setattr("app.agent.tools.hybrid_search", fake_hybrid_search)
+    monkeypatch.setattr("app.agent.tools.rerank_results", fake_rerank)
+
+    result = await search_modules(db_session, query="anything", limit=1)
+
+    # hybrid_search must be asked for more than the final `limit` -- a
+    # reranker given only `limit` candidates has nothing left to reorder.
+    assert hybrid_calls == [20]
+    assert rerank_calls == [[1, 2]]
+    # The final result must be the reranker's own output (reversed order,
+    # trimmed to top_k), not hybrid_search's untouched top-1.
+    assert result["results"] == [
+        {
+            "module_id": 20, "module_name": "B", "chunk_type": "file", "relative_path": "b.php",
+            "text": "b", "score": 0.5, "semantic_rank": None, "keyword_rank": None, "identifier_rank": None,
+        }
+    ]
+
+
+@pytest.mark.asyncio
+async def test_search_modules_skips_reranking_when_disabled(db_session, monkeypatch):
+    from app.config import settings
+
+    suffix = uuid.uuid4().hex[:8]
+    module = await _make_bare_module(db_session, suffix)
+    chunk = Chunk(
+        module_id=module.id, chunk_type="file", relative_path="a.php",
+        content_hash=f"chunk-{suffix}", text=f"a match {suffix}", embedding=_vector({0: 1.0}),
+    )
+    db_session.add(chunk)
+    await db_session.commit()
+
+    async def _fake_embed(q, **kwargs):
+        return _vector({0: 1.0})
+
+    monkeypatch.setattr("app.search.hybrid.embed_query_text", _fake_embed)
+    monkeypatch.setattr(settings, "rerank_enabled", False)
+
+    called = False
+
+    async def fake_rerank(*args, **kwargs):
+        nonlocal called
+        called = True
+        raise AssertionError("rerank_results must not be called when rerank_enabled is False")
+
+    monkeypatch.setattr("app.agent.tools.rerank_results", fake_rerank)
+
+    result = await search_modules(db_session, query=f"match {suffix}", limit=5)
+
+    assert called is False
+    assert any(r["module_id"] == module.id for r in result["results"])
+
+    await db_session.execute(delete(Module).where(Module.id == module.id))
+    await db_session.commit()
+
+
+@pytest.mark.asyncio
 async def test_get_module_not_found(db_session):
     result = await get_module(db_session, module_id=-1)
     assert result == {"found": False}
