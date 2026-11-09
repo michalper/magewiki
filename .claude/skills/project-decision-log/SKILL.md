@@ -1940,3 +1940,32 @@ extension alongside the `.js` chunks), not in a separate
 `.next/static/css/` directory the way some other setups do -- confirmed
 directly (`size-limit` failed outright on a first guess at the CSS path
 with "can't find files") before landing on the real glob.
+
+**Single-retry on a real Postgres deadlock persisting a module (recorded
+2026-11-09):** closes the "cosmetic, not urgent" follow-up flagged right
+after the real `Ordo_Automation` deadlock hit earlier this session
+(`DELETE FROM file_hashes` racing a concurrent job touching the same
+rows). `_is_deadlock()` checks SQLSTATE `40P01` specifically and retries
+exactly once (`_MAX_MODULE_PERSIST_ATTEMPTS = 2`) -- a deadlock surviving
+one immediate retry is more likely a real, persistent lock-ordering
+problem than transient contention, so it's then surfaced as a genuine
+module failure rather than retried forever. Non-deadlock failures are
+never retried, unchanged from before.
+
+Found and fixed a real bug while building this, not just added the
+retry: the per-module `try/except` never called `session.rollback()` on
+failure, relying only on the savepoint's own automatic rollback on exit
+-- which doesn't fully clear a DBAPI-level error that can leave the
+session's outer transaction/connection unusable for whatever runs next.
+This was the actual cause of the cascading `PendingRollbackError` seen
+earlier this session on the module *after* the deadlocked one, previously
+misread as a second, unrelated bug. The explicit `session.rollback()`
+added here is what makes the retry able to succeed at all, and it
+protects every other per-module failure mode the same way, not just
+deadlocks -- a module failing for any reason no longer risks corrupting
+state for whatever the scan processes next.
+
+Verified with 3 new tests simulating a real deadlock via a monkeypatched
+`_persist_module` (retries once and succeeds; exhausts retries and
+surfaces as a real failure; a non-deadlock error is never retried), plus
+the full `tests/scanner` suite (315 tests) passing in one clean run.
