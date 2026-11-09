@@ -115,10 +115,13 @@ const KPI_TILES: {
       "webapi_route_conflict",
       "db_schema_conflict",
       "circular_dependency",
+      "preference_conflict",
+      "cron_job_conflict",
+      "graphql_field_conflict",
     ],
     accent: "warning",
     description:
-      "Two modules silently fighting over the same plugin hook, Composer package version, REST route, or database column — or a circular module.xml sequence that breaks setup:upgrade outright. Each shows up on every module involved.",
+      "Two modules silently fighting over the same plugin hook, Composer package version, REST route, database column, di.xml preference, cron job code, or GraphQL field — or a circular module.xml sequence that breaks setup:upgrade outright. Each shows up on every module involved.",
   },
   {
     label: "License risks",

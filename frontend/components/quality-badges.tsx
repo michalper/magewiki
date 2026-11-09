@@ -25,6 +25,9 @@ export const CHECK_TYPES: { key: string; severity: Severity; label: (n: number) 
   { key: "circular_dependency", severity: "warning", label: (n) => `${n} circular-dep${n === 1 ? "" : "s"}` },
   { key: "license_risk", severity: "warning", label: (n) => `${n} license-risk${n === 1 ? "" : "s"}` },
   { key: "phpunit_failure", severity: "warning", label: (n) => `${n} test-failure${n === 1 ? "" : "s"}` },
+  { key: "preference_conflict", severity: "warning", label: (n) => `${n} preference-conflict${n === 1 ? "" : "s"}` },
+  { key: "cron_job_conflict", severity: "warning", label: (n) => `${n} cron-conflict${n === 1 ? "" : "s"}` },
+  { key: "graphql_field_conflict", severity: "warning", label: (n) => `${n} graphql-conflict${n === 1 ? "" : "s"}` },
 ];
 
 export function sumFindingCounts(findingCounts: Record<string, number>): number {

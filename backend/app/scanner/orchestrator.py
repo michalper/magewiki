@@ -37,6 +37,7 @@ from app.scanner.circular_dependencies import ModuleDependencyRow, detect_circul
 from app.scanner.composer_conflicts import ComposerRequirementRow, detect_composer_conflicts
 from app.scanner.composer_json import composer_completeness_findings, parse_composer_json
 from app.scanner.config_php import parse_config_php
+from app.scanner.cron_conflicts import CronJobRow, detect_cron_job_conflicts
 from app.scanner.crontab_xml import parse_crontab_xml
 from app.scanner.db_schema_conflicts import DbColumnRow, detect_db_schema_conflicts
 from app.scanner.db_schema_xml import parse_db_schema_xml
@@ -59,6 +60,7 @@ from app.scanner.dto import (
     WebapiRouteEntry,
 )
 from app.scanner.events_xml import parse_events_xml
+from app.scanner.graphql_conflicts import GraphQlFieldRow, detect_graphql_field_conflicts
 from app.scanner.graphql_schema import parse_graphql_schema
 from app.scanner.hashing import aggregate_hash, compute_module_file_hashes, diff_file_hashes
 from app.scanner.installed_versions import parse_installed_versions
@@ -69,6 +71,7 @@ from app.scanner.multi_store import find_store_roots
 from app.scanner.php_analyzer_client import check_php_static_analysis, check_php_unit_tests
 from app.scanner.php_classes import catalog_module_classes
 from app.scanner.plugin_conflicts import PluginRow, detect_plugin_conflicts
+from app.scanner.preference_conflicts import PreferenceRow, detect_preference_conflicts
 from app.scanner.queue_config import parse_queue_config
 from app.scanner.readme_check import has_readme
 from app.scanner.secrets_scanner import scan_hardcoded_secrets
@@ -489,6 +492,15 @@ async def _run_scan(root: Path, session: AsyncSession) -> AsyncIterator[dict]:
     # Same reasoning again: needs every scanned module's dependencies already
     # committed, recomputes across the whole repo_root.
     await _detect_and_persist_circular_dependencies(session, root)
+    # Same reasoning again: needs every scanned module's di_preferences
+    # already committed, recomputes across the whole repo_root.
+    await _detect_and_persist_preference_conflicts(session, root)
+    # Same reasoning again: needs every scanned module's cron_jobs already
+    # committed, recomputes across the whole repo_root.
+    await _detect_and_persist_cron_job_conflicts(session, root)
+    # Same reasoning again: needs every scanned module's graphql_fields
+    # already committed, recomputes across the whole repo_root.
+    await _detect_and_persist_graphql_field_conflicts(session, root)
 
     result.tasks_enqueued = tasks_enqueued
     yield {"event": "done", "result": result}
@@ -676,6 +688,109 @@ async def _detect_and_persist_circular_dependencies(session: AsyncSession, root:
     await session.execute(
         delete(ModuleQualityFinding).where(
             ModuleQualityFinding.check_type == "circular_dependency",
+            ModuleQualityFinding.module_id.in_(select(Module.id).where(Module.repo_root == str(root))),
+        )
+    )
+    for module_id, finding in findings:
+        session.add(
+            ModuleQualityFinding(
+                module_id=module_id,
+                check_type=finding.check_type,
+                severity=finding.severity,
+                file_path=finding.file_path,
+                line=finding.line,
+                message=finding.message,
+            )
+        )
+    await session.commit()
+
+
+async def _detect_and_persist_preference_conflicts(session: AsyncSession, root: Path) -> None:
+    preference_rows = (
+        await session.execute(
+            select(DiPreference.module_id, Module.name, DiPreference.for_type, DiPreference.preference_type)
+            .join(Module, Module.id == DiPreference.module_id)
+            .where(Module.repo_root == str(root))
+        )
+    ).all()
+    preferences = [PreferenceRow(*row) for row in preference_rows]
+
+    findings = detect_preference_conflicts(preferences)
+
+    await session.execute(
+        delete(ModuleQualityFinding).where(
+            ModuleQualityFinding.check_type == "preference_conflict",
+            ModuleQualityFinding.module_id.in_(select(Module.id).where(Module.repo_root == str(root))),
+        )
+    )
+    for module_id, finding in findings:
+        session.add(
+            ModuleQualityFinding(
+                module_id=module_id,
+                check_type=finding.check_type,
+                severity=finding.severity,
+                file_path=finding.file_path,
+                line=finding.line,
+                message=finding.message,
+            )
+        )
+    await session.commit()
+
+
+async def _detect_and_persist_cron_job_conflicts(session: AsyncSession, root: Path) -> None:
+    job_rows = (
+        await session.execute(
+            select(CronJob.module_id, Module.name, CronJob.job_name, CronJob.instance_class, CronJob.method)
+            .join(Module, Module.id == CronJob.module_id)
+            .where(Module.repo_root == str(root))
+        )
+    ).all()
+    jobs = [CronJobRow(*row) for row in job_rows]
+
+    findings = detect_cron_job_conflicts(jobs)
+
+    await session.execute(
+        delete(ModuleQualityFinding).where(
+            ModuleQualityFinding.check_type == "cron_job_conflict",
+            ModuleQualityFinding.module_id.in_(select(Module.id).where(Module.repo_root == str(root))),
+        )
+    )
+    for module_id, finding in findings:
+        session.add(
+            ModuleQualityFinding(
+                module_id=module_id,
+                check_type=finding.check_type,
+                severity=finding.severity,
+                file_path=finding.file_path,
+                line=finding.line,
+                message=finding.message,
+            )
+        )
+    await session.commit()
+
+
+async def _detect_and_persist_graphql_field_conflicts(session: AsyncSession, root: Path) -> None:
+    field_rows = (
+        await session.execute(
+            select(
+                GraphQlField.module_id,
+                Module.name,
+                GraphQlField.operation_type,
+                GraphQlField.type_name,
+                GraphQlField.field_name,
+                GraphQlField.resolver_class,
+            )
+            .join(Module, Module.id == GraphQlField.module_id)
+            .where(Module.repo_root == str(root))
+        )
+    ).all()
+    fields = [GraphQlFieldRow(*row) for row in field_rows]
+
+    findings = detect_graphql_field_conflicts(fields)
+
+    await session.execute(
+        delete(ModuleQualityFinding).where(
+            ModuleQualityFinding.check_type == "graphql_field_conflict",
             ModuleQualityFinding.module_id.in_(select(Module.id).where(Module.repo_root == str(root))),
         )
     )

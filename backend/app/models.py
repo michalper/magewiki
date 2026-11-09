@@ -344,11 +344,21 @@ class ModuleQualityFinding(Base):
 
     __tablename__ = "module_quality_findings"
     __table_args__ = (
+        # Kept in sync with the cumulative effect of every
+        # ck_module_quality_findings_check_type migration (0009 through the
+        # latest) -- this text is never applied directly (the real schema
+        # always comes from `alembic upgrade head`, confirmed by
+        # tests/conftest.py), but it drifted out of sync with the real
+        # constraint for a long stretch before this comment was added, so
+        # keep it current rather than letting it mislead a future reader.
         CheckConstraint(
             "check_type IN ('composer_completeness','deprecated_annotation','hardcoded_secret',"
             "'security_advisory','abandoned_dependency','outdated_dependency',"
             "'phpstan_error','phpmd_issue','phpcs_violation','php_compat_issue',"
-            "'magento_php_incompatible','magento_version_blocker')",
+            "'magento_php_incompatible','magento_version_blocker','plugin_conflict','phpmetrics_issue',"
+            "'composer_conflict','webapi_route_conflict','db_schema_conflict','circular_dependency',"
+            "'license_risk','phpunit_failure','preference_conflict','cron_job_conflict',"
+            "'graphql_field_conflict')",
             name="ck_module_quality_findings_check_type",
         ),
         CheckConstraint(
