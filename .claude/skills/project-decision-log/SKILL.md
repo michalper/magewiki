@@ -1852,3 +1852,42 @@ Verified: 15 new backend tests + the full `tests/scanner` suite (314
 tests) passing in one clean, isolated run; frontend 100% lines/statements/
 functions on the changed file (96.38% branches, consistent with this
 project's own already-established branch-coverage tolerance).
+
+**Phase 17: RAG query rewriting, opt-in (recorded 2026-11-09):** closes the
+RAG section's own "post-1.0" wishlist (retrieval-debugging panel and
+reranking were already done; this was the one remaining item, deferred
+pending its own independent per-query LLM cost decision, same as reranking
+had been). Built by mirroring `app/search/rerank.py`'s shape as closely as
+possible: a new `QUERY_REWRITE_ENABLED` setting (default `false`,
+independent of `RERANK_ENABLED` — each flag gates its own cost
+decision), `app/search/query_rewrite.py`'s `rewrite_query()` is best-effort
+(checks `is_budget_exceeded()` itself, falls back to the original query on
+any failure -- budget, provider error, missing tool call, empty rewrite --
+rather than ever risking retrieval running against something the user
+didn't actually ask for), and cost shares the same `analysis_cache`
+ledger (new `kind='query_rewrite'`, migration `0035`) and
+`LLM_CALLS_TOTAL`/`LLM_CALL_COST_USD` Prometheus metrics every other cost
+center in this app already goes through.
+
+`search_modules` (`app/agent/tools.py`) runs the rewrite first when
+enabled, then feeds its own output into `hybrid_search` and, if also
+enabled, into reranking -- each stage consumes the previous stage's best
+output rather than every stage re-reading the raw user string. Also
+synced `AnalysisCache`'s own `CheckConstraint` text in `models.py` (same
+drift class as `ModuleQualityFinding`'s fixed in Phase 15 -- it had
+already drifted once before, missing `'rerank'`, confirming this is a
+recurring pattern worth watching for on every future `kind`/`check_type`
+addition). `docs/architecture.md` and `CLAUDE.md`'s RAG section both
+updated to reflect the wishlist is now fully closed, not just reranking.
+
+Verified: 42 new/changed tests (`tests/search/test_query_rewrite.py` +
+two new wiring tests in `tests/agent/test_tools.py`) plus a full
+656/657-passing backend suite run (the one failure,
+`test_real_ordo_automation_phpunit_execution`, was residual `php-analyzer`
+degradation from this same session's earlier concurrent-pytest chaos during
+Phase 15 -- confirmed by restarting the sidecar and re-running just that
+one test, which then passed cleanly; it's also gated behind
+`MAGEWIKI_ORDO_FIXTURE_PATH` and never runs in CI regardless). `ruff`/`mypy`
+clean throughout. This closes the three-item roadmap (Phases 15-17) added
+earlier this session from a "what's genuinely still missing" research
+pass.
