@@ -7,7 +7,7 @@ backend/app/evaluation/metrics.py for recall@k/MRR.
 
 import json
 from collections.abc import Sequence
-from dataclasses import asdict, dataclass
+from dataclasses import asdict, dataclass, field
 from pathlib import Path
 
 from sqlalchemy import delete, select
@@ -22,6 +22,7 @@ from app.evaluation.dataset import (
     NegativeQuestion,
     RetrievalQuestion,
 )
+from app.evaluation.faithfulness import judge_faithfulness
 from app.evaluation.isolated_retrieval import keyword_only_search, vector_only_search
 from app.evaluation.metrics import aggregate, render_markdown_table
 from app.models import Chunk, FileHash, Module
@@ -151,12 +152,83 @@ async def run_negative_eval(
 
 
 @dataclass
+class FaithfulnessResult:
+    id: str
+    query: str
+    # "grounded" | "unsupported" | "agent_error" | "judge_error" -- kept as a
+    # string rather than a bool like QuestionResult.passed because
+    # agent_error/judge_error are a different failure mode than a real,
+    # judged "unsupported claim" verdict, and the report should be able to
+    # tell them apart rather than collapsing both into "failed".
+    outcome: str
+    unsupported_claims: list[str] = field(default_factory=list)
+    reasoning: str = ""
+
+
+async def run_faithfulness_eval(
+    session: AsyncSession,
+    questions: list[RetrievalQuestion],
+    *,
+    model: str,
+    api_key: str | None,
+    api_base: str | None = None,
+) -> list[FaithfulnessResult]:
+    """Runs the real agent end to end (not isolated retrieval) for each
+    question, then judges whether its final answer is actually grounded in
+    the sources it cited. A separate axis from retrieval recall -- the agent
+    can retrieve the right chunks and still misstate what they say.
+    """
+    results = []
+    for q in questions:
+        answer = ""
+        sources: list[dict] = []
+        agent_error: str | None = None
+        async for event in run_agent(session, [{"role": "user", "content": q.query}], "dev"):
+            event_type = event.get("event")
+            if event_type == "token":
+                answer += event.get("text", "")
+            elif event_type == "sources":
+                sources = event.get("sources", [])
+            elif event_type == "error":
+                agent_error = event.get("detail")
+
+        if agent_error or not answer.strip():
+            results.append(
+                FaithfulnessResult(
+                    id=q.id, query=q.query, outcome="agent_error",
+                    reasoning=agent_error or "agent returned an empty answer",
+                )
+            )
+            continue
+
+        try:
+            verdict = await judge_faithfulness(
+                session, q.query, answer, sources, model=model, api_key=api_key, api_base=api_base
+            )
+        except Exception as exc:  # noqa: BLE001 - one bad judge call must not abort the whole eval run
+            results.append(FaithfulnessResult(id=q.id, query=q.query, outcome="judge_error", reasoning=str(exc)))
+            continue
+
+        results.append(
+            FaithfulnessResult(
+                id=q.id,
+                query=q.query,
+                outcome="grounded" if verdict.grounded else "unsupported",
+                unsupported_claims=verdict.unsupported_claims,
+                reasoning=verdict.reasoning,
+            )
+        )
+    return results
+
+
+@dataclass
 class EvalReport:
     generated_at: str
     corpus: str
     retrieval_metrics: dict[str, dict[str, float]]
     enumeration_results: list[QuestionResult]
     negative_results: list[QuestionResult]
+    faithfulness_results: list[FaithfulnessResult] = field(default_factory=list)
 
     def to_dict(self) -> dict:
         return {
@@ -165,11 +237,14 @@ class EvalReport:
             "retrieval_metrics": self.retrieval_metrics,
             "enumeration_results": [asdict(r) for r in self.enumeration_results],
             "negative_results": [asdict(r) for r in self.negative_results],
+            "faithfulness_results": [asdict(r) for r in self.faithfulness_results],
         }
 
     def to_markdown_table(self) -> str:
         enum_passed = sum(r.passed for r in self.enumeration_results)
         neg_passed = sum(r.passed for r in self.negative_results)
+        grounded = sum(r.outcome == "grounded" for r in self.faithfulness_results)
+        judged = sum(r.outcome in ("grounded", "unsupported") for r in self.faithfulness_results)
 
         lines = [
             render_markdown_table(self.retrieval_metrics, ks=(1, 3, 5, 10)),
@@ -177,4 +252,9 @@ class EvalReport:
             f"Enumeration: {enum_passed}/{len(self.enumeration_results)} passed.",
             f"Negative/\"not found\": {neg_passed}/{len(self.negative_results)} passed.",
         ]
+        if self.faithfulness_results:
+            lines.append(f"Faithfulness (LLM-judged, grounded in cited sources): {grounded}/{judged} judged answers.")
+            errors = len(self.faithfulness_results) - judged
+            if errors:
+                lines.append(f"  ({errors} agent/judge error(s), not counted as a verdict either way.)")
         return "\n".join(lines)

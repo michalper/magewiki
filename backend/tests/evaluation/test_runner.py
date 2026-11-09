@@ -18,6 +18,7 @@ from app.evaluation.runner import (
     QuestionResult,
     _relevant_chunk_ids,
     _resolve_kwargs,
+    run_faithfulness_eval,
     seed_corpus,
 )
 from app.models import Chunk, Module
@@ -222,6 +223,119 @@ async def test_run_negative_eval_agent_mode(demo_store_path, db_session, monkeyp
 
 
 @pytest.mark.asyncio
+async def test_run_faithfulness_eval_records_a_grounded_verdict(db_session, monkeypatch):
+    async def _fake_run_agent(session, messages, audience):
+        yield {"event": "sources", "sources": [{"module_id": 1, "module_name": "M", "relative_path": None}]}
+        yield {"event": "token", "text": "It sends SMS via Twilio."}
+        yield {"event": "done", "tokens_in": 1, "tokens_out": 1, "cost_usd": "0"}
+
+    async def _fake_judge(session, question, answer, sources, *, model, api_key, api_base=None):
+        assert answer == "It sends SMS via Twilio."
+        assert sources == [{"module_id": 1, "module_name": "M", "relative_path": None}]
+        from app.evaluation.faithfulness import FaithfulnessVerdict
+
+        return FaithfulnessVerdict(grounded=True, unsupported_claims=[], reasoning="matches")
+
+    monkeypatch.setattr("app.evaluation.runner.run_agent", _fake_run_agent)
+    monkeypatch.setattr("app.evaluation.runner.judge_faithfulness", _fake_judge)
+
+    questions = [RetrievalQuestion(id="f1", query="does it send SMS?", category="semantic", relevant_relative_paths=frozenset())]
+
+    results = await run_faithfulness_eval(db_session, questions, model="m", api_key="k")
+
+    assert results[0].outcome == "grounded"
+
+
+@pytest.mark.asyncio
+async def test_run_faithfulness_eval_records_an_unsupported_verdict(db_session, monkeypatch):
+    async def _fake_run_agent(session, messages, audience):
+        yield {"event": "sources", "sources": []}
+        yield {"event": "token", "text": "It also caches with Redis."}
+        yield {"event": "done", "tokens_in": 1, "tokens_out": 1, "cost_usd": "0"}
+
+    async def _fake_judge(session, question, answer, sources, *, model, api_key, api_base=None):
+        from app.evaluation.faithfulness import FaithfulnessVerdict
+
+        return FaithfulnessVerdict(grounded=False, unsupported_claims=["Redis claim has no source"], reasoning="no")
+
+    monkeypatch.setattr("app.evaluation.runner.run_agent", _fake_run_agent)
+    monkeypatch.setattr("app.evaluation.runner.judge_faithfulness", _fake_judge)
+
+    questions = [RetrievalQuestion(id="f2", query="q", category="semantic", relevant_relative_paths=frozenset())]
+
+    results = await run_faithfulness_eval(db_session, questions, model="m", api_key="k")
+
+    assert results[0].outcome == "unsupported"
+    assert results[0].unsupported_claims == ["Redis claim has no source"]
+
+
+@pytest.mark.asyncio
+async def test_run_faithfulness_eval_records_agent_error_on_budget_exceeded(db_session, monkeypatch):
+    async def _fake_run_agent(session, messages, audience):
+        yield {"event": "error", "detail": "Monthly LLM budget exceeded — cannot answer right now."}
+        yield {"event": "done", "tokens_in": 0, "tokens_out": 0, "cost_usd": "0"}
+
+    judge_called = False
+
+    async def _fake_judge(*args, **kwargs):
+        nonlocal judge_called
+        judge_called = True
+
+    monkeypatch.setattr("app.evaluation.runner.run_agent", _fake_run_agent)
+    monkeypatch.setattr("app.evaluation.runner.judge_faithfulness", _fake_judge)
+
+    questions = [RetrievalQuestion(id="f3", query="q", category="semantic", relevant_relative_paths=frozenset())]
+
+    results = await run_faithfulness_eval(db_session, questions, model="m", api_key="k")
+
+    assert results[0].outcome == "agent_error"
+    assert "budget" in results[0].reasoning.lower()
+    assert judge_called is False
+
+
+@pytest.mark.asyncio
+async def test_run_faithfulness_eval_records_agent_error_on_an_empty_answer(db_session, monkeypatch):
+    async def _fake_run_agent(session, messages, audience):
+        yield {"event": "sources", "sources": []}
+        yield {"event": "done", "tokens_in": 0, "tokens_out": 0, "cost_usd": "0"}
+
+    monkeypatch.setattr("app.evaluation.runner.run_agent", _fake_run_agent)
+
+    questions = [RetrievalQuestion(id="f4", query="q", category="semantic", relevant_relative_paths=frozenset())]
+
+    results = await run_faithfulness_eval(db_session, questions, model="m", api_key="k")
+
+    assert results[0].outcome == "agent_error"
+    assert "empty answer" in results[0].reasoning.lower()
+
+
+@pytest.mark.asyncio
+async def test_run_faithfulness_eval_records_judge_error_without_aborting(db_session, monkeypatch):
+    async def _fake_run_agent(session, messages, audience):
+        yield {"event": "sources", "sources": []}
+        yield {"event": "token", "text": "an answer"}
+        yield {"event": "done", "tokens_in": 1, "tokens_out": 1, "cost_usd": "0"}
+
+    async def _fake_judge(*args, **kwargs):
+        raise RuntimeError("provider rejected the request")
+
+    monkeypatch.setattr("app.evaluation.runner.run_agent", _fake_run_agent)
+    monkeypatch.setattr("app.evaluation.runner.judge_faithfulness", _fake_judge)
+
+    questions = [
+        RetrievalQuestion(id="f5", query="q1", category="semantic", relevant_relative_paths=frozenset()),
+        RetrievalQuestion(id="f6", query="q2", category="semantic", relevant_relative_paths=frozenset()),
+    ]
+
+    results = await run_faithfulness_eval(db_session, questions, model="m", api_key="k")
+
+    # One bad judge call doesn't abort the whole eval run -- both questions
+    # get a result, both correctly marked as a judge error.
+    assert [r.outcome for r in results] == ["judge_error", "judge_error"]
+    assert "provider rejected" in results[0].reasoning
+
+
+@pytest.mark.asyncio
 async def test_run_retrieval_eval_raises_when_no_chunk_matches(demo_store_path, db_session):
     from app.evaluation.runner import run_retrieval_eval
 
@@ -291,3 +405,31 @@ def test_eval_report_to_dict_and_markdown_table():
     table = report.to_markdown_table()
     assert "Enumeration: 1/1 passed." in table
     assert 'Negative/"not found": 1/2 passed.' in table
+    assert "Faithfulness" not in table  # no faithfulness_results -> no line at all
+
+
+def test_eval_report_to_markdown_table_includes_faithfulness_when_present():
+    from app.evaluation.runner import FaithfulnessResult
+
+    metrics = {mode: {f"recall@{k}": 1.0 for k in (1, 3, 5, 10)} | {"mrr": 1.0} for mode in ("vector", "keyword", "hybrid")}
+    report = EvalReport(
+        generated_at="2026-01-01T00:00:00+00:00",
+        corpus="Vendor_Module",
+        retrieval_metrics=metrics,
+        enumeration_results=[],
+        negative_results=[],
+        faithfulness_results=[
+            FaithfulnessResult(id="f1", query="q1", outcome="grounded", reasoning="ok"),
+            FaithfulnessResult(id="f2", query="q2", outcome="unsupported", unsupported_claims=["x"], reasoning="no"),
+            FaithfulnessResult(id="f3", query="q3", outcome="judge_error", reasoning="boom"),
+        ],
+    )
+
+    as_dict = report.to_dict()
+    assert as_dict["faithfulness_results"][0] == {
+        "id": "f1", "query": "q1", "outcome": "grounded", "unsupported_claims": [], "reasoning": "ok",
+    }
+
+    table = report.to_markdown_table()
+    assert "Faithfulness (LLM-judged, grounded in cited sources): 1/2 judged answers." in table
+    assert "1 agent/judge error(s)" in table

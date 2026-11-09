@@ -1,7 +1,9 @@
 """One-time/manually-triggered real evaluation run against the Ordo_Automation
 fixture. Costs real OpenAI (embeddings) + Anthropic (analysis) API spend on the
 first run; cached (via AnalysisCache content-hash keys) on reruns unless fixture
-content changes.
+content changes. The faithfulness step is NOT cached the same way -- it runs
+the real agent + a real judge LLM call per question every time, since there's
+no stable content hash for "the agent's own answer this run" to key a cache on.
 
 Usage: docker compose exec api python -m app.evaluation.run_eval
 """
@@ -17,10 +19,12 @@ from app.evaluation.dataset import ENUMERATION_QUESTIONS, NEGATIVE_QUESTIONS, RE
 from app.evaluation.runner import (
     EvalReport,
     run_enumeration_eval,
+    run_faithfulness_eval,
     run_negative_eval,
     run_retrieval_eval,
     seed_corpus,
 )
+from app.runtime_config import resolve_llm_config
 
 # Same env var name as tests/conftest.py's ORDO_FIXTURE_ENV (not imported from
 # the tests package to keep app/ independent of test code).
@@ -40,12 +44,23 @@ async def main() -> None:
         enumeration_results = await run_enumeration_eval(session, ENUMERATION_QUESTIONS, module)
         negative_results = await run_negative_eval(session, NEGATIVE_QUESTIONS, module)
 
+        # Faithfulness reuses the retrieval question set (real, verified
+        # questions against this fixture) but runs the full agent + a judge
+        # LLM call per question -- a real, separate cost on top of the steps
+        # above, not just a free re-read of their results.
+        llm_config = await resolve_llm_config(session)
+        faithfulness_results = await run_faithfulness_eval(
+            session, RETRIEVAL_QUESTIONS, model=llm_config.model, api_key=llm_config.api_key,
+            api_base=llm_config.api_base,
+        )
+
     report = EvalReport(
         generated_at=datetime.now(UTC).isoformat(),
         corpus=module.name,
         retrieval_metrics=retrieval_metrics,
         enumeration_results=enumeration_results,
         negative_results=negative_results,
+        faithfulness_results=faithfulness_results,
     )
 
     REPORT_PATH.parent.mkdir(parents=True, exist_ok=True)
