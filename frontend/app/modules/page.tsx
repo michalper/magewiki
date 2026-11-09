@@ -622,6 +622,7 @@ export default function ModulesPage() {
             <select
               value={sourceFilter}
               onChange={(e) => setSourceFilter(e.target.value)}
+              aria-label="Filter by source"
               className="h-8 rounded-lg border border-input bg-transparent px-2 text-sm dark:bg-input/30"
             >
               <option value="all">All sources</option>
@@ -634,6 +635,7 @@ export default function ModulesPage() {
             <select
               value={stateFilter}
               onChange={(e) => setStateFilter(e.target.value)}
+              aria-label="Filter by state"
               className="h-8 rounded-lg border border-input bg-transparent px-2 text-sm dark:bg-input/30"
             >
               <option value="all">All states</option>
@@ -646,6 +648,7 @@ export default function ModulesPage() {
             <select
               value={enabledFilter}
               onChange={(e) => setEnabledFilter(e.target.value)}
+              aria-label="Filter by enabled status"
               className="h-8 rounded-lg border border-input bg-transparent px-2 text-sm dark:bg-input/30"
             >
               <option value="all">All enabled status</option>

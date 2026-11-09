@@ -39,4 +39,36 @@ test.describe.serial("Settings — BYOK", () => {
     // override.
     await expect(page.getByText("Current: some/overridden-model")).not.toBeVisible();
   });
+
+  test("Reset to .env default for Embeddings is a true no-op with no embedding key configured", async ({ page }) => {
+    // Regression test for a real bug: PATCH /settings/llm used to run its
+    // live embedding-dimension probe whenever embedding_model was present in
+    // the request body at all, even when the *effective* model wasn't
+    // actually changing -- so a genuine no-op reset made a real API call and
+    // 400'd outright in an environment (like this one) with no embedding
+    // key configured. Fixed to only probe on an actual change; this
+    // confirms Reset now succeeds silently instead of showing an error.
+    await page.goto("/settings");
+
+    await page.getByRole("button", { name: "Reset to .env default" }).last().click();
+    await expect(page.getByText(/could not verify/)).not.toBeVisible();
+    await expect(page.getByText("Current: openai/text-embedding-3-small")).toBeVisible();
+  });
+
+  test("saving a genuinely new embedding model without a real provider key shows the real error", async ({
+    page,
+  }) => {
+    // No embedding API key is configured for this suite (see ci.yml's
+    // e2e-smoke job) -- a genuine model change always fails the live
+    // dimension probe, and this asserts on that real, deterministic error
+    // text rather than assuming a success path this environment can't reach.
+    await page.goto("/settings");
+
+    await page.getByLabel("Embedding model").fill("openai/text-embedding-3-large");
+    await page.getByRole("button", { name: "Save" }).last().click();
+
+    await expect(page.getByText(/could not verify openai\/text-embedding-3-large's embedding dimension/)).toBeVisible();
+    // Rejected, not persisted.
+    await expect(page.getByText("Current: openai/text-embedding-3-small")).toBeVisible();
+  });
 });

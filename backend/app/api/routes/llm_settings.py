@@ -123,40 +123,45 @@ async def update_llm_settings(
 
     reembed_modules: list[Module] = []
     if "embedding_model" in fields_set:
-        # chunks.embedding is a fixed-dimension pgvector column (see
-        # alembic/versions/0013_configurable_embedding_dimension.py) — switching to a
-        # model with a different output dimension would crash the next scan's embed
-        # step, not this request. Probe the real dimension now, with one tiny live
-        # call, so the mismatch is caught here with an actionable error instead.
         effective = await resolve_embedding_config(session)
-        try:
-            vector, _result = await embed_text(
-                "dimension probe", model=effective.model, api_key=effective.api_key, api_base=effective.api_base
-            )
-        except Exception as exc:
-            await session.rollback()
-            raise HTTPException(
-                status_code=400, detail=f"could not verify {effective.model}'s embedding dimension: {exc}"
-            ) from exc
-        if len(vector) != settings.embedding_dimensions:
-            await session.rollback()
-            raise HTTPException(
-                status_code=400,
-                detail=(
-                    f"{effective.model} outputs {len(vector)}-dimensional embeddings, but this "
-                    f"deployment's chunks table is configured for {settings.embedding_dimensions} "
-                    "(EMBEDDING_DIMENSIONS) — changing embedding models to a different dimension "
-                    "requires updating EMBEDDING_DIMENSIONS, re-running migrations, and a full re-embed."
-                ),
-            )
-
-        # Same dimension or not, a genuinely different model still leaves every
-        # already-embedded chunk in the old model's vector space — silently
-        # stale, since nothing tracks which model produced a chunk's embedding.
-        # Only matters if the model actually changed (not e.g. an identical
-        # value re-sent, or every other field changing with embedding_model
-        # merely present-but-unchanged in the body).
+        # Only a genuine change to the *effective* model needs any of this --
+        # re-sending today's already-effective value (a form that always
+        # submits every field, or "Reset to .env default" when there was no
+        # override to begin with) must be a true no-op. Previously the probe
+        # below ran unconditionally whenever embedding_model was present in
+        # the body at all, so a no-op Reset made a real, billable embedding
+        # call and, with no embedding key configured, could 400 outright —
+        # even though nothing was actually changing.
         if effective.model != old_embedding_model:
+            # chunks.embedding is a fixed-dimension pgvector column (see
+            # alembic/versions/0013_configurable_embedding_dimension.py) — switching to a
+            # model with a different output dimension would crash the next scan's embed
+            # step, not this request. Probe the real dimension now, with one tiny live
+            # call, so the mismatch is caught here with an actionable error instead.
+            try:
+                vector, _result = await embed_text(
+                    "dimension probe", model=effective.model, api_key=effective.api_key, api_base=effective.api_base
+                )
+            except Exception as exc:
+                await session.rollback()
+                raise HTTPException(
+                    status_code=400, detail=f"could not verify {effective.model}'s embedding dimension: {exc}"
+                ) from exc
+            if len(vector) != settings.embedding_dimensions:
+                await session.rollback()
+                raise HTTPException(
+                    status_code=400,
+                    detail=(
+                        f"{effective.model} outputs {len(vector)}-dimensional embeddings, but this "
+                        f"deployment's chunks table is configured for {settings.embedding_dimensions} "
+                        "(EMBEDDING_DIMENSIONS) — changing embedding models to a different dimension "
+                        "requires updating EMBEDDING_DIMENSIONS, re-running migrations, and a full re-embed."
+                    ),
+                )
+
+            # Same dimension or not, a genuinely different model still leaves every
+            # already-embedded chunk in the old model's vector space — silently
+            # stale, since nothing tracks which model produced a chunk's embedding.
             reembed_modules = list(
                 (await session.scalars(select(Module).where(Module.state == "up_to_date"))).all()
             )

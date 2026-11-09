@@ -119,7 +119,11 @@ async def test_patch_llm_settings_explicit_null_resets_to_default():
 
 @pytest.mark.asyncio
 async def test_patch_embedding_model_with_matching_dimension_succeeds(monkeypatch):
+    probe_called = False
+
     async def fake_embed_text(text, *, model, api_key, api_base=None):
+        nonlocal probe_called
+        probe_called = True
         return [0.0] * settings.embedding_dimensions, LlmCallResult(
             response_json={}, tokens_in=1, tokens_out=0, cost_usd=Decimal(0)
         )
@@ -128,10 +132,14 @@ async def test_patch_embedding_model_with_matching_dimension_succeeds(monkeypatc
 
     transport = ASGITransport(app=app)
     async with AsyncClient(transport=transport, base_url="http://test") as client:
-        response = await client.patch("/settings/llm", json={"embedding_model": "openai/text-embedding-3-small"})
+        # Genuinely different from settings.embedding_model (the effective
+        # default) -- the probe is skipped entirely for a no-op (see the
+        # dedicated skip test below), so this must actually exercise it.
+        response = await client.patch("/settings/llm", json={"embedding_model": "ollama/bge-m3"})
 
     assert response.status_code == 200
-    assert response.json()["embedding_model"] == "openai/text-embedding-3-small"
+    assert response.json()["embedding_model"] == "ollama/bge-m3"
+    assert probe_called is True
 
 
 @pytest.mark.asyncio
@@ -167,10 +175,39 @@ async def test_patch_embedding_model_surfaces_a_probe_failure_as_400(monkeypatch
 
     transport = ASGITransport(app=app)
     async with AsyncClient(transport=transport, base_url="http://test") as client:
-        response = await client.patch("/settings/llm", json={"embedding_model": "openai/text-embedding-3-small"})
+        # Must be genuinely different from settings.embedding_model (the
+        # effective default with no override stored) -- the probe only runs
+        # for an actual change (see the no-op skip test below), so reusing
+        # the default here would never reach fake_embed_text at all.
+        response = await client.patch("/settings/llm", json={"embedding_model": "openai/text-embedding-3-large"})
 
     assert response.status_code == 400
     assert "no credits remaining" in response.text
+
+
+@pytest.mark.asyncio
+async def test_patch_embedding_model_skips_the_probe_entirely_when_unchanged(monkeypatch):
+    """Regression test: re-sending today's already-effective embedding_model
+    (e.g. "Reset to .env default" when there was no override, or a form that
+    always submits every field) must not call embed_text at all -- previously
+    it did, making a real, billable embedding call for a genuine no-op and
+    400ing outright with no embedding API key configured.
+    """
+    probe_called = False
+
+    async def fake_embed_text(text, *, model, api_key, api_base=None):
+        nonlocal probe_called
+        probe_called = True
+        raise RuntimeError("should never be called for a no-op")
+
+    monkeypatch.setattr("app.api.routes.llm_settings.embed_text", fake_embed_text)
+
+    transport = ASGITransport(app=app)
+    async with AsyncClient(transport=transport, base_url="http://test") as client:
+        response = await client.patch("/settings/llm", json={"embedding_model": None})
+
+    assert response.status_code == 200
+    assert probe_called is False
 
 
 @pytest.mark.asyncio

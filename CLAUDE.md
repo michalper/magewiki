@@ -1778,6 +1778,37 @@ already indirectly exercised by the existing desktop-viewport tests; a
 dedicated narrow-viewport run would mainly confirm visual layout, lower
 marginal value for the effort than the four gaps actually closed).
 
+**Real backend bug found while e2e-testing the Settings page's embedding
+flows (recorded 2026-11-09):** closing "is anything still missing?" surfaced
+three more untested real flows (the enabled-status filter dropdown, CSV
+export content, and the Embeddings section of Settings) -- the last one hit
+a genuine, confirmed backend bug, not just a coverage gap. `PATCH
+/settings/llm` ran its live embedding-dimension probe (`embed_text`,
+"Configurable embedding dimension" decision above) whenever `embedding_model`
+was merely *present* in the request body, not only when the *effective*
+model was actually changing. Verified live against the real, no-embedding-
+key isolated stack: clicking Settings' own "Reset to .env default" for
+Embeddings -- a genuine no-op, since there was no override to clear --
+still made a real `embed_text` call and failed outright with a 400
+("Missing credentials..."), with no feedback path for an operator to
+recover from it other than editing `.env` directly. Fixed by moving the
+`effective.model != old_embedding_model` check (already used further down
+to gate the `confirm_reembed` decision) to guard the probe itself, so a
+genuine no-op never calls out to a real provider at all. Two existing tests
+(`test_patch_embedding_model_with_matching_dimension_succeeds`,
+`test_patch_embedding_model_surfaces_a_probe_failure_as_400`) had
+accidentally been asserting against `settings.embedding_model`'s own
+already-effective default as their "new" value, so they still passed their
+literal assertions after the fix but silently stopped exercising the probe
+path they were named for -- fixed to use a genuinely different model
+(`ollama/bge-m3`), with an explicit `probe_called` flag added to catch this
+category of drift again. New `test_patch_embedding_model_skips_the_probe_
+entirely_when_unchanged` is the direct regression test. Two new e2e specs
+(`settings.spec.ts`) assert on the real, now-correct behavior: Reset
+succeeds silently, and a genuinely new model still shows the real probe
+error (no embedding key is configured anywhere in this CI path, so that
+failure mode stays real and deterministic, not mocked away).
+
 ## Working method
 
 - Start each phase in plan mode; propose a plan and wait for approval before writing code.

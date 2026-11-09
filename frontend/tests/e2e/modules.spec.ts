@@ -57,6 +57,21 @@ test("filters narrow the module list and clear back to the full count", async ({
   await expect(page.getByText(`${total} of ${total} modules`)).toBeVisible();
 });
 
+test("the enabled-status filter narrows the list by real enabled state", async ({ page }) => {
+  await page.goto("/modules");
+  // The seeded fixture module is genuinely Enabled: yes (declared in
+  // app/etc/config.php) -- filtering to Disabled/Unknown must empty the
+  // list, and back to Enabled must restore it, proving this dropdown is
+  // really wired to Module.enabled, not just decorative.
+  await expect(page.getByText(/\d+ of \d+ modules/)).toBeVisible();
+
+  await page.getByLabel("Filter by enabled status").selectOption("false");
+  await expect(page.getByText(/0 of \d+ modules/)).toBeVisible();
+
+  await page.getByLabel("Filter by enabled status").selectOption("true");
+  await expect(page.getByText(/[1-9]\d* of \d+ modules/)).toBeVisible();
+});
+
 test("sorting by a column header reorders the table", async ({ page }) => {
   await page.goto("/modules");
   const nameHeader = page.getByRole("button", { name: /^Name/ });
@@ -81,4 +96,13 @@ test("Export CSV downloads a real file with the module data", async ({ page }) =
   expect(download.suggestedFilename()).toMatch(/\.csv$/);
   const path = await download.path();
   expect(path).toBeTruthy();
+
+  // Real content, not just "a file downloaded" -- the real column shape
+  // downloadModulesCsv() builds (app/modules/page.tsx), and the real
+  // seeded module's own row.
+  const fs = await import("node:fs/promises");
+  const csv = await fs.readFile(path!, "utf-8");
+  expect(csv.split("\n")[0]).toContain("name,composer_name,setup_version,source_type,enabled,state");
+  expect(csv).toContain("Vendor_Module");
+  expect(csv).toContain("vendor/module-sample");
 });
