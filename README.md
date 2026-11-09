@@ -124,6 +124,43 @@ A separate per-module **license-risk** check flags a composer.json declaring a
 strong-copyleft license (GPL/AGPL/SSPL) — a real redistribution obligation worth
 reviewing before bundling it into a commercial store.
 
+## Real-world results
+
+Every number below is from a real scan — a full `magento/magento2` checkout
+(the actual Adobe/Magento core, not a synthetic fixture) plus
+[Ordo_Automation](https://github.com/michalper/ordo), reproducible by anyone
+cloning the same repos:
+
+| | |
+|---|---|
+| Modules scanned | 223 (magento/magento2 `app/code`) + Ordo_Automation (standalone) |
+| PHP classes catalogued | 17,331 |
+| `di.xml` plugins / event observers | 291 / 235 |
+| Real CVEs found (`security_advisory`) | 15 — via live Packagist advisory data, not a static list |
+| PHPStan findings | 24,360 |
+| phpcs violations (project's own ruleset, not a generic default) | 10,828 |
+
+The one worth calling out specifically: **MageWiki found 71 real plugin-conflict
+findings inside Magento's own core codebase** — e.g. `Magento_CatalogSearch`'s
+`around` plugin on `Catalog\Model\ResourceModel\Product::save` and
+`Magento_Quote`'s `after` plugin on the same method both default to
+`sortOrder` 0, making their relative execution order genuinely ambiguous. This
+isn't a contrived example; it's Magento's shipped core, and anyone can verify
+it by scanning the same checkout.
+
+The hardcoded-secret scanner also earns its keep on real code: 36 findings
+across both repos, every one of them a fake credential literal inside a
+`Test/Unit/*Test.php` file (`CredentialsValidatorTest.php`,
+`AuthObserverTest.php`, ...) — exactly the kind of thing worth a second look
+in a diff, correctly separated from the zero real secrets actually present.
+
+Ordo_Automation's own real PHPUnit suite (1,514 classes, 3,013 tests) runs
+inside the sandboxed `php-analyzer` sidecar end to end — 0 failures, 96.99%
+line coverage, confirmed against a real `pcov`-instrumented run. See
+`CLAUDE.md`'s "Real PHPUnit test execution" entry for the full sandboxing
+writeup: wall-clock kill timeout, disabled shell-spawning functions,
+network-isolated container.
+
 ## Roadmap
 
 - [x] **Phase 0** — Repo skeleton, docker-compose, migrations
