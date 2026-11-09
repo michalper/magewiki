@@ -13,5 +13,8 @@ test("the built app boots and serves the Modules page", async ({ page }) => {
 
   await expect(page.getByRole("heading", { name: "Modules" })).toBeVisible();
   await expect(page.getByPlaceholder("/path/to/magento-store-or-module")).toBeVisible();
-  await expect(page.getByRole("button", { name: "Scan" })).toBeVisible();
+  // exact: true -- with real scanned data now present (see tests/e2e/
+  // global-setup.ts), the module table's own "Last scanned" sortable column
+  // header otherwise substring-matches "Scan" too.
+  await expect(page.getByRole("button", { name: "Scan", exact: true })).toBeVisible();
 });

@@ -191,6 +191,13 @@ jobs:
       - working-directory: frontend
         run: npx playwright install --with-deps chromium
       - run: cp .env.example .env
+      # A real scan root, not left empty like .env.example's default --
+      # without this, is_within_scan_roots() fails closed and e2e tests
+      # can never trigger a real scan through the UI, leaving every other
+      # page's e2e coverage stuck testing only empty-state rendering.
+      # The demo-store fixture is parser-only (no AI needed), so this scan
+      # succeeds with no LLM/embedding key configured either.
+      - run: echo "MAGEWIKI_SCAN_ROOT_1=$(pwd)/backend/tests/fixtures/demo-store" >> .env
       - run: docker compose up -d --build
       - name: Wait for api and web to be ready
         run: |

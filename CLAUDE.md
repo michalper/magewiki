@@ -1682,6 +1682,63 @@ triggering a real `timeout -s KILL` against a deliberately hung `sleep(30)` proc
 inside the running container left zero zombie (`<defunct>`) processes behind
 afterward.
 
+**Real e2e coverage for every page, not just onboarding (recorded 2026-11-09):**
+before this, `tests/e2e/` had exactly two specs: the onboarding wizard and a
+single boot-smoke check on the Modules page with zero scanned data --
+everything else (Modules filtering/sorting/CSV, the module detail page, the
+dependency graph, Chat, Stats, Repos/SBOM, Settings/BYOK) had unit-test
+coverage for component logic but no real browser-driven user-journey test at
+all. "100% coverage" in CI has only ever meant unit-test line coverage
+(pytest/vitest); it never implied e2e journeys were covered too, and nothing
+made that distinction explicit until a user asked directly.
+
+The real blocker turned out to be infrastructure, not test-writing:
+`e2e-smoke`'s `.env` (copied from `.env.example`) had no `MAGEWIKI_SCAN_ROOT_*`
+configured at all, so `is_within_scan_roots()` failed closed and **no e2e test
+could ever trigger a real scan through the UI** -- every page beyond the bare
+Modules shell was permanently untestable with real data. Fixed by pointing
+`MAGEWIKI_SCAN_ROOT_1` at the already-committed `backend/tests/fixtures/demo-store`
+fixture in `ci.yml`'s `e2e-smoke` job -- parser-only findings (no AI, no LLM
+key needed), so it scans successfully even with every `*_API_KEY` left empty,
+which is deliberately the case for this whole job (no real LLM spend in CI).
+New `tests/e2e/global-setup.ts` seeds that one scan directly via the API
+(not through the UI) once, before any test file runs -- `fullyParallel: true`
+gives spec files no guaranteed order, so a per-file scan would race two
+`POST /scan` calls against the same repo_root into a `ScanAlreadyInProgressError`.
+`modules.spec.ts` still has its own dedicated test driving the actual Scan
+button/progress UI (a cheap, hash-skipped rescan of the same fixture).
+
+Every new spec's assertions are against the *real*, verified behavior of this
+specific environment (no API key configured), confirmed by actually driving
+a real isolated stack in a browser before writing a single assertion, not
+guessed from reading component source: a module can never reach `up_to_date`
+here, so "This module has not been analyzed yet." is the one deterministic
+README state to assert on (not a transient loading state that would make the
+test flaky); sending a chat message deterministically resolves to the
+agent's own real graceful-failure path ("chat failed unexpectedly — check
+server logs"), not a generated answer -- asserting on that reproduced real
+behavior is more meaningful than mocking a fake one would be.
+
+Found and fixed real bugs this surfaced, not just wrote new tests around:
+(1) Two `getByRole("button", { name: "Scan" })`/`{ name: "Dev" }` locators
+(one in the **pre-existing** `smoke.spec.ts`, never caught before because the
+Modules page never had real scanned data to render a "Last scanned" sortable
+column header against) were ambiguous substring matches -- Playwright's
+default name matching is substring, and "Scan" matches "Last scanned" the
+same way "Dev" matches Next.js's own dev-mode-only "Open Next.js Dev Tools"
+button; both needed `exact: true`. (2) Two Settings tests that each mutate
+the same backend singleton (`RuntimeLlmConfig`, id=1) raced each other under
+`fullyParallel: true` -- which parallelizes tests *within* one file too, not
+just across files -- confirmed directly (passed reliably alone, failed
+intermittently together) and fixed with `test.describe.serial()`. Neither of
+these would have been caught by code review; both needed a real multi-run
+local verification pass (a throwaway, fully isolated `docker compose -p
+magewiki-e2e` stack on separate ports with its own `.env` -- `env_file: .env`
+in `docker-compose.yml` is a literal relative path, so `--env-file` alone
+doesn't override what containers actually read; needed an override compose
+file pointing `env_file` at the isolated `.env` too) before trusting any of
+this enough to push.
+
 ## Working method
 
 - Start each phase in plan mode; propose a plan and wait for approval before writing code.

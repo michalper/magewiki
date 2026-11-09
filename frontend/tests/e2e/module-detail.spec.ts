@@ -1,0 +1,45 @@
+import { expect, test } from "@playwright/test";
+
+test.beforeEach(async ({ page }) => {
+  await page.addInitScript(() => localStorage.setItem("mw-onboarding-dismissed", "true"));
+});
+
+test("the module detail page shows real facts, a pending README, and real quality findings", async ({ page }) => {
+  await page.goto("/modules");
+  // Navigate via the real list, not a hardcoded id -- the seeded module's
+  // row/id isn't guaranteed stable across CI runs.
+  await page.getByRole("link", { name: "Vendor_Module" }).first().click();
+  await expect(page).toHaveURL(/\/modules\/\d+$/);
+
+  await expect(page.getByRole("heading", { name: "Vendor_Module" })).toBeVisible();
+  // .first(): the composer name can legitimately appear more than once on
+  // this page (the facts list, plus any card referencing it) -- this just
+  // needs to confirm it's shown somewhere, not pin down which element.
+  await expect(page.getByText("vendor/module-sample").first()).toBeVisible();
+
+  // No LLM key is configured for this suite (see ci.yml's e2e-smoke job) --
+  // the module can never actually get analyzed, so this pending state is
+  // the one real, deterministic outcome to assert on, not a transient
+  // loading state that would make this test flaky.
+  await expect(page.getByText("This module has not been analyzed yet.")).toBeVisible();
+
+  // Real, parser-only quality findings -- composer_completeness and
+  // magento_version_blocker both fire for this fixture with no AI involved,
+  // so this section is never empty regardless of LLM configuration.
+  await expect(page.getByText(/Quality findings/)).toBeVisible();
+  await expect(page.getByText("composer.json").first()).toBeVisible();
+});
+
+test("the dependency graph page renders real nodes for the module", async ({ page }) => {
+  await page.goto("/modules");
+  await page.getByRole("link", { name: "Vendor_Module" }).first().click();
+  await page.getByRole("link", { name: "View dependency graph" }).click();
+
+  await expect(page).toHaveURL(/\/modules\/\d+\/graph$/);
+  await expect(page.getByRole("heading", { name: /Vendor_Module.*dependency graph/ })).toBeVisible();
+  // The fixture's own real di.xml/composer.json facts -- a plugin target and
+  // a composer dependency -- not a placeholder/empty graph. Scoped to the
+  // graph node itself (its title attribute) since "Magento_Sales" can also
+  // legitimately appear in a details panel elsewhere on the page.
+  await expect(page.getByTitle("Magento_Sales")).toBeVisible();
+});
