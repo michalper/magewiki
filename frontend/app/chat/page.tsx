@@ -171,7 +171,11 @@ export default function ChatPage() {
 
   return (
     <TooltipProvider>
-    <div className="flex flex-col flex-1 gap-6 p-8 max-w-4xl mx-auto w-full">
+    {/* suppressHydrationWarning: see app/modules/page.tsx's own top-level
+        div for the full explanation -- the onboarding wizard's first-visit
+        dialog marks this div inert via a direct DOM write Next's
+        hydration-diff otherwise flags as a false mismatch. */}
+    <div className="flex flex-col flex-1 gap-6 p-8 max-w-4xl mx-auto w-full" suppressHydrationWarning>
       <div className="flex items-center justify-between">
         <h1 className="text-2xl font-semibold tracking-tight">Chat</h1>
         <div className="flex gap-1">

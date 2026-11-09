@@ -62,7 +62,11 @@ export default function GraphClient({ id }: { id: string }) {
   );
 
   return (
-    <div className="flex flex-col flex-1 gap-4 p-8 max-w-4xl mx-auto w-full">
+    <div className="flex flex-col flex-1 gap-4 p-8 max-w-4xl mx-auto w-full" suppressHydrationWarning>
+      {/* suppressHydrationWarning above: see app/modules/page.tsx's own
+          top-level div for the full explanation -- the onboarding wizard's
+          first-visit dialog marks this div inert via a direct DOM write
+          Next's hydration-diff otherwise flags as a false mismatch. */}
       <Link href={`/modules/${id}`} className="text-sm text-primary hover:underline self-start">
         ← Module details
       </Link>

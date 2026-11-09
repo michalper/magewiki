@@ -92,7 +92,11 @@ export default function SettingsPage() {
       : null;
 
   return (
-    <div className="flex flex-col flex-1 gap-8 p-8 max-w-2xl mx-auto w-full">
+    <div className="flex flex-col flex-1 gap-8 p-8 max-w-2xl mx-auto w-full" suppressHydrationWarning>
+      {/* suppressHydrationWarning above: see app/modules/page.tsx's own
+          top-level div for the full explanation -- the onboarding wizard's
+          first-visit dialog marks this div inert via a direct DOM write
+          Next's hydration-diff otherwise flags as a false mismatch. */}
       <h1 className="text-2xl font-semibold tracking-tight">Settings — BYOK</h1>
       <p className="text-sm text-muted-foreground">
         Override the model and API key used for chat/analysis and embeddings, without editing{" "}

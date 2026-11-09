@@ -337,7 +337,11 @@ export default function ModuleDetailClient({ id }: { id: string }) {
 
   return (
     <TooltipProvider>
-    <div className="flex flex-col flex-1 gap-6 p-8 max-w-4xl mx-auto w-full">
+    {/* suppressHydrationWarning: see app/modules/page.tsx's own top-level
+        div for the full explanation -- the onboarding wizard's first-visit
+        dialog marks this div inert via a direct DOM write Next's
+        hydration-diff otherwise flags as a false mismatch. */}
+    <div className="flex flex-col flex-1 gap-6 p-8 max-w-4xl mx-auto w-full" suppressHydrationWarning>
       <Link href="/modules" className="text-sm text-primary hover:underline self-start">
         ← All modules
       </Link>

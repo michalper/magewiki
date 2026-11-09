@@ -365,7 +365,11 @@ export default function StatsPage() {
 
   return (
     <TooltipProvider>
-    <div className="flex flex-col flex-1 gap-6 p-8 max-w-5xl mx-auto w-full">
+    {/* suppressHydrationWarning: see app/modules/page.tsx's own top-level
+        div for the full explanation -- the onboarding wizard's first-visit
+        dialog marks this div inert via a direct DOM write Next's
+        hydration-diff otherwise flags as a false mismatch. */}
+    <div className="flex flex-col flex-1 gap-6 p-8 max-w-5xl mx-auto w-full" suppressHydrationWarning>
       <h1 className="text-2xl font-semibold tracking-tight">Stats</h1>
 
       {modulesQuery.isLoading && <p>Loading...</p>}

@@ -490,7 +490,23 @@ export default function ModulesPage() {
 
   return (
     <TooltipProvider>
-    <div className="flex flex-col flex-1 gap-6 p-8 w-full">
+    {/* suppressHydrationWarning: the onboarding wizard (components/
+        onboarding-wizard.tsx) opens its dialog the moment it learns,
+        client-only, that this is a first visit -- Base UI's Dialog then
+        marks this page's own top-level content div inert (aria-hidden +
+        data-base-ui-inert) via a direct DOM write outside React's own
+        reconciler, which Next's hydration-diff still catches as a real
+        mismatch. Confirmed directly in a browser that no amount of
+        deferring the dialog's open state (render-time via
+        useSyncExternalStore, a plain useEffect, even a setTimeout(0), or
+        not mounting the Dialog component at all until a post-mount flag
+        flips) stops it -- and that suppressHydrationWarning only silences
+        the exact element it's applied to, not a shared ancestor like
+        <body>, so it has to live on every page's own top-level div (see
+        this same comment, abbreviated, on the other pages with this
+        pattern: chat, settings, repos, stats, the module detail page, and
+        the dependency graph page). */}
+    <div className="flex flex-col flex-1 gap-6 p-8 w-full" suppressHydrationWarning>
       <h1 className="text-2xl font-semibold tracking-tight">Modules</h1>
 
       {repoFilter && (
