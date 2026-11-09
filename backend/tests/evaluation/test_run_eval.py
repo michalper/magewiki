@@ -30,7 +30,7 @@ async def test_main_exits_when_the_fixture_path_is_not_a_real_directory(monkeypa
 
 @pytest.mark.asyncio
 async def test_main_seeds_scores_writes_and_prints_the_report(monkeypatch, tmp_path, capsys):
-    """Zero-cost: seed_corpus and the three real-API-calling eval runners are
+    """Zero-cost: seed_corpus and the four real-API-calling eval runners are
     monkeypatched out entirely (this script's own docstring says it costs real
     OpenAI/Anthropic spend against a real fixture — neither available in CI),
     so this exercises main()'s own orchestration/report-writing logic only.
@@ -51,10 +51,14 @@ async def test_main_seeds_scores_writes_and_prints_the_report(monkeypatch, tmp_p
     async def fake_run_negative_eval(session, questions, module):
         return [QuestionResult(id="n1", query="q", passed=True, detail="")]
 
+    async def fake_run_faithfulness_eval(session, questions, *, model, api_key, api_base=None):
+        return []
+
     monkeypatch.setattr(run_eval, "seed_corpus", fake_seed_corpus)
     monkeypatch.setattr(run_eval, "run_retrieval_eval", fake_run_retrieval_eval)
     monkeypatch.setattr(run_eval, "run_enumeration_eval", fake_run_enumeration_eval)
     monkeypatch.setattr(run_eval, "run_negative_eval", fake_run_negative_eval)
+    monkeypatch.setattr(run_eval, "run_faithfulness_eval", fake_run_faithfulness_eval)
 
     if run_eval.REPORT_PATH.exists():
         run_eval.REPORT_PATH.unlink()
