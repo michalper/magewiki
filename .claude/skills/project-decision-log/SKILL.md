@@ -1891,3 +1891,34 @@ one test, which then passed cleanly; it's also gated behind
 clean throughout. This closes the three-item roadmap (Phases 15-17) added
 earlier this session from a "what's genuinely still missing" research
 pass.
+
+**Security tab triage: 199 Trivy alerts + 5 missed CodeQL false positives
+actually dismissed, not just reasoned about (recorded 2026-11-09):** a
+real-world test of this project's own CLAUDE.md -- a user asked to verify
+the Security tab, which showed 201 open alerts even though the "Code-
+scanning/Dependabot alert triage" and "SonarCloud follow-up triage" notes
+above already claimed this category (base-image OS-layer CVEs, not app
+dependencies) was handled. Checking GitHub directly showed otherwise: only
+1 Trivy alert had ever actually been dismissed, and 5 `py/path-injection`
+CodeQL alerts from the original security-review pass were still open too.
+The *reasoning* was sound and already correct (verified again here by
+sampling real package names across the 199: `libc6`, `virtualenv`,
+`coreutils`, `mount`, `login`, `libsqlite3-0` -- genuinely Debian
+base-image packages pulled in by `python:3.13-slim`, not anything this
+project's own `pyproject.toml`/`package.json` declares) -- the gap was
+purely that recording a decision in CLAUDE.md was once mistaken for
+actually executing it on GitHub. Both triaged for real this time: the 5
+CodeQL alerts (confirmed downstream of `is_within_scan_roots()`, the same
+already-validated sanitizer CodeQL's taint analysis can't trace) and all
+199 Trivy alerts (195 backend + 4 frontend) dismissed via the Code
+Scanning API with an explanatory comment each (`won't fix` /
+`false positive` as appropriate). The 2 open Dependabot alerts
+(`minimatch`, `deepmerge`) were deliberately left open, not dismissed --
+already-reasoned as "no fix available yet, already at the newest version
+within the locked major," a different category from "won't fix." Verified
+directly against the real GitHub API afterward: 0 open code-scanning
+alerts, exactly 2 open Dependabot alerts. Lesson: a decision recorded here
+is not the same as the decision being *applied* somewhere external to this
+repo (GitHub's alert state, in this case) -- worth an explicit verification
+step, not just trusting a past recorded rationale, the next time this
+tab is checked.
