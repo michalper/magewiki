@@ -22,6 +22,16 @@ test("KPI tiles show real, non-zero counts from the seeded scan", async ({ page 
 
   await expect(page.getByText("Top modules by quality findings")).toBeVisible();
   await expect(page.getByText("Vendor_Module").first()).toBeVisible();
+
+  // The fixture module genuinely has no README/tests/AI doc -- real,
+  // deterministic 0% on all three, proving the percentage math itself runs
+  // (not just that the tile renders).
+  const readmeTile = page.locator(".rounded-2xl.bg-card", { hasText: "Have a README" });
+  await expect(readmeTile.getByText("0%")).toBeVisible();
+  const testsTile = page.locator(".rounded-2xl.bg-card", { hasText: "Have tests" });
+  await expect(testsTile.getByText("0%")).toBeVisible();
+  const aiDocTile = page.locator(".rounded-2xl.bg-card", { hasText: "Have an AI-generated doc" });
+  await expect(aiDocTile.getByText("0%")).toBeVisible();
 });
 
 test("a KPI tile's info tooltip reveals its real description on hover", async ({ page }) => {

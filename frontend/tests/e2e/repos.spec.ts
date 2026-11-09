@@ -1,5 +1,7 @@
 import { expect, test } from "@playwright/test";
 
+const API_URL = process.env.PLAYWRIGHT_API_URL ?? "http://localhost:8000";
+
 test.beforeEach(async ({ page }) => {
   await page.addInitScript(() => localStorage.setItem("mw-onboarding-dismissed", "true"));
 });
@@ -9,6 +11,10 @@ test("the seeded repo shows real stats and a working SBOM download", async ({ pa
 
   await expect(page.getByText("1 module", { exact: true })).toBeVisible();
   await expect(page.getByText("1/1 enabled")).toBeVisible();
+  // The fixture module genuinely has no README/tests -- real, deterministic
+  // zero counts, not just "the tile renders something".
+  await expect(page.getByText("0/1 with README")).toBeVisible();
+  await expect(page.getByText("0/1 with tests")).toBeVisible();
 
   // downloadSbom() (app/repos/page.tsx) uses window.open(url, "_self") --
   // a real navigation, not an <a download> click, but the backend's
@@ -30,4 +36,29 @@ test("the seeded repo shows real stats and a working SBOM download", async ({ pa
   // Component name is composer_name when present (build_cyclonedx_sbom()'s
   // own bom_ref rule), not the module's own display name.
   expect(sbom.components.some((c: { name: string }) => c.name === "vendor/module-sample")).toBe(true);
+});
+
+test("clicking a repo card navigates to a repo-filtered Modules view", async ({ page }) => {
+  const scanRootsResponse = await fetch(`${API_URL}/scan-roots`);
+  const { scan_roots: scanRoots } = (await scanRootsResponse.json()) as { scan_roots: string[] };
+  const repoRoot = scanRoots[0];
+
+  await page.goto("/repos");
+  // The whole card is a real <Link href="/modules?repo=..."> (app/repos/
+  // page.tsx) -- "Download SBOM" is a nested <button> with its own
+  // stopPropagation so it doesn't trigger this same navigation, but the
+  // card-level link itself was never exercised. Matched by its real href
+  // rather than its accessible name, which would otherwise be the whole
+  // card's concatenated text (module count, enabled/README/tests stats,
+  // quality badges, and the nested Download SBOM button).
+  await page.locator(`a[href="/modules?repo=${encodeURIComponent(repoRoot)}"]`).click();
+
+  await expect(page).toHaveURL(`/modules?repo=${encodeURIComponent(repoRoot)}`);
+  // Scoped to the "Filtering by repo:" banner specifically -- the same
+  // repoRoot text also legitimately appears elsewhere on this page (the
+  // "Scannable under:" scan-form helper text), so a bare page-wide match is
+  // ambiguous.
+  const filterBanner = page.locator("div", { hasText: "Filtering by repo:" }).last();
+  await expect(filterBanner.getByText(repoRoot, { exact: true })).toBeVisible();
+  await expect(page.getByText("1 of 1 modules")).toBeVisible();
 });

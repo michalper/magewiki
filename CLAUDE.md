@@ -1809,6 +1809,48 @@ succeeds silently, and a genuinely new model still shows the real probe
 error (no embedding key is configured anywhere in this CI path, so that
 failure mode stays real and deterministic, not mocked away).
 
+**Five more real e2e gaps closed on a third audit pass (recorded
+2026-11-09):** asked again ("szukaj kolejnych luk") after the embedding-
+settings bug fix above. Added, each checked against the fixture's real
+composer.json/API response first, not assumed: composer facts never
+asserted on before (`License` → "MIT, OSL-3.0", `Autoload (PSR-4)` →
+"Vendor\Module\ → .", `Depends on` → "Magento_Sales" -- confirmed via a
+direct `GET /modules/{id}` call against the real seeded module, not guessed
+from reading the component alone); the Stats page's three percentage tiles
+(Have a README / Have tests / Have an AI-generated doc), real and
+deterministic 0% for all three since the fixture module has none of those;
+and, on the Repos page, the README/tests count columns and -- a genuinely
+new interaction, not just a new assertion -- clicking a repo card itself
+navigates to a repo-filtered `/modules?repo=...` view (the whole card is a
+`<Link>`; "Download SBOM" is a nested button with its own
+`stopPropagation`, previously the only thing ever clicked on that card).
+
+Two real test-authoring pitfalls surfaced and fixed while verifying this
+live, both about over-broad text matching, not app bugs: (1) the repo
+card's own accessible name is its *entire* concatenated text content (module
+count, every stat, every quality badge, the nested button) since the whole
+card is one `<Link>` -- matched by its real `href` attribute instead of
+`getByRole("link", {name: ...})`. (2) the repo_root path string legitimately
+renders in more than one place on the post-navigation Modules page (the
+"Filtering by repo:" banner *and* the always-visible "Scannable under:" scan
+helper text) -- a bare page-wide `getByText(repoRoot, {exact: true})`
+strict-mode-violated; scoped to the banner's own container instead.
+
+Also self-inflicted, caught and fixed before it reached a commit: reusing
+the local isolated verification stack's Postgres volume across two rebuilds
+(a `docker compose down` without `-v`, to free resources while a slow
+backend test run was in progress) left a stale repo_root row in the DB from
+an earlier run, which happened to have been scanned under a different
+case-variant of this machine's own working-directory path
+(`/Users/.../Projects/magewiki` vs `/Users/.../projects/magewiki` -- macOS's
+case-insensitive-but-preserving filesystem lets both resolve, and different
+shell invocations in this long session surfaced different casing) --
+produced two rows for what was semantically the same fixture and broke an
+exact-count assertion. Not a real bug in the app (repo_root is correctly
+treated as a case-sensitive string key throughout); fixed by always tearing
+the isolated stack down with `-v` for a genuinely clean slate rather than
+reusing a volume across rebuilds.
+
 ## Working method
 
 - Start each phase in plan mode; propose a plan and wait for approval before writing code.

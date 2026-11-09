@@ -28,6 +28,16 @@ test("the module detail page shows real facts, a pending README, and real qualit
   // so this section is never empty regardless of LLM configuration.
   await expect(page.getByText(/Quality findings/)).toBeVisible();
   await expect(page.getByText("composer.json").first()).toBeVisible();
+
+  // Real composer.json facts, parsed (not AI-written) -- the fixture's own
+  // license list, PSR-4 autoload map, and its one real dependency (the
+  // composer require on magento/module-sales resolves to the Magento_Sales
+  // module name), none previously asserted on.
+  await expect(page.getByText("MIT, OSL-3.0")).toBeVisible();
+  await expect(page.getByText("Autoload (PSR-4)")).toBeVisible();
+  await expect(page.getByText(/Vendor\\Module/)).toBeVisible();
+  await expect(page.getByText("Depends on")).toBeVisible();
+  await expect(page.getByText("Magento_Sales").first()).toBeVisible();
 });
 
 test("a nonexistent module id shows a real error instead of hanging or crashing", async ({ page }) => {
