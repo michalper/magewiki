@@ -293,6 +293,18 @@ async def scan_repository_events(repo_root: str, session: AsyncSession) -> Async
             )
 
 
+# A Postgres deadlock (SQLSTATE 40P01) is transient by construction -- see
+# the retry loop in _run_scan below. 2 attempts, not more: a deadlock that
+# survives one immediate retry is very unlikely to be transient contention
+# and more likely a real, persistent lock-ordering problem worth surfacing
+# as a real module failure rather than silently retried forever.
+_MAX_MODULE_PERSIST_ATTEMPTS = 2
+
+
+def _is_deadlock(exc: BaseException) -> bool:
+    return getattr(getattr(exc, "orig", None), "sqlstate", None) == "40P01"
+
+
 async def _run_scan(root: Path, session: AsyncSession) -> AsyncIterator[dict]:
     result = ScanResult(repo_root=str(root))
 
@@ -393,34 +405,63 @@ async def _run_scan(root: Path, session: AsyncSession) -> AsyncIterator[dict]:
     for pm in parsed:
         outcome = ModuleScanOutcome(name=pm.module_xml.name, status="updated")
         module_job_specs: list[PendingAnalysisJob] = []
-        try:
-            async with session.begin_nested():
-                await _persist_module(
-                    session,
-                    root,
-                    pm,
-                    config_map,
-                    installed_versions,
-                    all_plugin_classes,
-                    all_observer_classes,
-                    outcome,
-                    module_job_specs,
-                )
-            await session.commit()
-        except Exception as exc:
-            outcome.status = "error"
-            message = f"{pm.module_xml.name}: {exc}"
-            outcome.warnings.append(message)
-            # A per-module failure was previously only visible on
-            # ModuleScanOutcome.warnings, which the UI never renders — only
-            # the scan-level ScanResult.warnings list is shown, so a scan
-            # where every module fails looked like a silent "0 created, 0
-            # updated" success instead of a clear error. Surface it at both
-            # levels, and log the full traceback server-side since str(exc)
-            # alone can be uninformative for some exception types.
-            result.warnings.append(message)
-            logger.exception("scan_repository: failed to persist module %s", pm.module_xml.name)
-            module_job_specs = []
+        for attempt in range(1, _MAX_MODULE_PERSIST_ATTEMPTS + 1):
+            try:
+                async with session.begin_nested():
+                    await _persist_module(
+                        session,
+                        root,
+                        pm,
+                        config_map,
+                        installed_versions,
+                        all_plugin_classes,
+                        all_observer_classes,
+                        outcome,
+                        module_job_specs,
+                    )
+                await session.commit()
+                break
+            except Exception as exc:
+                # The savepoint's own __aexit__ already rolled back the
+                # savepoint itself on the way out, but a DBAPI-level error
+                # (a deadlock in particular -- confirmed directly against a
+                # real 751-module store under concurrent scan activity) can
+                # leave the session's outer transaction/connection unusable
+                # for whatever runs next, surfacing later as an unrelated-
+                # looking PendingRollbackError on the *next* module or on
+                # Phase C's own advisory-lock release. An explicit
+                # session-level rollback here, for every failure not just
+                # deadlocks, is what actually clears that -- confirmed this
+                # is what the retry below needs to even be able to succeed.
+                await session.rollback()
+                if _is_deadlock(exc) and attempt < _MAX_MODULE_PERSIST_ATTEMPTS:
+                    # A Postgres deadlock is transient by nature -- one of
+                    # the two transactions involved is always the one
+                    # Postgres picks to abort, and it almost always succeeds
+                    # on an immediate retry rather than needing to wait for
+                    # the *next whole scan* to self-heal this one module.
+                    logger.warning(
+                        "scan_repository: deadlock persisting %s, retrying (attempt %d/%d)",
+                        pm.module_xml.name,
+                        attempt,
+                        _MAX_MODULE_PERSIST_ATTEMPTS,
+                    )
+                    module_job_specs = []
+                    continue
+                outcome.status = "error"
+                message = f"{pm.module_xml.name}: {exc}"
+                outcome.warnings.append(message)
+                # A per-module failure was previously only visible on
+                # ModuleScanOutcome.warnings, which the UI never renders — only
+                # the scan-level ScanResult.warnings list is shown, so a scan
+                # where every module fails looked like a silent "0 created, 0
+                # updated" success instead of a clear error. Surface it at both
+                # levels, and log the full traceback server-side since str(exc)
+                # alone can be uninformative for some exception types.
+                result.warnings.append(message)
+                logger.exception("scan_repository: failed to persist module %s", pm.module_xml.name)
+                module_job_specs = []
+                break
 
         if outcome.status == "created":
             result.modules_created += 1
