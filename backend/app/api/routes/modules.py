@@ -32,6 +32,7 @@ from app.models import (
     Module,
     ModuleDependency,
     ModuleDocument,
+    ModuleHistorySnapshot,
     ModuleQualityFinding,
     PhpClass,
     PhpClassMethod,
@@ -912,3 +913,49 @@ async def get_module_dependency_graph(
         nodes=list(nodes.values()),
         edges=edges,
     )
+
+
+class ModuleHistoryEntry(BaseModel):
+    """Phase 16: one module_history_snapshots row. Deltas (which check_types
+    got worse/better, whether the hash/state/enabled changed) are computed
+    client-side against the next-older entry in the returned list -- every
+    entry already carries its own full finding_counts, so nothing extra is
+    needed server-side to diff consecutive entries.
+    """
+
+    scanned_at: datetime
+    current_hash: str
+    state: str
+    enabled: bool | None
+    finding_counts: dict[str, int]
+
+
+@router.get("/modules/{module_id}/history", response_model=list[ModuleHistoryEntry])
+async def get_module_history(
+    module_id: int, session: AsyncSession = Depends(get_session)
+) -> list[ModuleHistoryEntry]:
+    """Newest first. A module with only one entry has no history yet beyond
+    its own baseline (see app/scanner/history.py's dedup -- a snapshot is
+    only written when something genuinely changed since the last one).
+    """
+    module = await session.get(Module, module_id)
+    if module is None:
+        raise HTTPException(status_code=404, detail="module not found")
+
+    rows = (
+        await session.scalars(
+            select(ModuleHistorySnapshot)
+            .where(ModuleHistorySnapshot.module_id == module_id)
+            .order_by(ModuleHistorySnapshot.scanned_at.desc())
+        )
+    ).all()
+    return [
+        ModuleHistoryEntry(
+            scanned_at=row.scanned_at,
+            current_hash=row.current_hash,
+            state=row.state,
+            enabled=row.enabled,
+            finding_counts=row.finding_counts,
+        )
+        for row in rows
+    ]

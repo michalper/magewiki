@@ -120,6 +120,9 @@ class Module(Base):
     queue_bindings: Mapped[list["QueueBinding"]] = relationship(
         back_populates="module", cascade="all, delete-orphan"
     )
+    history_snapshots: Mapped[list["ModuleHistorySnapshot"]] = relationship(
+        back_populates="module", cascade="all, delete-orphan"
+    )
     file_hashes: Mapped[list["FileHash"]] = relationship(
         back_populates="module", cascade="all, delete-orphan"
     )
@@ -523,3 +526,28 @@ class RuntimeLlmConfig(Base):
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
     )
+
+
+class ModuleHistorySnapshot(Base):
+    """Phase 16: one row per module per *change* (not per scan — see
+    app/scanner/history.py's dedup logic) so a module/repo page can answer
+    "what got better or worse since last scan," not just "what's true right
+    now." Written after Phase C's cross-module conflict detection, since
+    that's when a module's finding_counts are actually complete for this
+    scan. finding_counts mirrors the same dict[check_type, count] shape
+    ModuleSummary/RepoSummary already expose, not a full copy of the
+    findings themselves.
+    """
+
+    __tablename__ = "module_history_snapshots"
+    __table_args__ = (Index("ix_module_history_snapshots_module_id", "module_id", "scanned_at"),)
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    module_id: Mapped[int] = mapped_column(ForeignKey("modules.id", ondelete="CASCADE"))
+    scanned_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    current_hash: Mapped[str] = mapped_column(Text)
+    state: Mapped[str] = mapped_column(Text)
+    enabled: Mapped[bool | None] = mapped_column(Boolean)
+    finding_counts: Mapped[dict] = mapped_column(JSONB)
+
+    module: Mapped[Module] = relationship(back_populates="history_snapshots")

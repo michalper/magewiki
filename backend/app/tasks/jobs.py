@@ -1,9 +1,10 @@
 import logging
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
-from sqlalchemy import delete, select, update
+from sqlalchemy import delete, func, select, update
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 
 from app.analyzer.budget import is_budget_exceeded, pause_module_for_budget
@@ -31,6 +32,7 @@ from app.models import (
     FileHash,
     Module,
     ModuleDocument,
+    ModuleHistorySnapshot,
     PhpClass,
     PhpClassMethod,
 )
@@ -459,4 +461,28 @@ async def refresh_magento_release_cache(ctx: dict) -> None:
             return
         await fetch_release_php_constraint(session, tag)
         await fetch_release_component_versions(session, tag)
+        await session.commit()
+
+
+async def prune_module_history(ctx: dict) -> None:
+    """Nightly cron: age-based retention for module_history_snapshots, added
+    proactively (not after a bloat incident) per CLAUDE.md's "Operational
+    lessons" note on v1's own real production history (an insert-only
+    history table that grew to 3.7GB before a manual cleanup). Deletes
+    snapshots older than a year, except each module's own single oldest
+    snapshot (kept forever as a baseline reference point) -- id order is
+    insertion order is chronological order here (scanned_at always defaults
+    to the insert-time now(), never backdated), so MIN(id) per module_id is
+    exactly that oldest row.
+    """
+    cutoff = datetime.now(UTC) - timedelta(days=365)
+    oldest_id_per_module = select(func.min(ModuleHistorySnapshot.id)).group_by(ModuleHistorySnapshot.module_id)
+
+    async with async_session_factory() as session:
+        await session.execute(
+            delete(ModuleHistorySnapshot).where(
+                ModuleHistorySnapshot.scanned_at < cutoff,
+                ModuleHistorySnapshot.id.not_in(oldest_id_per_module),
+            )
+        )
         await session.commit()

@@ -18,8 +18,34 @@ import type { components } from "@/lib/api-types";
 
 type ModuleDetail = components["schemas"]["ModuleDetail"];
 type ModuleSummary = components["schemas"]["ModuleSummary"];
+type ModuleHistoryEntry = components["schemas"]["ModuleHistoryEntry"];
 
 const PREVIEW_FINDING_COUNT = 10;
+const HISTORY_PREVIEW_COUNT = 20;
+
+// One entry's finding_counts diffed against the next-older entry in a
+// newest-first list (there's nothing to diff the oldest/baseline entry
+// against). Only check_types whose count actually changed are returned —
+// a check_type present in both with the same count isn't a change, same
+// "flag a concrete, certain conflict" pragmatism the backend's own
+// cross-module conflict checks already use.
+function historyDelta(current: ModuleHistoryEntry, previous: ModuleHistoryEntry | undefined) {
+  if (!previous) return null;
+  const checkTypes = new Set([...Object.keys(current.finding_counts), ...Object.keys(previous.finding_counts)]);
+  const findingChanges = [...checkTypes]
+    .map((checkType) => ({
+      checkType,
+      delta: (current.finding_counts[checkType] ?? 0) - (previous.finding_counts[checkType] ?? 0),
+    }))
+    .filter((c) => c.delta !== 0)
+    .sort((a, b) => a.checkType.localeCompare(b.checkType));
+  return {
+    hashChanged: current.current_hash !== previous.current_hash,
+    stateChanged: current.state !== previous.state,
+    enabledChanged: current.enabled !== previous.enabled,
+    findingChanges,
+  };
+}
 
 // A README's own "## Dependencies" list item is plain AI-written markdown
 // text (e.g. "Magento_Sales"), not the structured dependencies array the
@@ -310,6 +336,10 @@ async function fetchModules(): Promise<ModuleSummary[]> {
   return apiFetch("/modules");
 }
 
+async function fetchHistory(id: string): Promise<ModuleHistoryEntry[]> {
+  return apiFetch(`/modules/${id}/history`);
+}
+
 async function fetchReadme(id: string): Promise<string | null> {
   // apiFetch always parses JSON and can't special-case 404 as "not an error" —
   // this is the one fetch in the app that returns plain text and treats a
@@ -323,6 +353,7 @@ async function fetchReadme(id: string): Promise<string | null> {
 export default function ModuleDetailClient({ id }: { id: string }) {
   const moduleQuery = useQuery({ queryKey: ["module", id], queryFn: () => fetchModule(id) });
   const readmeQuery = useQuery({ queryKey: ["module-readme", id], queryFn: () => fetchReadme(id) });
+  const historyQuery = useQuery({ queryKey: ["module-history", id], queryFn: () => fetchHistory(id) });
   // Same queryKey the Modules list page uses, so navigating here from there is
   // an instant cache hit rather than a second full-fleet fetch.
   const modulesQuery = useQuery({ queryKey: ["modules"], queryFn: fetchModules });
@@ -629,6 +660,56 @@ export default function ModuleDetailClient({ id }: { id: string }) {
                     findings CSV&rdquo; above for the full set
                   </li>
                 )}
+              </ul>
+            </div>
+          )}
+
+          {historyQuery.data && historyQuery.data.length > 0 && (
+            <div className="rounded-2xl bg-card p-5 shadow-sm">
+              <h2 className="text-lg font-medium mb-3">
+                History{" "}
+                <span className="text-sm font-normal text-muted-foreground">
+                  (what changed, not just what&rsquo;s true now
+                  {historyQuery.data.length > HISTORY_PREVIEW_COUNT
+                    ? ` — most recent ${HISTORY_PREVIEW_COUNT} of ${historyQuery.data.length}`
+                    : ""}
+                  )
+                </span>
+              </h2>
+              <ul className="text-sm space-y-3">
+                {historyQuery.data.slice(0, HISTORY_PREVIEW_COUNT).map((entry, i) => {
+                  const delta = historyDelta(entry, historyQuery.data![i + 1]);
+                  return (
+                    <li key={entry.scanned_at} className="space-y-1">
+                      <div className="flex items-center gap-2 font-mono text-muted-foreground">
+                        <span>{new Date(entry.scanned_at).toLocaleString()}</span>
+                        <StateBadge state={entry.state} />
+                        <EnabledBadge enabled={entry.enabled} />
+                      </div>
+                      {delta === null ? (
+                        <div className="text-muted-foreground">First recorded scan — baseline.</div>
+                      ) : (
+                        <ul className="space-y-0.5">
+                          {delta.hashChanged && <li>Code changed (new hash).</li>}
+                          {delta.stateChanged && <li>State changed to &ldquo;{entry.state}&rdquo;.</li>}
+                          {delta.enabledChanged && (
+                            <li>Enabled status changed to {entry.enabled === null ? "unknown" : String(entry.enabled)}.</li>
+                          )}
+                          {delta.findingChanges.map(({ checkType, delta: d }) => (
+                            <li key={checkType} className={d > 0 ? "text-destructive" : "text-emerald-600 dark:text-emerald-400"}>
+                              {d > 0 ? "▲" : "▼"} {checkType} {d > 0 ? "+" : ""}
+                              {d}
+                            </li>
+                          ))}
+                          {!delta.hashChanged &&
+                            !delta.stateChanged &&
+                            !delta.enabledChanged &&
+                            delta.findingChanges.length === 0 && <li className="text-muted-foreground">No change.</li>}
+                        </ul>
+                      )}
+                    </li>
+                  );
+                })}
               </ul>
             </div>
           )}

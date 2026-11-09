@@ -21,6 +21,29 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/metrics": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Metrics
+         * @description Prometheus text exposition. llm_monthly_spend_usd is set here, right
+         *     before serializing, rather than kept continuously up to date by a
+         *     background loop -- a gauge only needs to be correct at scrape time, and
+         *     this avoids running an extra polling task for a value nothing else reads.
+         */
+        get: operations["metrics_metrics_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/scan-roots": {
         parameters: {
             query?: never;
@@ -133,6 +156,12 @@ export interface paths {
          *     abandoned-dependency checks already evaluate this same data, but nothing
          *     exported it in a standard, tool-consumable format a security team could
          *     feed into Dependency-Track or another SBOM consumer.
+         *
+         *     Also includes a one-level dependency graph: each module's own direct,
+         *     production composer requirements (already parsed into
+         *     composer_package_requirements for the CVE/abandoned-dependency checks),
+         *     as CycloneDX `dependencies` entries — see build_cyclonedx_sbom()'s own
+         *     docstring for why this is "direct," not a fully-resolved transitive tree.
          */
         get: operations["get_repo_sbom_repos_sbom_get"];
         put?: never;
@@ -218,6 +247,28 @@ export interface paths {
          *     rather than a guess. See CLAUDE.md anti-hallucination rules.
          */
         get: operations["get_module_dependency_graph_modules__module_id__graph_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/modules/{module_id}/history": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Module History
+         * @description Newest first. A module with only one entry has no history yet beyond
+         *     its own baseline (see app/scanner/history.py's dedup -- a snapshot is
+         *     only written when something genuinely changed since the last one).
+         */
+        get: operations["get_module_history_modules__module_id__history_get"];
         put?: never;
         post?: never;
         delete?: never;
@@ -628,6 +679,31 @@ export interface components {
              */
             quality_findings: components["schemas"]["QualityFindingResponse"][];
         };
+        /**
+         * ModuleHistoryEntry
+         * @description Phase 16: one module_history_snapshots row. Deltas (which check_types
+         *     got worse/better, whether the hash/state/enabled changed) are computed
+         *     client-side against the next-older entry in the returned list -- every
+         *     entry already carries its own full finding_counts, so nothing extra is
+         *     needed server-side to diff consecutive entries.
+         */
+        ModuleHistoryEntry: {
+            /**
+             * Scanned At
+             * Format: date-time
+             */
+            scanned_at: string;
+            /** Current Hash */
+            current_hash: string;
+            /** State */
+            state: string;
+            /** Enabled */
+            enabled: boolean | null;
+            /** Finding Counts */
+            finding_counts: {
+                [key: string]: number;
+            };
+        };
         /** ModuleOverlapEntry */
         ModuleOverlapEntry: {
             /** Name */
@@ -936,6 +1012,26 @@ export interface operations {
             };
         };
     };
+    metrics_metrics_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+        };
+    };
     get_scan_roots_scan_roots_get: {
         parameters: {
             query?: never;
@@ -1193,6 +1289,37 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["DependencyGraphResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_module_history_modules__module_id__history_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                module_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ModuleHistoryEntry"][];
                 };
             };
             /** @description Validation Error */

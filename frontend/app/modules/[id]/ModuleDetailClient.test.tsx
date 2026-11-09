@@ -43,14 +43,17 @@ function mockApis({
   module = moduleDetail(),
   readme,
   modules = [],
+  history = [],
 }: {
   module?: ReturnType<typeof moduleDetail>;
   readme?: string | Error;
   modules?: unknown[];
+  history?: unknown[];
 } = {}) {
   fetchMock.mockImplementation(async (path: string) => {
     if (path === "/modules") return modules;
     if (path.endsWith("/graph")) return {};
+    if (path.endsWith("/history")) return history;
     return module;
   });
   const readmeBody = readme === undefined ? "" : readme instanceof Error ? "" : readme;
@@ -501,6 +504,99 @@ describe("ModuleDetailClient", () => {
 
       expect(clickSpy).toHaveBeenCalled();
       clickSpy.mockRestore();
+    });
+  });
+
+  describe("History", () => {
+    it("renders nothing when there are no snapshots yet", async () => {
+      mockApis({ history: [] });
+      renderWithQueryClient(<ModuleDetailClient id="1" />);
+      await waitFor(() => expect(screen.getByRole("heading", { name: "Vendor_Module" })).toBeInTheDocument());
+      expect(screen.queryByText("History")).not.toBeInTheDocument();
+    });
+
+    it("shows a single baseline entry as such, with no delta", async () => {
+      mockApis({
+        history: [
+          {
+            scanned_at: "2026-01-01T00:00:00Z",
+            current_hash: "hash-a",
+            state: "up_to_date",
+            enabled: true,
+            finding_counts: { phpstan_error: 3 },
+          },
+        ],
+      });
+      renderWithQueryClient(<ModuleDetailClient id="1" />);
+      await waitFor(() => expect(screen.getByText("History")).toBeInTheDocument());
+      expect(screen.getByText("First recorded scan — baseline.")).toBeInTheDocument();
+    });
+
+    it("shows hash/state/enabled changes and per-check-type deltas between consecutive entries", async () => {
+      mockApis({
+        history: [
+          {
+            scanned_at: "2026-02-01T00:00:00Z",
+            current_hash: "hash-b",
+            state: "failed",
+            enabled: false,
+            finding_counts: { phpstan_error: 5, security_advisory: 1 },
+          },
+          {
+            scanned_at: "2026-01-01T00:00:00Z",
+            current_hash: "hash-a",
+            state: "up_to_date",
+            enabled: true,
+            finding_counts: { phpstan_error: 2 },
+          },
+        ],
+      });
+      renderWithQueryClient(<ModuleDetailClient id="1" />);
+      await waitFor(() => expect(screen.getByText("History")).toBeInTheDocument());
+
+      expect(screen.getByText("Code changed (new hash).")).toBeInTheDocument();
+      expect(screen.getByText("State changed to “failed”.")).toBeInTheDocument();
+      expect(screen.getByText("Enabled status changed to false.")).toBeInTheDocument();
+      expect(screen.getByText(/▲ phpstan_error \+3/)).toBeInTheDocument();
+      expect(screen.getByText(/▲ security_advisory \+1/)).toBeInTheDocument();
+    });
+
+    it("shows a resolved finding as a decreasing delta and reports no change when nothing differs", async () => {
+      mockApis({
+        history: [
+          {
+            scanned_at: "2026-02-01T00:00:00Z",
+            current_hash: "hash-a",
+            state: "up_to_date",
+            enabled: true,
+            finding_counts: { phpstan_error: 1 },
+          },
+          {
+            scanned_at: "2026-01-01T00:00:00Z",
+            current_hash: "hash-a",
+            state: "up_to_date",
+            enabled: true,
+            finding_counts: { phpstan_error: 4 },
+          },
+        ],
+      });
+      renderWithQueryClient(<ModuleDetailClient id="1" />);
+      await waitFor(() => expect(screen.getByText("History")).toBeInTheDocument());
+
+      expect(screen.getByText(/▼ phpstan_error -3/)).toBeInTheDocument();
+    });
+
+    it("truncates to the preview count and says so when there are more entries", async () => {
+      const history = Array.from({ length: 25 }, (_, i) => ({
+        scanned_at: `2026-01-${String(i + 1).padStart(2, "0")}T00:00:00Z`,
+        current_hash: `hash-${i}`,
+        state: "up_to_date",
+        enabled: true,
+        finding_counts: {},
+      }));
+      mockApis({ history });
+      renderWithQueryClient(<ModuleDetailClient id="1" />);
+      await waitFor(() => expect(screen.getByText(/most recent 20 of 25/)).toBeInTheDocument());
     });
   });
 });

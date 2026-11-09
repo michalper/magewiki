@@ -63,6 +63,7 @@ from app.scanner.events_xml import parse_events_xml
 from app.scanner.graphql_conflicts import GraphQlFieldRow, detect_graphql_field_conflicts
 from app.scanner.graphql_schema import parse_graphql_schema
 from app.scanner.hashing import aggregate_hash, compute_module_file_hashes, diff_file_hashes
+from app.scanner.history import write_history_snapshots
 from app.scanner.installed_versions import parse_installed_versions
 from app.scanner.license_check import check_license_risk
 from app.scanner.magento_upgrade import check_magento_upgrade_readiness
@@ -501,6 +502,11 @@ async def _run_scan(root: Path, session: AsyncSession) -> AsyncIterator[dict]:
     # Same reasoning again: needs every scanned module's graphql_fields
     # already committed, recomputes across the whole repo_root.
     await _detect_and_persist_graphql_field_conflicts(session, root)
+
+    # Phase 16: module history. Runs last, after every conflict check above,
+    # since a module's finding_counts aren't complete until cross-module
+    # conflicts involving it have been detected and persisted.
+    await write_history_snapshots(session, root)
 
     result.tasks_enqueued = tasks_enqueued
     yield {"event": "done", "result": result}
