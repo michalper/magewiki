@@ -17,11 +17,29 @@ test("scanning the configured fixture through the UI shows real progress and a r
   // scanned" column's sortable header button too.
   await page.getByRole("button", { name: "Scan", exact: true }).click();
 
+  // The real, live-streamed scan log panel -- not just the final result
+  // text. "Found 1 modules, scanning..." is the literal line startScan()
+  // pushes on the SSE "discovered" event (app/modules/page.tsx).
+  await expect(page.getByText(/Found \d+ modules, scanning\.\.\./)).toBeVisible();
+
   // The real streamed scan result text -- global-setup.ts already scanned
   // this same fixture once, so this is a real no-op-ish rescan (hash-skip
   // means it's fast), but the SSE progress/result UI is exercised exactly
   // the same either way.
   await expect(page.getByText(/Found \d+ modules? \(\d+ created, \d+ updated\)/)).toBeVisible({ timeout: 30_000 });
+});
+
+test("scanning a path outside the configured scan roots shows the real error", async ({ page }) => {
+  await page.goto("/modules");
+  await page.getByLabel("Path to scan").fill("/this/path/does/not/exist");
+  await page.getByRole("button", { name: "Scan", exact: true }).click();
+
+  // /scan/stream rejects an invalid path with a 400 *before* the SSE stream
+  // ever starts (_validate_scan_path, app/api/routes/modules.py) -- streamSse
+  // (lib/sse.ts) throws a generic "API responded with <status>" for a
+  // non-ok response rather than surfacing the backend's real detail text,
+  // which is the actual, current behavior this asserts on.
+  await expect(page.getByText("API responded with 400")).toBeVisible();
 });
 
 test("filters narrow the module list and clear back to the full count", async ({ page }) => {

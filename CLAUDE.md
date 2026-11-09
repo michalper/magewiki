@@ -1739,6 +1739,45 @@ doesn't override what containers actually read; needed an override compose
 file pointing `env_file` at the isolated `.env` too) before trusting any of
 this enough to push.
 
+**Four more real e2e gaps closed, after an honest self-audit (recorded
+2026-11-09):** asked directly whether e2e coverage above was actually
+complete; it wasn't — the first pass covered the happy path per page, not
+error states. Added, each verified live in a real browser before writing the
+assertion: (1) scanning an out-of-scan-roots path shows the real UI text
+("API responded with 400") -- `_validate_scan_path` rejects it with a 400
+*before* the SSE stream ever starts, and `streamSse` (`lib/sse.ts`) throws a
+generic "API responded with `<status>`" for a non-ok response rather than
+surfacing the backend's real `detail` text; this asserts on the actual,
+current behavior, not the more informative message a reader of the backend
+code alone would assume is shown. (2) the scan log panel shows a real,
+specific line ("Found 1 modules, scanning..."), not just the final result
+text, extending the existing real-scan test. (3) a nonexistent module id
+(`/modules/999999999`) shows "Failed to load module." instead of hanging --
+this surfaced a real, if minor, latency gap while verifying live: the
+QueryClient has no custom retry config, so TanStack Query's own default (3
+retries, exponential backoff: 1s/2s/4s) genuinely delays the error state by
+~8s even though the 404 can never succeed on retry; the test's timeout was
+raised to 15s to match the real, confirmed delay rather than treating it as
+flake. (4) a Stats KPI tile's info-tooltip reveals its real description text
+on hover (Base UI tooltip, confirmed the 300ms open delay doesn't need any
+special handling — Playwright's own `expect().toBeVisible()` retry already
+covers it).
+
+Explicitly deferred, not forgotten: the Settings re-embed-confirmation flow
+(needs a module in `up_to_date` state, which requires a real LLM key this
+CI job deliberately never has); multi-store-scan/cross-module-conflict/
+license-risk UI states (the single-module demo-store fixture structurally
+can't produce them without either a real API key or enriching a long-stable,
+widely-depended-on fixture — not done without a clearer need); dependency
+graph node-to-node navigation (same fixture limitation -- the fixture's only
+non-center graph node, Magento_Sales, is an external/unscanned reference,
+not a real second module to navigate to); and the mobile card view (CSS
+`md:hidden` only hides `ModuleCard` visually at desktop viewport -- it still
+mounts and renders in the DOM regardless of viewport, so its logic is
+already indirectly exercised by the existing desktop-viewport tests; a
+dedicated narrow-viewport run would mainly confirm visual layout, lower
+marginal value for the effort than the four gaps actually closed).
+
 ## Working method
 
 - Start each phase in plan mode; propose a plan and wait for approval before writing code.

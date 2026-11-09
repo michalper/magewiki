@@ -23,3 +23,12 @@ test("KPI tiles show real, non-zero counts from the seeded scan", async ({ page 
   await expect(page.getByText("Top modules by quality findings")).toBeVisible();
   await expect(page.getByText("Vendor_Module").first()).toBeVisible();
 });
+
+test("a KPI tile's info tooltip reveals its real description on hover", async ({ page }) => {
+  await page.goto("/stats");
+
+  await page.getByRole("button", { name: 'What is "Hardcoded secrets"?' }).hover();
+  await expect(
+    page.getByText(/API keys, passwords, or tokens written directly in the code/),
+  ).toBeVisible();
+});

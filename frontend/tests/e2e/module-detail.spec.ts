@@ -30,6 +30,17 @@ test("the module detail page shows real facts, a pending README, and real qualit
   await expect(page.getByText("composer.json").first()).toBeVisible();
 });
 
+test("a nonexistent module id shows a real error instead of hanging or crashing", async ({ page }) => {
+  // GET /modules/999999999 genuinely 404s -- moduleQuery.isError (not a
+  // transient loading state) is the one deterministic outcome here. The
+  // QueryClient has no custom retry config, so TanStack Query's own default
+  // (3 retries, exponential backoff: 1s/2s/4s) genuinely delays this past
+  // Playwright's default 5s assertion timeout -- confirmed live (~8s) before
+  // raising it here, not guessed.
+  await page.goto("/modules/999999999");
+  await expect(page.getByText("Failed to load module.")).toBeVisible({ timeout: 15_000 });
+});
+
 test("the dependency graph page renders real nodes for the module", async ({ page }) => {
   await page.goto("/modules");
   await page.getByRole("link", { name: "Vendor_Module" }).first().click();
