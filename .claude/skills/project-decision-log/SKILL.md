@@ -1732,3 +1732,32 @@ exact-count assertion. Not a real bug in the app (repo_root is correctly
 treated as a case-sensitive string key throughout); fixed by always tearing
 the isolated stack down with `-v` for a genuinely clean slate rather than
 reusing a volume across rebuilds.
+
+**Two more real SonarCloud findings fixed (recorded 2026-11-09):** checked
+the project's SonarCloud issues page again after the earlier triage passes
+left it at 5 accepted false positives — two new, real, open findings had
+appeared since then (`python:S8414` BLOCKER on `backend/app/main.py:19`,
+`python:S5958` MAJOR on `backend/tests/evaluation/test_faithfulness.py:164`),
+both verified against the real code before fixing, not assumed from the
+rule description alone. (1) `create_app()` added `CORSMiddleware` before
+`RequestIdMiddleware` — Starlette makes the *last*-added middleware the
+*outermost* layer, so `RequestIdMiddleware` was wrapping `CORSMiddleware`,
+not the other way around. If `RequestIdMiddleware` (or anything added after
+it) ever raised before reaching `CORSMiddleware`, the response would reach
+the browser with no CORS headers at all — the browser reports an opaque CORS
+error instead of the real failure, which would make a real production
+problem much harder to diagnose from the frontend. Fixed by swapping the
+order so `CORSMiddleware` is added last. (2) A `pytest.raises(Exception)` in
+`test_faithfulness.py` already had a `# noqa: B017` explaining the broad
+catch was deliberate ("any pydantic ValidationError shape is fine here") —
+but checked what `judge_faithfulness` actually raises
+(`FaithfulnessVerdict.model_validate(data)`, a Pydantic model) and narrowed
+the assertion to the real `pydantic.ValidationError` instead, which closes
+the Sonar finding by actually testing the real failure mode rather than by
+suppressing the rule. Verified both against the real stack, not just unit
+tests: rebuilt `api`/`worker` (and the separately-built `migrate` image,
+which had again gone stale per the "Advisory-lock"/observability notes
+above — same recurring gotcha), confirmed `/health` reports `schema: "ok"`
+at the new revision, and confirmed a real `curl` with an `Origin` header
+still gets back a correct `access-control-allow-origin` response header
+after the middleware reorder.
