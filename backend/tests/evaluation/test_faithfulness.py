@@ -161,5 +161,5 @@ async def test_judge_faithfulness_raises_on_a_schema_invalid_response(monkeypatc
 
     monkeypatch.setattr("app.evaluation.faithfulness.litellm.acompletion", fake_acompletion)
 
-    with pytest.raises(Exception):  # noqa: B017,PT011 - any pydantic ValidationError shape is fine here
+    with pytest.raises(Exception):  # noqa: B017 - any pydantic ValidationError shape is fine here
         await judge_faithfulness(None, "q", "a", [], model="m", api_key="k")
