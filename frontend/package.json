@@ -9,8 +9,21 @@
     "lint": "eslint",
     "test:unit": "vitest run",
     "test:coverage": "vitest run --coverage",
-    "gen:types": "openapi-typescript http://localhost:8000/openapi.json -o lib/api-types.ts"
+    "gen:types": "openapi-typescript http://localhost:8000/openapi.json -o lib/api-types.ts",
+    "size": "size-limit"
   },
+  "size-limit": [
+    {
+      "name": "JS chunks (.next/static/chunks)",
+      "path": ".next/static/chunks/**/*.js",
+      "limit": "550 KB"
+    },
+    {
+      "name": "CSS (.next/static/chunks)",
+      "path": ".next/static/chunks/**/*.css",
+      "limit": "40 KB"
+    }
+  ],
   "dependencies": {
     "@base-ui/react": "^1.9.0",
     "@tanstack/react-query": "^5.107.1",
@@ -29,6 +42,7 @@
   },
   "devDependencies": {
     "@playwright/test": "^1.65.0",
+    "@size-limit/file": "^14.3.0",
     "@tailwindcss/turbopack": "^4.3.5",
     "@testing-library/jest-dom": "^7.0.1",
     "@testing-library/react": "^16.3.3",
@@ -42,6 +56,7 @@
     "eslint-config-next": "16.4.5",
     "jsdom": "^31.0.0",
     "openapi-typescript": "^7.13.0",
+    "size-limit": "^14.3.0",
     "tailwindcss": "^4.3.5",
     "typescript": "^5",
     "vitest": "^5.1.0"
