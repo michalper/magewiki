@@ -1761,3 +1761,50 @@ above — same recurring gotcha), confirmed `/health` reports `schema: "ok"`
 at the new revision, and confirmed a real `curl` with an `Origin` header
 still gets back a correct `access-control-allow-origin` response header
 after the middleware reorder.
+
+**Phase 15: cross-module conflict detection, round 2 (recorded 2026-11-09):**
+closes a research pass on what was genuinely still missing (everything
+through Phase 14 was done; Phase 13 is blocked on cloud budget, not a
+feature gap). Three more checks, same fleet-wide Phase-C pattern and
+`module_quality_findings` table as the existing plugin/composer/webapi/
+db_schema/circular-dependency family: `preference_conflict` (two modules
+declaring a different `di.xml` `<preference>` for the same interface — the
+losing module's implementation is silently never used, not a documented
+override mechanism the way `<plugin>` sortOrder is), `cron_job_conflict`
+(two modules declaring a `crontab.xml` job with the same job code but a
+different instance/method — Magento merges by job code, so the loser's job
+silently never runs), and `graphql_field_conflict` (two modules declaring
+the same field on the same GraphQL type with different resolvers). All
+three reuse data already parsed since Phase 1 (`di_preferences`) and Phase
+14 (`cron_jobs`, `graphql_fields`) — new detection logic only, no new
+scanning risk. New check_types via migration `0033`.
+
+While adding the migration, found and fixed a real but harmless drift:
+`app/models.py`'s own `ModuleQualityFinding.CheckConstraint` text hadn't
+been updated since roughly migration `0012` (every check_type added by
+migrations `0022` through `0030` — `plugin_conflict` through
+`phpunit_failure` — was missing from it), even though every one of those
+migrations correctly updated the real constraint via `op.create_check_constraint`.
+Harmless in practice (confirmed: `tests/conftest.py` always runs a real
+`alembic upgrade head` against a fresh test DB, never
+`Base.metadata.create_all()`, so the real schema never came from this
+text), but misleading to a future reader — synced it to the full, real
+cumulative list as part of this migration.
+
+Verification note: a long run of this session's own pytest invocations
+repeatedly overlapped (each one 5-17 minutes against the same shared test
+Postgres/Redis/php-analyzer, started before confirming the previous one had
+actually finished) and produced a long tail of confusing, cascading
+failures — `ScanAlreadyInProgressError`, `StaleDataError: 0 rows matched`,
+`PendingRollbackError`/"connection is closed", and `php-analyzer` 400s —
+all classic concurrent-test-run symptoms (advisory lock contention, two
+processes racing the same fixture rows, the single-threaded `php -S`
+sidecar saturated). None of these ever landed in this phase's own new
+files across any run; the one genuinely clean, fully isolated run (checked
+via `ps aux` before starting, confirming zero other pytest processes) had
+all 23 of this phase's own tests (6 unit + 6 orchestrator... plus the
+no-conflict negative cases) pass cleanly, and `ruff`/`mypy` were clean
+throughout. Lesson for next time: confirm a previous background pytest
+invocation's own completion marker (not just a point-in-time `ps aux`) before
+starting another, and prefer `tests/scanner` (or narrower) over the full
+~10-17 minute suite when re-verifying a scoped change.
