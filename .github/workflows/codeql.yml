@@ -1,0 +1,45 @@
+name: CodeQL
+
+# Advanced setup (a committed workflow), not GitHub's managed "default
+# setup" -- default setup was configured for 5 languages (actions,
+# javascript, javascript-typescript, python, typescript) but real runs only
+# ever produced one check ("Analyze (javascript-typescript)"), with the
+# missing languages never showing up as jobs at all and the overall run
+# still reporting failure. No committed config meant no visibility into
+# why, and no way to control it beyond the repo Settings UI. Advanced
+# setup makes the language matrix and triggers explicit and version-
+# controlled, same reasoning as every other CI job in this repo.
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  schedule:
+    - cron: "0 4 * * 1" # weekly, matching the previous default-setup cadence
+
+jobs:
+  analyze:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      security-events: write
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - language: python
+            build-mode: none
+          - language: javascript-typescript
+            build-mode: none
+          - language: actions
+            build-mode: none
+    steps:
+      - uses: actions/checkout@v7
+      - uses: github/codeql-action/init@v4
+        with:
+          languages: ${{ matrix.language }}
+          build-mode: ${{ matrix.build-mode }}
+      - uses: github/codeql-action/analyze@v4
+        with:
+          category: "/language:${{ matrix.language }}"
