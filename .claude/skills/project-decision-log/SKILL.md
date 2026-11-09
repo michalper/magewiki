@@ -1922,3 +1922,21 @@ is not the same as the decision being *applied* somewhere external to this
 repo (GitHub's alert state, in this case) -- worth an explicit verification
 step, not just trusting a past recorded rationale, the next time this
 tab is checked.
+
+**JS/CSS bundle-size CI gate (recorded 2026-11-09):** added `size-limit`
+(`@size-limit/file`), run as `npm run size` right after `npm run build` in
+the frontend CI job, closing a real gap -- nothing before this caught an
+accidentally-added large dependency before it shipped. Budgets set from
+the real measured production build, not guessed: 550 kB for
+`.next/static/chunks/**/*.js` (381.64 kB brotlied today, ~44% headroom)
+and 40 kB for the CSS chunks (9.09 kB today). Next.js 16/Turbopack no
+longer prints a First Load JS table to the build console the way older
+webpack-based builds did, confirmed empirically (`npm run build`'s own
+output has no size table at all now) -- `size-limit` measures the real
+files on disk instead, which also means it doesn't depend on that console
+format staying stable. Also found, while checking: Turbopack's build
+output puts CSS files directly in `.next/static/chunks/` (a `.css`
+extension alongside the `.js` chunks), not in a separate
+`.next/static/css/` directory the way some other setups do -- confirmed
+directly (`size-limit` failed outright on a first guess at the CSS path
+with "can't find files") before landing on the real glob.
