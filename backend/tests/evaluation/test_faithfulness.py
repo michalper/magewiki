@@ -4,6 +4,7 @@ from datetime import UTC, datetime
 from types import SimpleNamespace
 
 import pytest
+from pydantic import ValidationError
 from sqlalchemy import delete
 
 from app.evaluation.faithfulness import (
@@ -161,5 +162,5 @@ async def test_judge_faithfulness_raises_on_a_schema_invalid_response(monkeypatc
 
     monkeypatch.setattr("app.evaluation.faithfulness.litellm.acompletion", fake_acompletion)
 
-    with pytest.raises(Exception):  # noqa: B017 - any pydantic ValidationError shape is fine here
+    with pytest.raises(ValidationError):
         await judge_faithfulness(None, "q", "a", [], model="m", api_key="k")

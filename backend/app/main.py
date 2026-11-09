@@ -16,13 +16,13 @@ def create_app() -> FastAPI:
     configure_logging()
     app = FastAPI(title="MageWiki-AI API")
 
+    app.add_middleware(RequestIdMiddleware)
     app.add_middleware(
         CORSMiddleware,
         allow_origins=settings.cors_origin_list,
         allow_methods=["*"],
         allow_headers=["*"],
     )
-    app.add_middleware(RequestIdMiddleware)
 
     app.include_router(health_router)
     app.include_router(metrics_router)
