@@ -1969,3 +1969,99 @@ Verified with 3 new tests simulating a real deadlock via a monkeypatched
 `_persist_module` (retries once and succeeds; exhausts retries and
 surfaces as a real failure; a non-deadlock error is never retried), plus
 the full `tests/scanner` suite (315 tests) passing in one clean run.
+
+**Modules-list pagination and debounced search; dependency graph switched to a
+multi-hop force-directed layout (recorded 2026-11-10):** both driven by real
+usage feedback from a colleague (Marcin) reviewing the live app, relayed via
+chat. Three separate findings, in the order they came in:
+
+1. **Pagination + search debounce** (`frontend/app/modules/page.tsx`): "hard
+   to sort/browse" (the full filtered list rendered as one long table) and
+   the search box visibly lagging on the real ~760-module fleet. Added
+   client-side pagination (25/50/100/200 per page, selectable) over the
+   already-fetched `filteredAndSorted` array — the architecture stays "fetch
+   once, filter/sort/paginate in memory," not a new paginated `/modules` API,
+   since the whole list was already being fetched and held client-side
+   before this. CSV export still exports the full filtered set, not just the
+   visible page. The search lag was never literally "searching the DOM" (the
+   colleague's guess) — it was an un-debounced re-filter + full-table
+   re-render on every keystroke; a 250ms debounce (`frontend/lib/use-
+   debounced-value.ts`) fixed it. Page resets to 1 directly in each
+   filter/search/page-size change handler (not a `useEffect`) — this
+   session's eslint-plugin-react-hooks flags both `setState` inside a
+   `useEffect` and the "adjust a ref during render" pattern the React docs
+   themselves recommend for this exact "reset derived state when an input
+   changes" case, so neither of the two textbook approaches is available
+   here; a plain `currentPage = Math.min(page, pageCount)` clamp is the
+   backstop for the cases with no handler to hook into (the URL-driven
+   `repo`/`finding` query-param filters, or the list simply shrinking on
+   refetch).
+
+2. **"Is composer.json actually required for app_code modules?"** — a
+   question, not a bug report, but investigated end-to-end rather than
+   answered from memory since nobody had verified it this session: a
+   screenshot showed a module with real `composer_completeness` warnings
+   (missing `require.php`, missing `require-dev phpunit/phpunit`), prompting
+   "would a *missing* composer.json show some error?" Traced the whole path,
+   not just the one obvious function: `parse_composer_json()`
+   (`app/scanner/composer_json.py`) returns `None` for a missing file via an
+   early `is_file()` check (never raises, never hits the per-module "error"
+   status path in `orchestrator.py`); every downstream consumer in
+   `_persist_module` already guards with `pm.composer.X if pm.composer else
+   default`; `composer_completeness_findings()` returns `[]` for `None`;
+   `check_license_risk`/`check_magento_upgrade_readiness`/
+   `check_security_advisories`/`check_abandoned_outdated` all degrade to
+   empty inputs (`license=None`, `requirements={}`) and return `[]`. A
+   module's `state` only ever becomes `"failed"` from the async AI-analysis
+   worker job raising (`app/tasks/jobs.py`), never from scan-phase composer
+   parsing. **Conclusion: a wholly missing composer.json already produces
+   zero findings, zero exceptions, zero failed state — confirmed correct,
+   no code change needed.** Recorded here specifically so a future session
+   doesn't re-walk this same trace from scratch.
+
+3. **Dependency graph: multi-hop + force-directed layout**
+   (`backend/app/api/routes/modules.py`'s `get_module_dependency_graph`,
+   `frontend/app/modules/[id]/graph/GraphClient.tsx`): two more pieces of
+   feedback on the same page, within the same conversation — "the full name
+   only shows on hover, it should always be visible" (single-line
+   `truncate` on a fixed-width box), then "I'd also want to see deeper
+   dependencies, a bigger graph." Fixing the label alone (wrap instead of
+   truncate) was tried first and made a *pre-existing* bug worse: screenshot
+   comparison on a real module (`Magento_Catalog`, 16 direct neighbors)
+   showed the old fixed-radius one-ring circle layout already overlapped
+   nodes near the top/bottom of the ring at that neighbor count — taller
+   wrapped boxes turned a readable edge-touch into near-total overlap.
+   Decided with the user (explicit choice between "force-directed" and
+   "keep the ring, just fix spacing") to redo the layout with **d3-force**
+   (new frontend dependency, `d3-force@3.0.1` — the force-simulation math
+   only, not all of d3) rather than patch the ring math, since the ring
+   approach fundamentally can't extend to multiple hops either way.
+   Backend: `get_module_dependency_graph` gained a `depth` query param
+   (1–3, default 1 — unchanged default behavior, existing tests pass
+   unmodified) and now BFS-expands hop by hop via a `visited_module_ids`
+   set (verified against a real two-module A→B→A cycle test — a naive BFS
+   without this would expand forever), capped at `_MAX_GRAPH_NODES = 120`
+   total nodes with a new `truncated: bool` response field (a
+   highly-connected core module could otherwise balloon depth=3 into
+   thousands of nodes and as many query round trips — each hop re-runs the
+   same per-module relation queries, not batched across the whole frontier,
+   accepted as fine at this project's scale rather than a bigger rewrite).
+   Frontend: nodes collide-avoid by an *estimated* box size from label
+   length (not a real DOM measurement pass — deemed not worth the
+   complexity), the center module is pinned (`fx`/`fy`) at the simulation
+   origin, and the simulation runs a fixed 300 ticks synchronously (no
+   live animation, no `Math.random`-seeded placement) so layout stays
+   deterministic for a given graph. Tuning `forceManyBody`'s
+   `distanceMax` and `forceX`/`forceY` strength mattered as much as any of
+   that: an untuned simulation spread even a 16-node star graph across a
+   ~4000px canvas with the center node scrolled out of the default view —
+   verified visually via real Playwright screenshots against the live dev
+   stack (not just unit tests) both before and after tuning, plus a
+   scroll-to-center `useEffect` (a plain DOM `scrollLeft`/`scrollTop`
+   mutation, not `setState`, so it doesn't hit the same lint restriction as
+   above) so the one node the page is about is always in view on load. The
+   old 16-node-per-ring display cap and "N more (too many to fit)" overflow
+   list are gone entirely — the backend's `_MAX_GRAPH_NODES` cap plus
+   `truncated` banner replaced them, since "list the rest below" doesn't
+   make sense once some of those nodes are two or three hops away rather
+   than direct neighbors.
