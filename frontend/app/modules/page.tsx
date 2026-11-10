@@ -451,6 +451,10 @@ export default function ModulesPage() {
   // check types, such as "Magento upgrade blockers") — module matches if
   // its finding_counts has a non-zero count for any of them.
   const findingFilter = useQueryParam("finding");
+  // "true" to show only modules with a real AI-generated doc -- e.g. a demo
+  // link that wants to lead with fully-analyzed examples rather than
+  // whatever a fleet's current analysis coverage happens to be.
+  const hasDocFilter = useQueryParam("has_doc");
   const queryClient = useQueryClient();
 
   const modulesQuery = useQuery({ queryKey: ["modules"], queryFn: fetchModules });
@@ -553,6 +557,7 @@ export default function ModulesPage() {
     const list = (modulesQuery.data ?? []).filter((m) => {
       if (repoFilter && m.repo_root !== repoFilter) return false;
       if (findingFilter && !findingFilter.split(",").some((t) => (m.finding_counts[t] ?? 0) > 0)) return false;
+      if (hasDocFilter === "true" && !m.has_module_doc) return false;
       if (sourceFilter !== "all" && m.source_type !== sourceFilter) return false;
       if (stateFilter !== "all" && m.state !== stateFilter) return false;
       if (enabledFilter === "true" && m.enabled !== true) return false;
@@ -578,6 +583,7 @@ export default function ModulesPage() {
     modulesQuery.data,
     repoFilter,
     findingFilter,
+    hasDocFilter,
     debouncedSearch,
     sourceFilter,
     stateFilter,
@@ -653,6 +659,15 @@ export default function ModulesPage() {
           <span className="text-muted-foreground">Filtering by finding:</span>
           <span className="font-mono">{findingFilter}</span>
           <button type="button" onClick={() => clearQueryParam("finding")} className="text-primary hover:underline">
+            Clear
+          </button>
+        </div>
+      )}
+
+      {hasDocFilter === "true" && (
+        <div className="flex items-center gap-2 text-sm">
+          <span className="text-muted-foreground">Showing only modules with an AI-generated doc.</span>
+          <button type="button" onClick={() => clearQueryParam("has_doc")} className="text-primary hover:underline">
             Clear
           </button>
         </div>

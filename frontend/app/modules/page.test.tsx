@@ -219,6 +219,28 @@ describe("ModulesPage", () => {
 
       await waitFor(() => expect(screen.queryByText("Filtering by finding:")).not.toBeInTheDocument());
     });
+
+    it("filters to modules with an AI-generated doc via ?has_doc=true, with a Clear button", async () => {
+      setSearch("?has_doc=true");
+      mockApi({
+        modules: [
+          mod({ id: 1, has_module_doc: true }),
+          mod({ id: 2, has_module_doc: false }),
+        ],
+      });
+      const user = userEvent.setup();
+      renderWithQueryClient(<ModulesPage />);
+
+      await waitFor(() => expect(screen.getByText("Showing only modules with an AI-generated doc.")).toBeInTheDocument());
+      await waitFor(() => expect(screen.getByText("1 of 2 modules")).toBeInTheDocument());
+
+      await user.click(screen.getByRole("button", { name: "Clear" }));
+
+      await waitFor(() =>
+        expect(screen.queryByText("Showing only modules with an AI-generated doc.")).not.toBeInTheDocument(),
+      );
+      await waitFor(() => expect(screen.getByText("2 of 2 modules")).toBeInTheDocument());
+    });
   });
 
   describe("sorting", () => {
