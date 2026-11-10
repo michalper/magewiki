@@ -10,6 +10,13 @@ COPY package.json package-lock.json* ./
 RUN npm ci
 
 COPY . .
+# public/ has no tracked files (git never commits an empty directory), so
+# a fresh clone -- like CI's checkout, unlike a local working tree that
+# still has the directory sitting on disk from scaffolding -- has no
+# public/ at all. Without this, the runner stage's COPY below fails with
+# "/app/public": not found (confirmed directly: this broke the very first
+# CI run of this Dockerfile).
+RUN mkdir -p public
 
 # NEXT_PUBLIC_* vars are inlined into the client JS at build time, not read
 # at runtime -- this has to be a build arg, not just a Fly runtime secret/
