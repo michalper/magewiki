@@ -56,9 +56,17 @@ export default function ReposPage() {
               href={`/modules?repo=${encodeURIComponent(repo.repo_root)}`}
               className="flex flex-col gap-2 rounded-2xl bg-card p-5 shadow-sm transition-colors hover:bg-accent/40"
             >
-              <div className="flex items-center justify-between">
-                <span className="font-mono text-sm">{repo.repo_root}</span>
-                <span className="text-sm text-muted-foreground">
+              <div className="flex items-center justify-between gap-2">
+                {/* min-w-0: a flex child's default min-width is its content's
+                    natural width, so without this a long repo path just
+                    pushed the module-count span off the right edge of the
+                    screen instead of truncating -- confirmed on a real
+                    380px phone width. shrink-0 on the count keeps it from
+                    being squeezed in turn once the path can truncate. */}
+                <span className="min-w-0 truncate font-mono text-sm" title={repo.repo_root}>
+                  {repo.repo_root}
+                </span>
+                <span className="shrink-0 whitespace-nowrap text-sm text-muted-foreground">
                   {repo.module_count} module{repo.module_count === 1 ? "" : "s"}
                 </span>
               </div>

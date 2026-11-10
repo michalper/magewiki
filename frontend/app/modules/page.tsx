@@ -173,7 +173,13 @@ function ModuleCard({ module }: { module: ModuleSummary }) {
       className="flex flex-col gap-2 rounded-2xl bg-card p-4 shadow-sm hover:bg-accent/40"
     >
       <div className="flex items-start justify-between gap-2">
-        <span className="font-medium">{module.name}</span>
+        {/* min-w-0: a flex child's default min-width is its content's natural
+            width, so without this the long module name just pushed the
+            StateBadge off the right edge of the screen instead of truncating
+            -- confirmed on a real 380px phone width. */}
+        <span className="min-w-0 truncate font-medium" title={module.name}>
+          {module.name}
+        </span>
         <StateBadge state={module.state} />
       </div>
       <div className="text-xs text-muted-foreground">
