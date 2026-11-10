@@ -2065,3 +2065,93 @@ chat. Three separate findings, in the order they came in:
    `truncated` banner replaced them, since "list the rest below" doesn't
    make sense once some of those nodes are two or three hops away rather
    than direct neighbors.
+
+**Two more real-usage findings on the modules list, plus a broad UI/UX
+audit (recorded 2026-11-10):**
+
+- **Native `<select>` dropdown arrow asymmetric, no gap before the border**
+  (`frontend/app/modules/page.tsx`): the user flagged this directly off a
+  screenshot (the real complaint was specifically "no gap between the arrow
+  and the button's edge," not a general aesthetic opinion). `padding-right`
+  doesn't reliably control a native select's own browser/OS-drawn arrow —
+  confirmed broken even after bumping padding (Chrome on macOS still
+  rendered it flush against the border). Fixed properly instead of
+  re-tuning padding again: `appearance-none` hides the native arrow
+  entirely, replaced by a real `lucide-react` `ChevronDown`, absolutely
+  positioned and vertically centered (`top-1/2 -translate-y-1/2`), wrapped
+  in a small local `FilterSelect` component reused by all four selects on
+  the page (3 filters + the pagination page-size picker).
+- **Module-list `Name` column crushed unreadable on a narrower window**
+  (same file): every real module in this project's own scanned fleet
+  shares a long `Vendor_` prefix (mostly `Magento_`) — `table-fixed`
+  splitting the leftover width four ways (Name, Composer name, Quality,
+  Tags) meant a narrower window crushed every row's name down to the same
+  truncated prefix, telling a user nothing about which module they were
+  looking at (reported directly: "skad user ma wiedziec jaki modul oglada
+  jak na malym monitorze wszystkie wygladaja tak samo"). `Name` now gets
+  its own fixed floor (`w-52`) instead of sharing that split; Composer
+  name/Quality/Tags got `min-w-*` floors of their own. Getting this to
+  actually work needed one more change, not just adding the floors: the
+  `<Table>` itself had to switch from an exact `w-full` to `w-auto
+  min-w-full` (confirmed via inspecting the rendered `class` list that
+  `cn`'s tailwind-merge dedup genuinely drops the conflicting `w-full`
+  rather than leaving both) — with a hard `width:100%`, `table-fixed`
+  still forced every column down toward 0 regardless of any column's own
+  `min-width`, which is what caused the first attempt (floors with no
+  table-width change) to visibly fail: header text overlapping into the
+  neighboring column instead of the table overflowing into the
+  container's already-present `overflow-x-auto` scroll.
+
+Both of the above were found live, by a real user looking at the deployed
+app, not by review — which prompted explicitly asking a subagent to go
+hunt for more of the same class of problem (`AskUserQuestion`-free,
+direct instruction: "puść subagenta niech poszuka problemów z ui/ux").
+The agent screenshotted every page via Playwright at three widths (~900px
+"small monitor" — exactly where both bugs above were found — ~1500px
+desktop, ~380px phone) and reported, prioritized:
+
+- **Mobile `ModuleCard`/repo-card badge clipped off-screen** (`/modules`
+  and `/repos`, ~380px): a `flex justify-between` row (long name/path on
+  the left, a fixed-size badge/count on the right) with no `min-w-0` on
+  the text side — the flex item's default min-width is its own content
+  width, so instead of truncating, the long text just pushed the badge
+  past the right edge of the phone screen entirely. Same fix both places:
+  `min-w-0 truncate` (plus a `title` tooltip) on the text span, `shrink-0`
+  on the sibling that must never give up space.
+- **Stats "Top modules by quality findings" bar chart unreadable on
+  mobile** (`frontend/app/stats/page.tsx`): Recharts' `YAxis` needs a real
+  pixel `width`, not a responsive unit — a `width={210}` label column left
+  almost nothing for the actual bars on a 380px screen (reported as bars
+  squeezed to a ~2px sliver, defeating the whole point of a magnitude
+  comparison). Added `frontend/lib/use-media-query.ts` (a small
+  `useSyncExternalStore` hook, same style as the existing
+  `use-query-param.ts`) to detect `(max-width: 480px)` and switch to a
+  narrower axis width (88px) with a `tickFormatter` that truncates labels
+  to 11 characters. Truncating from the *end* would recreate the exact
+  "every name becomes the same prefix" bug fixed above — these labels are
+  real module names sharing the same `Magento_` prefix — so the formatter
+  keeps the *tail* instead (`…` + last N chars).
+- **Dependency graph: depth 2 and depth 3 can render identically with no
+  explanation** (`frontend/app/modules/[id]/graph/GraphClient.tsx`): once
+  the backend's node cap is hit at or before the shallower depth, a deeper
+  depth looks pixel-identical with no indication why. Now always shows a
+  live `"{n} nodes shown"` count next to the graph (not just when
+  truncated), so the same count appearing at both depths is self-evident
+  instead of silently mysterious, plus a clearer truncation message.
+- **Dependency graph: no affordance that it's pannable** (same file): the
+  force layout routinely produces a canvas wider than its bordered box
+  (depth > 1, or any well-connected hub module) with nothing — no visible
+  scrollbar cue, no hint text — signaling there's more to see. The
+  existing scroll-to-center `useEffect` now also measures
+  `scrollWidth`/`scrollHeight` against the container's own
+  `clientWidth`/`clientHeight` right after centering and sets a
+  `canScroll` flag; true, a "scroll/drag inside the graph to see the
+  rest" hint appears next to the node count.
+- **Flagged but not changed:** a dense depth-2/3 graph on a
+  well-connected hub module becomes a hard-to-trace tangle of crossing
+  edges even with no overlapping labels — likely inherent to force-directed
+  layout at that edge density rather than a clear bug, left as-is.
+
+Everything else the audit checked (module detail page at all three
+widths, chat, settings, search/row-expand on the modules list, the
+dependency graph on mobile) came back clean.
