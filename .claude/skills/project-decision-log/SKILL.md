@@ -2277,3 +2277,65 @@ bypass the router's resolver entirely. Not a MageWiki-AI bug; recorded here
 only so a future session facing "the API is unreachable but curl with a
 forced IP works fine" recognizes the shape immediately instead of
 re-diagnosing it from scratch.
+
+**CI's first real Fly deploy failed: `frontend/public/` has no tracked
+files (recorded 2026-11-10):** the production image build
+(`frontend/Dockerfile.fly`) failed only in CI -- `COPY --from=builder
+/app/public ./public`: `"/app/public": not found`. `public/` sat on disk
+locally (leftover `create-next-app` scaffolding) but held zero tracked
+files, and git never commits an empty directory -- a fresh checkout (CI's
+own, and a local `git clone` reproducing the exact same failure, used to
+verify the fix before pushing it) has no `public/` at all. Every earlier
+manual `fly deploy` from this same session had silently worked only
+because it ran against the author's own full working tree, which still
+had the untracked directory on disk. Fixed with `RUN mkdir -p public` in
+the builder stage, guaranteeing a source directory exists either way --
+not by committing a placeholder file, which would've been an odd change
+for an unrelated reason.
+
+**Phase 18: quality-alert webhook (recorded 2026-11-10):** real feedback
+relayed from a colleague (Mateusz Rynk) reviewing the demo -- their own
+Jenkins pipeline already blocks on CVE scans, and the thing they'd most
+want is continuous monitoring that notifies as soon as something
+compromising appears, instead of requiring someone to check the UI.
+
+- **Why `history.py`, not the per-module persist loop**: `_persist_module`
+  in `orchestrator.py` deletes a module's existing `ModuleQualityFinding`
+  rows *before* inserting the fresh ones, so the "previous" state is
+  already gone from the DB by the time the new findings exist in memory --
+  comparing there would need an extra query per module. Verified directly
+  (not assumed) before building anything: `write_history_snapshots()`
+  already holds both previous and current `finding_counts` side by side,
+  once per module, at a single end-of-scan point, with zero extra query.
+  `write_history_snapshots()` now returns the alert-worthy increases it
+  finds along the way instead of nothing, and `orchestrator.py` fires
+  `send_quality_alert()` right after its existing call -- a few lines, no
+  second pass over the data.
+- **One webhook call per scan, not per module**: a repo with several new
+  issues at once reads as one summary notification, not a burst -- avoids
+  spamming whatever `ALERT_WEBHOOK_URL` points at, and is the controlled
+  signal the feedback actually asked for, not noise.
+- **Plain webhook, not a Slack SDK or SMTP**: the user asked directly
+  whether Slack or Google Chat integration was feasible -- both already
+  work with zero adapter code, since the payload's top-level `text` field
+  is exactly what a bare Slack Incoming Webhook URL or a Google Chat
+  webhook both render directly. No new dependency, no provider-specific
+  code; the operator points `ALERT_WEBHOOK_URL` at whatever they use.
+- `ALERT_WEBHOOK_URL`/`ALERT_CHECK_TYPES` follow the exact "empty disables
+  it" convention already established by `WEBHOOK_HMAC_SECRET` and
+  `LICENSE_RISK_PREFIXES` in `app/config.py`. Default `ALERT_CHECK_TYPES`
+  (`hardcoded_secret,security_advisory`) is deliberately narrow -- secrets
+  and real CVEs, not routine PHPStan/PHPMD churn, which would make this
+  noisy enough to ignore.
+- Fails open on any webhook HTTP error (`httpx.HTTPError` caught and
+  logged), the same convention as every other outgoing call in this
+  codebase (`app/scanner/magento_github.py`'s release-fetching calls) -- a
+  flaky notification endpoint must never fail the scan itself.
+- Verified end-to-end through the real orchestrator path, not just the
+  pure functions in isolation: a test drives a full `scan_repository_events`
+  run against a fixture module containing a real AWS-key-shaped literal,
+  with `send_quality_alert` monkeypatched to a spy, confirming it's
+  actually invoked with the right module/check_type -- and a second test
+  confirms a scan with nothing alertable invokes it with an empty list
+  (always called, no-ops internally) rather than skipping the call
+  entirely.
