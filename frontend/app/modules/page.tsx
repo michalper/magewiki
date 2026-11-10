@@ -16,6 +16,7 @@ import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/comp
 import { TagBadge } from "@/components/tag-badge";
 import { FindingMessage } from "@/components/finding-message";
 import { apiFetch, apiUrl } from "@/lib/api";
+import { useDebouncedValue } from "@/lib/use-debounced-value";
 import { useDocumentTitle } from "@/lib/use-document-title";
 import { notifyQueryParamChange, useQueryParam } from "@/lib/use-query-param";
 import {
@@ -118,6 +119,13 @@ function downloadModulesCsv(modules: ModuleSummary[]) {
 
 const TABLE_COLUMN_COUNT = 14;
 const PREVIEW_FINDING_COUNT = 5;
+const PAGE_SIZE_OPTIONS = [25, 50, 100, 200];
+const DEFAULT_PAGE_SIZE = 25;
+// How long the search box waits after the last keystroke before it re-filters
+// the (potentially large, e.g. a 760-module fleet) list — re-filtering and
+// re-rendering the whole table on every single keystroke is what made typing
+// into this box visibly laggy before.
+const SEARCH_DEBOUNCE_MS = 250;
 
 // Mobile equivalent of a table row — a horizontally-scrolling 14-column table
 // is unusable on a phone, so narrow screens get a stacked card instead (see
@@ -320,6 +328,68 @@ function SortableHead({
   );
 }
 
+function Pagination({
+  page,
+  pageCount,
+  pageSize,
+  total,
+  onPageChange,
+  onPageSizeChange,
+}: {
+  page: number;
+  pageCount: number;
+  pageSize: number;
+  total: number;
+  onPageChange: (page: number) => void;
+  onPageSizeChange: (size: number) => void;
+}) {
+  const rangeStart = total === 0 ? 0 : (page - 1) * pageSize + 1;
+  const rangeEnd = Math.min(total, page * pageSize);
+
+  return (
+    <div className="flex flex-wrap items-center justify-between gap-2 text-sm">
+      <span className="text-muted-foreground">
+        {total === 0 ? "No modules" : `${rangeStart}–${rangeEnd} of ${total}`}
+      </span>
+      <div className="flex items-center gap-2">
+        <select
+          value={pageSize}
+          onChange={(e) => onPageSizeChange(Number(e.target.value))}
+          aria-label="Modules per page"
+          className="h-8 rounded-lg border border-input bg-transparent pl-2 pr-6 text-sm dark:bg-input/30"
+        >
+          {PAGE_SIZE_OPTIONS.map((size) => (
+            <option key={size} value={size}>
+              {size} / page
+            </option>
+          ))}
+        </select>
+        <Button
+          type="button"
+          variant="outline"
+          size="sm"
+          onClick={() => onPageChange(page - 1)}
+          disabled={page <= 1}
+        >
+          Previous
+        </Button>
+        <span className="text-muted-foreground">
+          Page {page} of {pageCount}
+        </span>
+        <Button
+          type="button"
+          variant="outline"
+          size="sm"
+          onClick={() => onPageChange(page + 1)}
+          disabled={page >= pageCount}
+        >
+          Next
+        </Button>
+      </div>
+    </div>
+  );
+}
+
 function clearQueryParam(name: string) {
   const params = new URLSearchParams(window.location.search);
   params.delete(name);
@@ -338,6 +408,9 @@ export default function ModulesPage() {
   const [sortKey, setSortKey] = useState<SortKey>("name");
   const [sortDir, setSortDir] = useState<"asc" | "desc">("asc");
   const [expandedIds, setExpandedIds] = useState<Set<number>>(new Set());
+  const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = useState(DEFAULT_PAGE_SIZE);
+  const debouncedSearch = useDebouncedValue(search, SEARCH_DEBOUNCE_MS);
   // Read directly from the URL — avoids useSearchParams' Suspense-boundary
   // requirement for a filter this page doesn't need to statically render.
   const repoFilter = useQueryParam("repo");
@@ -452,8 +525,8 @@ export default function ModulesPage() {
       if (enabledFilter === "true" && m.enabled !== true) return false;
       if (enabledFilter === "false" && m.enabled !== false) return false;
       if (enabledFilter === "unknown" && m.enabled !== null) return false;
-      if (search.trim()) {
-        const q = search.trim().toLowerCase();
+      if (debouncedSearch.trim()) {
+        const q = debouncedSearch.trim().toLowerCase();
         if (!m.name.toLowerCase().includes(q) && !(m.composer_name ?? "").toLowerCase().includes(q)) {
           return false;
         }
@@ -468,7 +541,30 @@ export default function ModulesPage() {
       if (av > bv) return 1 * dir;
       return 0;
     });
-  }, [modulesQuery.data, repoFilter, findingFilter, search, sourceFilter, stateFilter, enabledFilter, sortKey, sortDir]);
+  }, [
+    modulesQuery.data,
+    repoFilter,
+    findingFilter,
+    debouncedSearch,
+    sourceFilter,
+    stateFilter,
+    enabledFilter,
+    sortKey,
+    sortDir,
+  ]);
+
+  // Each filter/search input resets the page to 1 directly in its own change
+  // handler below (a plain event-handler setState, not an effect -- see
+  // those handlers). This clamp is the backstop for the cases that don't go
+  // through a handler (repoFilter/findingFilter come from the URL via
+  // useQueryParam, and the list can also just shrink on refetch): never show
+  // a page past the last one.
+  const pageCount = Math.max(1, Math.ceil(filteredAndSorted.length / pageSize));
+  const currentPage = Math.min(page, pageCount);
+  const paginated = useMemo(
+    () => filteredAndSorted.slice((currentPage - 1) * pageSize, currentPage * pageSize),
+    [filteredAndSorted, currentPage, pageSize]
+  );
 
   function toggleSort(key: SortKey) {
     if (sortKey === key) {
@@ -614,16 +710,22 @@ export default function ModulesPage() {
           <div className="flex flex-wrap items-center gap-2">
             <Input
               value={search}
-              onChange={(e) => setSearch(e.target.value)}
+              onChange={(e) => {
+                setSearch(e.target.value);
+                setPage(1);
+              }}
               placeholder="Search name or composer name..."
               aria-label="Search modules"
               className="max-w-xs"
             />
             <select
               value={sourceFilter}
-              onChange={(e) => setSourceFilter(e.target.value)}
+              onChange={(e) => {
+                setSourceFilter(e.target.value);
+                setPage(1);
+              }}
               aria-label="Filter by source"
-              className="h-8 rounded-lg border border-input bg-transparent px-2 text-sm dark:bg-input/30"
+              className="h-8 rounded-lg border border-input bg-transparent pl-2 pr-6 text-sm dark:bg-input/30"
             >
               <option value="all">All sources</option>
               {sources.map((s) => (
@@ -634,9 +736,12 @@ export default function ModulesPage() {
             </select>
             <select
               value={stateFilter}
-              onChange={(e) => setStateFilter(e.target.value)}
+              onChange={(e) => {
+                setStateFilter(e.target.value);
+                setPage(1);
+              }}
               aria-label="Filter by state"
-              className="h-8 rounded-lg border border-input bg-transparent px-2 text-sm dark:bg-input/30"
+              className="h-8 rounded-lg border border-input bg-transparent pl-2 pr-6 text-sm dark:bg-input/30"
             >
               <option value="all">All states</option>
               {states.map((s) => (
@@ -647,9 +752,12 @@ export default function ModulesPage() {
             </select>
             <select
               value={enabledFilter}
-              onChange={(e) => setEnabledFilter(e.target.value)}
+              onChange={(e) => {
+                setEnabledFilter(e.target.value);
+                setPage(1);
+              }}
               aria-label="Filter by enabled status"
-              className="h-8 rounded-lg border border-input bg-transparent px-2 text-sm dark:bg-input/30"
+              className="h-8 rounded-lg border border-input bg-transparent pl-2 pr-6 text-sm dark:bg-input/30"
             >
               <option value="all">All enabled status</option>
               <option value="true">Enabled</option>
@@ -665,7 +773,7 @@ export default function ModulesPage() {
           </div>
 
           <div className="flex flex-col gap-3 md:hidden">
-            {filteredAndSorted.map((m) => (
+            {paginated.map((m) => (
               <ModuleCard key={m.id} module={m} />
             ))}
           </div>
@@ -735,7 +843,7 @@ export default function ModulesPage() {
               </TableRow>
             </TableHeader>
             <TableBody>
-              {filteredAndSorted.map((m) => (
+              {paginated.map((m) => (
                 <ModuleRow
                   key={m.id}
                   module={m}
@@ -746,6 +854,18 @@ export default function ModulesPage() {
             </TableBody>
           </Table>
           </div>
+
+          <Pagination
+            page={currentPage}
+            pageCount={pageCount}
+            pageSize={pageSize}
+            total={filteredAndSorted.length}
+            onPageChange={setPage}
+            onPageSizeChange={(size) => {
+              setPageSize(size);
+              setPage(1);
+            }}
+          />
         </>
       )}
     </div>

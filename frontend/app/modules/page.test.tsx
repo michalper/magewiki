@@ -136,7 +136,8 @@ describe("ModulesPage", () => {
       await waitFor(() => expect(screen.getByText("2 of 2 modules")).toBeInTheDocument());
       await user.type(screen.getByLabelText("Search modules"), "alpha");
 
-      expect(screen.getByText("1 of 2 modules")).toBeInTheDocument();
+      // The search filter is debounced -- it doesn't take effect until typing pauses.
+      await waitFor(() => expect(screen.getByText("1 of 2 modules")).toBeInTheDocument());
     });
 
     it("filters by source type", async () => {
@@ -237,6 +238,79 @@ describe("ModulesPage", () => {
 
       await user.click(screen.getByRole("button", { name: /^Classes/ }));
       expect(screen.getByRole("button", { name: /^Classes/ })).toHaveTextContent("↑");
+    });
+  });
+
+  describe("pagination", () => {
+    function modules(n: number) {
+      return Array.from({ length: n }, (_, i) => mod({ id: i + 1, name: `Vendor_${String(i + 1).padStart(3, "0")}` }));
+    }
+
+    it("shows only one page's worth of rows, with a range summary", async () => {
+      mockApi({ modules: modules(60) });
+      renderWithQueryClient(<ModulesPage />);
+
+      await waitFor(() => expect(screen.getByText("60 of 60 modules")).toBeInTheDocument());
+      expect(screen.getByText("1–25 of 60")).toBeInTheDocument();
+      expect(screen.getByText("Page 1 of 3")).toBeInTheDocument();
+      expect(screen.getAllByText("Vendor_001").length).toBeGreaterThan(0);
+      expect(screen.queryByText("Vendor_026")).not.toBeInTheDocument();
+    });
+
+    it("moves to the next/previous page", async () => {
+      mockApi({ modules: modules(60) });
+      const user = userEvent.setup();
+      renderWithQueryClient(<ModulesPage />);
+
+      await waitFor(() => expect(screen.getByText("Page 1 of 3")).toBeInTheDocument());
+      expect(screen.getByRole("button", { name: "Previous" })).toBeDisabled();
+
+      await user.click(screen.getByRole("button", { name: "Next" }));
+      expect(screen.getByText("26–50 of 60")).toBeInTheDocument();
+      expect(screen.getAllByText("Vendor_026").length).toBeGreaterThan(0);
+
+      await user.click(screen.getByRole("button", { name: "Previous" }));
+      expect(screen.getByText("1–25 of 60")).toBeInTheDocument();
+    });
+
+    it("disables Next on the last page", async () => {
+      mockApi({ modules: modules(60) });
+      const user = userEvent.setup();
+      renderWithQueryClient(<ModulesPage />);
+
+      await waitFor(() => expect(screen.getByText("Page 1 of 3")).toBeInTheDocument());
+      await user.click(screen.getByRole("button", { name: "Next" }));
+      await user.click(screen.getByRole("button", { name: "Next" }));
+
+      expect(screen.getByText("Page 3 of 3")).toBeInTheDocument();
+      expect(screen.getByRole("button", { name: "Next" })).toBeDisabled();
+    });
+
+    it("changes page size", async () => {
+      mockApi({ modules: modules(60) });
+      const user = userEvent.setup();
+      renderWithQueryClient(<ModulesPage />);
+
+      await waitFor(() => expect(screen.getByText("Page 1 of 3")).toBeInTheDocument());
+      await user.selectOptions(screen.getByLabelText("Modules per page"), "100");
+
+      expect(screen.getByText("1–60 of 60")).toBeInTheDocument();
+      expect(screen.getByText("Page 1 of 1")).toBeInTheDocument();
+    });
+
+    it("resets to page 1 when the search filter narrows the list", async () => {
+      mockApi({ modules: modules(60) });
+      const user = userEvent.setup();
+      renderWithQueryClient(<ModulesPage />);
+
+      await waitFor(() => expect(screen.getByText("Page 1 of 3")).toBeInTheDocument());
+      await user.click(screen.getByRole("button", { name: "Next" }));
+      await waitFor(() => expect(screen.getByText("Page 2 of 3")).toBeInTheDocument());
+
+      await user.type(screen.getByLabelText("Search modules"), "Vendor_001");
+
+      await waitFor(() => expect(screen.getByText("1 of 60 modules")).toBeInTheDocument());
+      expect(screen.getByText("Page 1 of 1")).toBeInTheDocument();
     });
   });
 
