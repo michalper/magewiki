@@ -28,6 +28,7 @@ import {
 import { apiFetch } from "@/lib/api";
 import type { paths } from "@/lib/api-types";
 import { useDocumentTitle } from "@/lib/use-document-title";
+import { useMediaQuery } from "@/lib/use-media-query";
 
 type ModuleSummary =
   paths["/modules"]["get"]["responses"][200]["content"]["application/json"][number];
@@ -278,8 +279,25 @@ function ProgressRing({
   );
 }
 
+const DESKTOP_AXIS_WIDTH = 210;
+const MOBILE_AXIS_WIDTH = 88;
+const MOBILE_LABEL_CHARS = 11;
+
+// Truncating from the END would make every one of this project's own module
+// names collapse to the same "Magento_…" (same lesson already learned on the
+// module list and the dependency graph) -- keep the tail, where Magento
+// module names actually differ, instead.
+function truncateLabelTail(label: string, maxChars: number): string {
+  if (label.length <= maxChars) return label;
+  return `…${label.slice(-(maxChars - 1))}`;
+}
+
 function TopFindingsBar({ modules }: { modules: ModuleSummary[] }) {
   const palette = useChartPalette();
+  // A fixed YAxis label column (Recharts needs a real pixel width, not a
+  // responsive unit) left almost no room for the bars themselves on a real
+  // phone width -- the chart's whole point, comparing magnitude, was lost.
+  const isNarrow = useMediaQuery("(max-width: 480px)");
   const data = modules
     .map((m) => ({
       name: m.name,
@@ -303,7 +321,7 @@ function TopFindingsBar({ modules }: { modules: ModuleSummary[] }) {
       <h3 className="text-sm font-medium mb-2 text-muted-foreground">Top modules by quality findings</h3>
       <p className="text-xs text-muted-foreground mb-2">Log scale — counts span multiple orders of magnitude</p>
       <ResponsiveContainer width="100%" height={Math.max(200, data.length * 32)}>
-        <BarChart data={data} layout="vertical" margin={{ left: 24, right: 36 }}>
+        <BarChart data={data} layout="vertical" margin={{ left: 24, right: isNarrow ? 20 : 36 }}>
           <CartesianGrid horizontal={false} stroke={palette.ink.gridline} />
           <XAxis
             type="number"
@@ -313,7 +331,13 @@ function TopFindingsBar({ modules }: { modules: ModuleSummary[] }) {
             allowDecimals={false}
             tick={{ fill: palette.ink.muted, fontSize: 12 }}
           />
-          <YAxis type="category" dataKey="name" width={210} tick={{ fill: palette.ink.muted, fontSize: 12 }} />
+          <YAxis
+            type="category"
+            dataKey="name"
+            width={isNarrow ? MOBILE_AXIS_WIDTH : DESKTOP_AXIS_WIDTH}
+            tickFormatter={isNarrow ? (name: string) => truncateLabelTail(name, MOBILE_LABEL_CHARS) : undefined}
+            tick={{ fill: palette.ink.muted, fontSize: 12 }}
+          />
           <Tooltip />
           <Bar dataKey="total" fill={palette.sequential} radius={[0, 4, 4, 0]} maxBarSize={24}>
             <LabelList dataKey="total" position="right" fill={palette.ink.muted} fontSize={12} />

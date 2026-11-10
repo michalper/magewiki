@@ -170,6 +170,34 @@ describe("StatsPage", () => {
     expect(screen.queryByText("No quality findings across any scanned module.")).not.toBeInTheDocument();
   });
 
+  it("still renders the top-findings chart section on a narrow (mobile) viewport", async () => {
+    // A fixed Recharts YAxis label column used to eat nearly all the width on
+    // a real phone -- this doesn't assert on the chart's internal SVG (jsdom/
+    // Recharts' ResponsiveContainer never gets real layout dimensions here,
+    // same as every other chart test in this file), just that switching to
+    // the narrow label width/truncation branch doesn't break rendering.
+    const realMatchMedia = window.matchMedia;
+    window.matchMedia = ((query: string) => ({
+      matches: query === "(max-width: 480px)",
+      media: query,
+      onchange: null,
+      addListener: () => {},
+      removeListener: () => {},
+      addEventListener: () => {},
+      removeEventListener: () => {},
+      dispatchEvent: () => false,
+    })) as typeof window.matchMedia;
+
+    try {
+      fetchMock.mockResolvedValue([mod({ finding_counts: { hardcoded_secret: 1 } })]);
+      renderWithQueryClient(<StatsPage />);
+
+      await waitFor(() => expect(screen.getByText("Top modules by quality findings")).toBeInTheDocument());
+    } finally {
+      window.matchMedia = realMatchMedia;
+    }
+  });
+
   describe("a check_type with no curated KPI tile", () => {
     beforeEach(() => {
       vi.resetModules();
