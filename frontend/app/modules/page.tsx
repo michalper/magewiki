@@ -806,14 +806,22 @@ export default function ModulesPage() {
           {/* table-fixed, with a fixed px width on every short/badge column (just
               enough for their worst-case label, e.g. "State: paused_budget" or
               "Enabled: unknown" — these never need more room no matter the monitor)
-              and NO width at all on the free-text/badge-cluster columns (Name,
-              Composer name, Quality, Tags). table-layout:fixed hands those four
-              whatever space is left over after the fixed columns, split evenly —
-              so the table always fills the viewport, and the extra room on a wide
-              monitor goes to the columns that can actually use it, not wasted as
-              dead space or lost to a horizontal scrollbar. Long text still gets a
-              `truncate` + hover title as a fallback for an unusually narrow window. */}
-          <Table className="w-full table-fixed">
+              and NO width at all on the free-text/badge-cluster columns (Composer
+              name, Quality, Tags). table-layout:fixed hands those three whatever
+              space is left over after the fixed columns, split evenly — so the
+              table always fills the viewport, and the extra room on a wide monitor
+              goes to the columns that can actually use it, not wasted as dead space
+              or lost to a horizontal scrollbar.
+              Name gets its own fixed floor (w-52) instead of sharing that leftover
+              split: on a narrow window, splitting the remainder four ways crushed
+              every module's name down to the same unreadable "Magento_…" (every
+              real module in this project's own fleet shares that prefix, so a
+              truncated name told you nothing about which module you were looking
+              at — a user flagged exactly this on a small monitor). This column
+              overflows into the container's own horizontal scroll rather than
+              shrink further; the others still get `truncate` + a hover title as a
+              fallback for an unusually long value. */}
+          <Table className="w-auto min-w-full table-fixed">
             <TableHeader>
               <TableRow>
                 <SortableHead
@@ -822,16 +830,17 @@ export default function ModulesPage() {
                   currentKey={sortKey}
                   currentDir={sortDir}
                   onToggle={toggleSort}
+                  className="w-52"
                 />
-                <TableHead>Composer name</TableHead>
+                <TableHead className="min-w-32">Composer name</TableHead>
                 <TableHead className="w-18">Version</TableHead>
                 <TableHead className="w-30">Enabled</TableHead>
                 <TableHead className="w-38">State</TableHead>
                 <TableHead className="w-28">Source</TableHead>
                 <TableHead className="w-19">README</TableHead>
                 <TableHead className="w-16">Tests</TableHead>
-                <TableHead>Quality</TableHead>
-                <TableHead>Tags</TableHead>
+                <TableHead className="min-w-40">Quality</TableHead>
+                <TableHead className="min-w-32">Tags</TableHead>
                 <SortableHead
                   label="Classes"
                   sortKeyValue="class_count"
