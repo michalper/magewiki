@@ -440,6 +440,14 @@ export default function ModulesPage() {
   const [enabledFilter, setEnabledFilter] = useState("all");
   const [sortKey, setSortKey] = useState<SortKey>("name");
   const [sortDir, setSortDir] = useState<"asc" | "desc">("asc");
+  // Until the user explicitly picks a column to sort by, modules with a
+  // real AI-generated doc float to the top regardless of sortKey -- on a
+  // fleet that's only partially analyzed (true of any fleet with budget-
+  // capped incremental analysis, not just a demo), the plain-alphabetical
+  // default otherwise shows "not analyzed yet" for most rows by sheer
+  // chance. An explicit sort-by-name click still means literal
+  // alphabetical, with no doc-first grouping.
+  const [hasUserSorted, setHasUserSorted] = useState(false);
   const [expandedIds, setExpandedIds] = useState<Set<number>>(new Set());
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(DEFAULT_PAGE_SIZE);
@@ -573,6 +581,9 @@ export default function ModulesPage() {
     });
     const dir = sortDir === "asc" ? 1 : -1;
     return [...list].sort((a, b) => {
+      if (!hasUserSorted && a.has_module_doc !== b.has_module_doc) {
+        return a.has_module_doc ? -1 : 1;
+      }
       const av = a[sortKey];
       const bv = b[sortKey];
       if (av < bv) return -1 * dir;
@@ -584,6 +595,7 @@ export default function ModulesPage() {
     repoFilter,
     findingFilter,
     hasDocFilter,
+    hasUserSorted,
     debouncedSearch,
     sourceFilter,
     stateFilter,
@@ -606,6 +618,7 @@ export default function ModulesPage() {
   );
 
   function toggleSort(key: SortKey) {
+    setHasUserSorted(true);
     if (sortKey === key) {
       setSortDir((d) => (d === "asc" ? "desc" : "asc"));
     } else {

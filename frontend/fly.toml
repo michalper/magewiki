@@ -1,0 +1,29 @@
+# Uses Dockerfile.fly (a real production build), not the local dev
+# Dockerfile (`npm run dev`) docker-compose.yml uses -- see that file's own
+# comment for why a separate one was needed.
+app = "magewiki-web"
+primary_region = "fra"
+
+[build]
+  dockerfile = "Dockerfile.fly"
+  # NEXT_PUBLIC_API_URL must be known at build time (inlined into the
+  # client bundle) -- set this to the deployed API app's real URL, e.g.
+  # https://magewiki-api.fly.dev, before the first `fly deploy` here.
+  [build.args]
+    NEXT_PUBLIC_API_URL = "https://magewiki-api.fly.dev"
+    NEXT_PUBLIC_SITE_URL = "https://magewiki-web.fly.dev"
+
+[http_service]
+  internal_port = 3000
+  force_https = true
+  # Same reasoning as backend/fly.toml's own comment: a cold start from
+  # scale-to-zero was slow enough that a visitor's first request could fail
+  # outright rather than just feel slow -- not acceptable for a public demo
+  # link, so one machine stays warm.
+  auto_stop_machines = false
+  auto_start_machines = true
+  min_machines_running = 1
+
+[[vm]]
+  size = "shared-cpu-1x"
+  memory = "512mb"

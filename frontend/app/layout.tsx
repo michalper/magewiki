@@ -15,6 +15,12 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
+  // Without this, the generated og:image/twitter:image URL resolves against
+  // the "http://localhost:3000" Next.js falls back to -- unreachable from
+  // anywhere that isn't this machine, so a shared link's preview card would
+  // have no image (confirmed directly against a real WhatsApp share before
+  // this existed).
+  metadataBase: new URL(process.env.NEXT_PUBLIC_SITE_URL ?? "http://localhost:3000"),
   title: { default: "MageWiki-AI", template: "%s · MageWiki-AI" },
   description: "AI-powered catalog and chat agent for Magento 2 modules",
 };

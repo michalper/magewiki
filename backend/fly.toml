@@ -1,0 +1,36 @@
+# Fly app for the API only -- the worker/php-analyzer/redis services stay
+# local-only for now (nothing in this deployment enqueues an ARQ job: no
+# live scanning or AI analysis on Fly, since there's no persistent Magento
+# checkout to scan on an ephemeral Machine anyway). The database is Neon
+# (managed Postgres with pgvector built in), not Fly Postgres -- pgvector
+# support on Fly's own managed Postgres is unconfirmed/inconsistent as of
+# this writing, Neon supports it natively.
+app = "magewiki-api"
+primary_region = "fra"
+
+[build]
+  dockerfile = "Dockerfile"
+
+[deploy]
+  # Runs `alembic upgrade head` before each new version goes live -- the
+  # same role docker-compose.yml's one-shot `migrate` service plays
+  # locally, just as Fly's own release-command mechanism instead.
+  release_command = "alembic upgrade head"
+
+[http_service]
+  internal_port = 8000
+  force_https = true
+  # A cold start from scale-to-zero (auto_stop_machines) took long enough
+  # that Fly's own proxy gave up waiting and returned an error to the first
+  # real visitor after any idle period -- confirmed directly in fly logs
+  # ("failed to connect to machine: gave up after 15 attempts", followed a
+  # second later by the machine actually finishing startup and serving 200s
+  # fine). Not an acceptable first impression for a public demo link, so
+  # this keeps one machine always warm instead.
+  auto_stop_machines = false
+  auto_start_machines = true
+  min_machines_running = 1
+
+[[vm]]
+  size = "shared-cpu-1x"
+  memory = "512mb"

@@ -261,6 +261,37 @@ describe("ModulesPage", () => {
       await user.click(screen.getByRole("button", { name: /^Classes/ }));
       expect(screen.getByRole("button", { name: /^Classes/ })).toHaveTextContent("↑");
     });
+
+    it("puts AI-analyzed modules first by default, regardless of name, until the user explicitly sorts", async () => {
+      // A fleet is rarely fully analyzed (budget-capped incremental
+      // analysis) -- plain alphabetical sorting would otherwise show "not
+      // analyzed yet" for most rows by sheer chance of which name comes
+      // first, confirmed as a real complaint on the live deployed demo.
+      mockApi({
+        modules: [
+          mod({ id: 1, name: "Alpha", has_module_doc: false }),
+          mod({ id: 2, name: "Zeta", has_module_doc: true }),
+        ],
+      });
+      const user = userEvent.setup();
+      renderWithQueryClient(<ModulesPage />);
+
+      await waitFor(() => expect(screen.getByText("2 of 2 modules")).toBeInTheDocument());
+      const table = screen.getByRole("table");
+      let rows = within(table).getAllByRole("row").slice(1);
+      expect(within(rows[0]).getByText("Zeta")).toBeInTheDocument();
+
+      // An explicit sort-by-name click means literal alphabetical -- no
+      // more doc-first grouping once the user has stated a real preference.
+      // Two clicks: the default state is already name/asc, so the first
+      // click flips to desc (Zeta still first, coincidentally) and the
+      // second flips back to asc, genuinely demonstrating Alpha-first on
+      // its own merits rather than by coincidence.
+      await user.click(screen.getByRole("button", { name: /^Name/ }));
+      await user.click(screen.getByRole("button", { name: /^Name/ }));
+      rows = within(table).getAllByRole("row").slice(1);
+      expect(within(rows[0]).getByText("Alpha")).toBeInTheDocument();
+    });
   });
 
   describe("pagination", () => {
