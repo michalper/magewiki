@@ -57,6 +57,17 @@ class Settings(BaseSettings):
     # riding on rerank_enabled. Same reasoning, same default: off until an
     # operator deliberately opts in.
     query_rewrite_enabled: bool = False
+    # Phase 18: a plain webhook POST (not a Slack SDK, not SMTP) fired once
+    # per scan_repository run when an alert-worthy check_type's count goes
+    # up for any module -- the operator points this at whatever they
+    # already use (a Slack Incoming Webhook URL works directly, since the
+    # payload carries a top-level "text" field). Empty disables the whole
+    # feature, same convention as webhook_hmac_secret above.
+    alert_webhook_url: str = ""
+    # Secrets and real CVEs are the "compromising" signal this is for --
+    # not routine PHPStan/PHPMD churn, which would make this noisy enough
+    # to ignore. An operator can widen or narrow this list freely.
+    alert_check_types: str = "hardcoded_secret,security_advisory"
 
     @property
     def cors_origin_list(self) -> list[str]:
@@ -65,6 +76,10 @@ class Settings(BaseSettings):
     @property
     def license_risk_prefix_tuple(self) -> tuple[str, ...]:
         return tuple(p.strip().upper() for p in self.license_risk_prefixes.split(",") if p.strip())
+
+    @property
+    def alert_check_type_tuple(self) -> tuple[str, ...]:
+        return tuple(c.strip() for c in self.alert_check_types.split(",") if c.strip())
 
     @property
     def scan_roots(self) -> list[str]:

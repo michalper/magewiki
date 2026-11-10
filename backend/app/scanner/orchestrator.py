@@ -33,6 +33,7 @@ from app.models import (
     WebapiRoute,
 )
 from app.scanner.abandoned_dependencies import check_abandoned_outdated
+from app.scanner.alerts import send_quality_alert
 from app.scanner.circular_dependencies import ModuleDependencyRow, detect_circular_dependencies
 from app.scanner.composer_conflicts import ComposerRequirementRow, detect_composer_conflicts
 from app.scanner.composer_json import composer_completeness_findings, parse_composer_json
@@ -546,8 +547,12 @@ async def _run_scan(root: Path, session: AsyncSession) -> AsyncIterator[dict]:
 
     # Phase 16: module history. Runs last, after every conflict check above,
     # since a module's finding_counts aren't complete until cross-module
-    # conflicts involving it have been detected and persisted.
-    await write_history_snapshots(session, root)
+    # conflicts involving it have been detected and persisted. Phase 18: the
+    # same before/after finding_counts comparison already happening there
+    # is also exactly what an alert needs, so it returns any alert-worthy
+    # increases found along the way instead of a second pass over the data.
+    module_alerts = await write_history_snapshots(session, root, settings.alert_check_type_tuple)
+    await send_quality_alert(settings.alert_webhook_url, str(root), module_alerts)
 
     result.tasks_enqueued = tasks_enqueued
     yield {"event": "done", "result": result}

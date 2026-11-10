@@ -5,6 +5,7 @@ from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models import Module, ModuleHistorySnapshot, ModuleQualityFinding
+from app.scanner.alerts import ModuleAlert, compute_alert_increases
 
 
 @dataclass
@@ -52,25 +53,34 @@ async def _finding_counts_by_module(session: AsyncSession, root: Path) -> dict[i
     return counts
 
 
-async def write_history_snapshots(session: AsyncSession, root: Path) -> None:
+async def write_history_snapshots(
+    session: AsyncSession, root: Path, alertable_check_types: tuple[str, ...] = ()
+) -> list[ModuleAlert]:
     """Writes one module_history_snapshots row per module in `root` whose
     hash/state/enabled/finding_counts changed since its own last snapshot
     (or has none yet). Must run after Phase C's cross-module conflict
     detection, not alongside the per-module persist loop -- a module's
     finding_counts aren't complete until conflicts involving it (which
     recompute fleet-wide, not per-module) have been detected and persisted.
+
+    Returns the Phase 18 alert-worthy increases found along the way (one
+    entry per module with at least one) -- this is the one place that
+    already holds a module's previous and current finding_counts side by
+    side with no extra query, so computing the diff here is free. An empty
+    `alertable_check_types` (the caller's default) always returns [].
     """
     module_rows = (
         await session.execute(
-            select(Module.id, Module.current_hash, Module.state, Module.enabled).where(
+            select(Module.id, Module.name, Module.current_hash, Module.state, Module.enabled).where(
                 Module.repo_root == str(root)
             )
         )
     ).all()
 
     finding_counts_by_module = await _finding_counts_by_module(session, root)
+    alerts: list[ModuleAlert] = []
 
-    for module_id, current_hash, state, enabled in module_rows:
+    for module_id, module_name, current_hash, state, enabled in module_rows:
         current = ModuleHistoryState(
             current_hash=current_hash,
             state=state,
@@ -106,4 +116,14 @@ async def write_history_snapshots(session: AsyncSession, root: Path) -> None:
                 )
             )
 
+        if alertable_check_types:
+            increases = compute_alert_increases(
+                previous.finding_counts if previous else None,
+                current.finding_counts,
+                alertable_check_types,
+            )
+            if increases:
+                alerts.append(ModuleAlert(module_id=module_id, module_name=module_name, increases=increases))
+
     await session.commit()
+    return alerts

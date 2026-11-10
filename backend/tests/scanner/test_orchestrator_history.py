@@ -3,6 +3,7 @@ from pathlib import Path
 import pytest
 from sqlalchemy import select
 
+from app.config import settings
 from app.models import Module, ModuleHistorySnapshot
 from app.scanner.orchestrator import scan_repository_events
 
@@ -78,3 +79,52 @@ async def test_a_code_change_writes_a_second_snapshot(tmp_path: Path, db_session
     assert len(snapshots) == 2
     assert snapshots[0].current_hash != snapshots[1].current_hash
     assert snapshots[1].current_hash == module.current_hash
+
+
+@pytest.mark.asyncio
+async def test_a_scan_that_finds_a_new_secret_fires_the_quality_alert_webhook(tmp_path: Path, db_session, monkeypatch):
+    sent = []
+
+    async def _fake_send(webhook_url, repo_root, module_alerts):
+        sent.append((webhook_url, repo_root, module_alerts))
+
+    monkeypatch.setattr("app.scanner.orchestrator.send_quality_alert", _fake_send)
+    monkeypatch.setattr(settings, "alert_webhook_url", "https://example.com/webhook")
+    monkeypatch.setattr(settings, "alert_check_types", "hardcoded_secret")
+
+    repo_root = tmp_path / "repo"
+    module_dir = repo_root / "app" / "code" / "Vendor" / "A"
+    _write_module(module_dir, "Vendor_A")
+    (module_dir / "Config.php").write_text("<?php\n$key = 'AKIAABCDEFGHIJKLMNOP';\n")
+
+    async for _event in scan_repository_events(str(repo_root), db_session):
+        pass
+
+    assert len(sent) == 1
+    _webhook_url, _repo_root, module_alerts = sent[0]
+    assert len(module_alerts) == 1
+    assert module_alerts[0].module_name == "Vendor_A"
+    assert module_alerts[0].increases[0].check_type == "hardcoded_secret"
+
+
+@pytest.mark.asyncio
+async def test_a_scan_with_nothing_alertable_never_fires_the_webhook(tmp_path: Path, db_session, monkeypatch):
+    sent = []
+
+    async def _fake_send(webhook_url, repo_root, module_alerts):
+        sent.append((webhook_url, repo_root, module_alerts))
+
+    monkeypatch.setattr("app.scanner.orchestrator.send_quality_alert", _fake_send)
+    monkeypatch.setattr(settings, "alert_webhook_url", "https://example.com/webhook")
+    monkeypatch.setattr(settings, "alert_check_types", "hardcoded_secret")
+
+    repo_root = tmp_path / "repo"
+    _write_module(repo_root / "app" / "code" / "Vendor" / "A", "Vendor_A")
+
+    async for _event in scan_repository_events(str(repo_root), db_session):
+        pass
+
+    # send_quality_alert is always called (it no-ops internally on an empty
+    # list), so the real assertion is on *what* it was called with here.
+    assert len(sent) == 1
+    assert sent[0][2] == []
