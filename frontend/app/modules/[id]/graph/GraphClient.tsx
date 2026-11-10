@@ -160,6 +160,7 @@ export default function GraphClient({ id }: { id: string }) {
 
   const scrollRef = useRef<HTMLDivElement>(null);
   const centerPos = positions.get(centerId);
+  const [canScroll, setCanScroll] = useState(false);
   useEffect(() => {
     // The force layout can grow much wider than the viewport (a module with
     // many direct dependents, or any depth > 1) -- without this, the
@@ -169,6 +170,11 @@ export default function GraphClient({ id }: { id: string }) {
     if (!el || !canvas || !centerPos) return;
     el.scrollLeft = centerPos.x + canvas.offsetX - el.clientWidth / 2;
     el.scrollTop = centerPos.y + canvas.offsetY - el.clientHeight / 2;
+    // Nothing on the page otherwise hints that the graph is pannable -- a
+    // wider-than-the-box canvas (common once depth > 1, or a well-connected
+    // hub module) previously just clipped nodes at the edges with no
+    // scrollbar affordance obvious enough to notice.
+    setCanScroll(el.scrollWidth > el.clientWidth + 1 || el.scrollHeight > el.clientHeight + 1);
   }, [canvas, centerPos]);
 
   return (
@@ -207,11 +213,21 @@ export default function GraphClient({ id }: { id: string }) {
             </div>
           </div>
 
-          {graphQuery.data.truncated && (
-            <p className="text-sm text-muted-foreground">
-              This module has more dependencies than fit on one graph — showing a partial view.
-            </p>
-          )}
+          <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-sm text-muted-foreground">
+            <span>{graphQuery.data.nodes.length} nodes shown</span>
+            {graphQuery.data.truncated && (
+              // Depth 2 and depth 3 can render the exact same graph with no
+              // visible difference once the backend's node cap is hit at or
+              // before the shallower depth -- showing the live node count
+              // next to this message lets that be self-evident (same count
+              // at both depths) instead of silently mysterious.
+              <span>
+                — hit the size limit for one graph; some dependencies beyond this aren&apos;t shown. A higher depth
+                may not reveal more once the limit is already reached.
+              </span>
+            )}
+            {canScroll && <span>· scroll/drag inside the graph to see the rest</span>}
+          </div>
 
           <div
             ref={scrollRef}

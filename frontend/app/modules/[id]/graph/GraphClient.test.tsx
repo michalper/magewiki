@@ -138,11 +138,7 @@ describe("GraphClient", () => {
     fetchMock.mockResolvedValue(graph({ truncated: true }));
     renderWithQueryClient(<GraphClient id="1" />);
 
-    await waitFor(() =>
-      expect(
-        screen.getByText("This module has more dependencies than fit on one graph — showing a partial view."),
-      ).toBeInTheDocument(),
-    );
+    await waitFor(() => expect(screen.getByText(/hit the size limit for one graph/)).toBeInTheDocument());
   });
 
   it("shows no truncation note when the graph is complete", async () => {
@@ -150,7 +146,14 @@ describe("GraphClient", () => {
     renderWithQueryClient(<GraphClient id="1" />);
 
     await waitFor(() => expect(screen.getByText("Vendor_Center — dependency graph")).toBeInTheDocument());
-    expect(screen.queryByText(/more dependencies than fit/)).not.toBeInTheDocument();
+    expect(screen.queryByText(/hit the size limit/)).not.toBeInTheDocument();
+  });
+
+  it("always shows a live node count, regardless of truncation", async () => {
+    fetchMock.mockResolvedValue(graph());
+    renderWithQueryClient(<GraphClient id="1" />);
+
+    await waitFor(() => expect(screen.getByText("2 nodes shown")).toBeInTheDocument());
   });
 
   it("does not crash and drops the edge when it references an unknown node id", async () => {
