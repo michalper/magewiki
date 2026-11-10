@@ -2155,3 +2155,125 @@ desktop, ~380px phone) and reported, prioritized:
 Everything else the audit checked (module detail page at all three
 widths, chat, settings, search/row-expand on the modules list, the
 dependency graph on mobile) came back clean.
+
+**Phase 13, for real: Fly.io + Neon instead of GCP/Azure/Terraform
+(recorded 2026-11-10):** CLAUDE.md's Phase 13 always named GCP/Azure via
+Terraform, deferred for lack of cloud budget. The actual trigger this
+session was wanting something to link from a LinkedIn post, and "a GIF
+instead" was the explicitly considered, cheaper alternative — Fly.io
+(scale-to-zero free allowance) + an external managed Postgres was decided
+as the still-cheap, still-real middle ground over either extreme.
+
+- **Neon over Fly's own Postgres**: researched live rather than assumed —
+  pgvector support on Fly's *managed* Postgres (MPG) is unconfirmed/
+  inconsistent as of this writing (community threads asking for it with no
+  official "yes" found), and legacy Fly Postgres needs a custom image
+  built with pgvector baked in, unsupported/fragile territory. Neon
+  supports `CREATE EXTENSION vector` natively on its free tier with zero
+  extra setup — confirmed directly (`vector 0.8.6` installed in under a
+  minute).
+- **Two separate Fly apps** (`magewiki-api`, `magewiki-web`), not a
+  monorepo-wide single deploy — Fly's own GitHub-import "launch" flow
+  can't one-click a multi-service docker-compose project with no root
+  Dockerfile (confirmed by letting the user's own first attempt fail with
+  "Could not find a Dockerfile, nor detect a runtime or framework from
+  source code" before building anything). `backend/fly.toml` points
+  straight at the existing (already-production-appropriate, no `--reload`)
+  `backend/Dockerfile`. `frontend/Dockerfile.fly` is a **new**, separate
+  multi-stage Dockerfile specifically for Fly — the existing
+  `frontend/Dockerfile` runs `npm run dev` (fine for the bind-mounted,
+  hot-reloading local docker-compose workflow, wrong for a public
+  deployment), so reusing it would have shipped an unoptimized dev server
+  publicly. Added `output: "standalone"` to `next.config.ts` (`next build`
+  output shape only, `next dev` unaffected) so the production image copies
+  just that self-contained server directory instead of the whole
+  `node_modules` tree.
+- **No worker/php-analyzer/Redis on Fly**: nothing in the public demo
+  enqueues an ARQ job (no live scanning — no persistent Magento checkout
+  exists on an ephemeral Fly Machine to scan anyway; no AI analysis — no
+  LLM key is configured there either, a deliberate choice, see below).
+  `get_arq_pool()`'s connection is lazy (confirmed in
+  `app/tasks/queue.py`), so the API never touches Redis at boot; only an
+  actual `POST /scan`/analysis call would, and those paths are simply left
+  unconfigured (`MAGEWIKI_SCAN_ROOT_*` unset) rather than specially
+  disabled.
+- **No LLM key set as a Fly secret, deliberately**: a public, unauthenticated
+  demo with a real paid API key behind its chat endpoint is a cost-abuse
+  surface no amount of `LLM_MONTHLY_BUDGET_USD` capping fully closes (it
+  bounds the damage, not the annoyance of hitting it). Chat is left
+  genuinely non-functional on the public deployment rather than faked or
+  rate-limited — the demo's value is the already-collected real data
+  (modules, quality findings, AI docs, dependency graph), not a live LLM
+  surface.
+- **Seeded the demo DB from this project's own real local dev data**, not
+  a fresh scan: `pg_dump --data-only` of the already-scanned local
+  Postgres (a real ~225-module fleet: Magento core + the author's own
+  `Ordo_Automation` third-party module), excluding `analysis_cache` (423MB,
+  a pure internal cost-optimization cache, never read by the UI) and
+  `chunks` (395MB, RAG embeddings — moot anyway with no LLM key configured
+  for chat). `file_analyses`/`module_docs` both FK-reference
+  `analysis_cache.id`, so the excluded cache's *referenced* subset (2,562
+  of 58,874 rows — the other ~56k are stale/unused) had to be restored
+  too, found only by hitting the FK violation on the first restore attempt
+  and re-deriving it from `file_analyses`/`module_docs`'s own distinct
+  `cache_id`s rather than guessing a size cutoff. One stray row,
+  `Vendor_Module` (the committed `backend/tests/fixtures/demo-store`
+  fixture, with placeholder/no-op content), had leaked into the local dev
+  DB from earlier e2e runs and rode along in the first dump — caught
+  immediately by the user clicking into it on the live demo and seeing
+  obviously-fake content, deleted by id once identified.
+- **Default sort changed, not just the demo's data**: with only 19 of 225
+  modules having a real AI doc (budget-capped incremental analysis — true
+  of *any* fleet at this project's current scale, not a demo-only
+  artifact), plain alphabetical-by-name sorting showed "not analyzed yet"
+  for whichever module's name happened to come first alphabetically — a
+  real, reproduced complaint on the live demo ("mialy byc tylko te z
+  opisem AI na gorze," after a `?has_doc=true` URL filter was tried first
+  and rejected as not good enough as the *default* experience).
+  `frontend/app/modules/page.tsx` now sorts modules with a real AI doc
+  first **by default**, with a `hasUserSorted` flag so an explicit click
+  on any column header (including re-clicking "Name") still means literal,
+  un-grouped sorting — the doc-first behavior only applies to the
+  untouched initial view.
+- **Cold start from scale-to-zero broke the first request after any idle
+  period**: confirmed directly in `fly logs` — Fly's own proxy gave up
+  ("failed to connect to machine: gave up after 15 attempts") a full
+  second *before* the machine actually finished booting and started
+  serving real 200s. Not an acceptable first impression for a link meant
+  to be clicked cold off LinkedIn, so both `fly.toml`s switched to
+  `min_machines_running = 1` / `auto_stop_machines = false` -- cheap
+  enough (shared-cpu-1x, 512mb) to just stay warm instead of chasing a
+  faster cold start.
+- **OG image + `metadataBase`**: sharing the link anywhere (confirmed
+  directly against a real WhatsApp share) showed a title/description with
+  no preview image -- Next.js's og:image resolves against
+  `metadataBase`, which defaults to `http://localhost:3000` if unset
+  (unreachable from anywhere else). Added `app/opengraph-image.tsx`
+  (a branded card via `next/og`'s `ImageResponse`, not a raw app
+  screenshot -- cleaner at thumbnail size) and a `NEXT_PUBLIC_SITE_URL`
+  build arg (same inlined-at-build-time mechanism as the existing
+  `NEXT_PUBLIC_API_URL`) feeding `metadataBase`.
+- **CI auto-deploy**: a new `deploy` job in `.github/workflows/ci.yml`,
+  gated on `push` to `main` only and on the jobs that actually prove the
+  app builds/works (`backend`, `frontend`, `docker-build`, `e2e-smoke`) --
+  not on the already-non-blocking security-scan jobs. Installs flyctl via
+  the official install script rather than pinning `superfly/flyctl-
+  actions/setup-flyctl`, which ships no versioned release tags to pin to
+  (only `@master`). `backend/fly.toml`'s own `release_command` (`alembic
+  upgrade head`) runs the Neon migration as part of `flyctl deploy` --
+  nothing extra needed in the workflow for that. The long-lived
+  `FLY_API_TOKEN` (an org-wide deploy token, `fly tokens create org`) was
+  minted and added as a GitHub repo secret by the user directly -- both
+  actions are correctly gated by this environment's own auto-mode
+  classifier as sensitive/standing-access changes, not something to work
+  around.
+
+Local/router-side DNS caching produced a long, confusing side-quest mid-session
+(a home router had cached a negative/NODATA answer for `magewiki-api.fly.dev`
+from the few seconds between the app being created and its DNS actually
+propagating, and kept serving that stale answer well after the record was
+live) -- resolved only by pointing the Mac's own DNS at 1.1.1.1/8.8.8.8 to
+bypass the router's resolver entirely. Not a MageWiki-AI bug; recorded here
+only so a future session facing "the API is unreachable but curl with a
+forced IP works fine" recognizes the shape immediately instead of
+re-diagnosing it from scratch.
