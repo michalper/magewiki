@@ -63,6 +63,38 @@ async function streamScan(
   await streamSse<ScanStreamEvent>(`${apiUrl()}/scan/stream`, { path }, onEvent, signal);
 }
 
+// A plain <select>'s own dropdown arrow is drawn by the browser/OS, not by
+// us -- `padding-right` doesn't reliably push it away from the box edge (a
+// real, reported-as-"looks broken" case: Chrome on macOS still renders the
+// arrow flush against the border regardless of padding). appearance-none
+// hides that native arrow entirely and a real lucide icon, absolutely
+// positioned and vertically centered, replaces it with one we fully control.
+function FilterSelect({
+  value,
+  onChange,
+  ariaLabel,
+  children,
+}: {
+  value: string | number;
+  onChange: (value: string) => void;
+  ariaLabel: string;
+  children: React.ReactNode;
+}) {
+  return (
+    <div className="relative inline-block">
+      <select
+        value={value}
+        onChange={(e) => onChange(e.target.value)}
+        aria-label={ariaLabel}
+        className="h-8 appearance-none rounded-lg border border-input bg-transparent pl-2 pr-7 text-sm dark:bg-input/30"
+      >
+        {children}
+      </select>
+      <ChevronDown className="pointer-events-none absolute right-2 top-1/2 size-3.5 -translate-y-1/2 text-muted-foreground" />
+    </div>
+  );
+}
+
 function PresenceBadge({ present, label }: { present: boolean; label: string }) {
   return (
     <Tooltip>
@@ -352,18 +384,13 @@ function Pagination({
         {total === 0 ? "No modules" : `${rangeStart}–${rangeEnd} of ${total}`}
       </span>
       <div className="flex items-center gap-2">
-        <select
-          value={pageSize}
-          onChange={(e) => onPageSizeChange(Number(e.target.value))}
-          aria-label="Modules per page"
-          className="h-8 rounded-lg border border-input bg-transparent pl-2 pr-6 text-sm dark:bg-input/30"
-        >
+        <FilterSelect value={pageSize} onChange={(v) => onPageSizeChange(Number(v))} ariaLabel="Modules per page">
           {PAGE_SIZE_OPTIONS.map((size) => (
             <option key={size} value={size}>
               {size} / page
             </option>
           ))}
-        </select>
+        </FilterSelect>
         <Button
           type="button"
           variant="outline"
@@ -718,14 +745,13 @@ export default function ModulesPage() {
               aria-label="Search modules"
               className="max-w-xs"
             />
-            <select
+            <FilterSelect
               value={sourceFilter}
-              onChange={(e) => {
-                setSourceFilter(e.target.value);
+              onChange={(v) => {
+                setSourceFilter(v);
                 setPage(1);
               }}
-              aria-label="Filter by source"
-              className="h-8 rounded-lg border border-input bg-transparent pl-2 pr-6 text-sm dark:bg-input/30"
+              ariaLabel="Filter by source"
             >
               <option value="all">All sources</option>
               {sources.map((s) => (
@@ -733,15 +759,14 @@ export default function ModulesPage() {
                   {s}
                 </option>
               ))}
-            </select>
-            <select
+            </FilterSelect>
+            <FilterSelect
               value={stateFilter}
-              onChange={(e) => {
-                setStateFilter(e.target.value);
+              onChange={(v) => {
+                setStateFilter(v);
                 setPage(1);
               }}
-              aria-label="Filter by state"
-              className="h-8 rounded-lg border border-input bg-transparent pl-2 pr-6 text-sm dark:bg-input/30"
+              ariaLabel="Filter by state"
             >
               <option value="all">All states</option>
               {states.map((s) => (
@@ -749,21 +774,20 @@ export default function ModulesPage() {
                   {s}
                 </option>
               ))}
-            </select>
-            <select
+            </FilterSelect>
+            <FilterSelect
               value={enabledFilter}
-              onChange={(e) => {
-                setEnabledFilter(e.target.value);
+              onChange={(v) => {
+                setEnabledFilter(v);
                 setPage(1);
               }}
-              aria-label="Filter by enabled status"
-              className="h-8 rounded-lg border border-input bg-transparent pl-2 pr-6 text-sm dark:bg-input/30"
+              ariaLabel="Filter by enabled status"
             >
               <option value="all">All enabled status</option>
               <option value="true">Enabled</option>
               <option value="false">Disabled</option>
               <option value="unknown">Unknown</option>
-            </select>
+            </FilterSelect>
             <Button type="button" variant="outline" size="sm" onClick={() => downloadModulesCsv(filteredAndSorted)}>
               Export CSV
             </Button>
