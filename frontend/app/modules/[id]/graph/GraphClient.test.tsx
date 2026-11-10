@@ -118,7 +118,45 @@ describe("GraphClient", () => {
     expect(line).toHaveAttribute("stroke", "#71717a");
   });
 
-  it("skips an edge referencing a node with no on-graph position", async () => {
+  it("defaults to depth 1 and refetches with a new depth when switched", async () => {
+    fetchMock.mockResolvedValue(graph());
+    const user = userEvent.setup();
+    renderWithQueryClient(<GraphClient id="1" />);
+
+    await waitFor(() => expect(screen.getByText("Vendor_Center — dependency graph")).toBeInTheDocument());
+    expect(fetchMock).toHaveBeenCalledWith("/modules/1/graph?depth=1");
+    expect(screen.getByRole("button", { name: "1" })).toHaveAttribute("aria-pressed", "true");
+
+    await user.click(screen.getByRole("button", { name: "2" }));
+
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledWith("/modules/1/graph?depth=2"));
+    expect(screen.getByRole("button", { name: "2" })).toHaveAttribute("aria-pressed", "true");
+    expect(screen.getByRole("button", { name: "1" })).toHaveAttribute("aria-pressed", "false");
+  });
+
+  it("shows a note when the backend truncated the graph", async () => {
+    fetchMock.mockResolvedValue(graph({ truncated: true }));
+    renderWithQueryClient(<GraphClient id="1" />);
+
+    await waitFor(() =>
+      expect(
+        screen.getByText("This module has more dependencies than fit on one graph — showing a partial view."),
+      ).toBeInTheDocument(),
+    );
+  });
+
+  it("shows no truncation note when the graph is complete", async () => {
+    fetchMock.mockResolvedValue(graph({ truncated: false }));
+    renderWithQueryClient(<GraphClient id="1" />);
+
+    await waitFor(() => expect(screen.getByText("Vendor_Center — dependency graph")).toBeInTheDocument());
+    expect(screen.queryByText(/more dependencies than fit/)).not.toBeInTheDocument();
+  });
+
+  it("does not crash and drops the edge when it references an unknown node id", async () => {
+    // d3-force's forceLink throws on a dangling link -- the layout step must
+    // filter these out itself rather than relying on the render-time
+    // from/to lookup that used to be the only guard against this.
     fetchMock.mockResolvedValue(
       graph({ edges: [{ source: "module:1", target: "module:does-not-exist", relation: "depends_on" }] }),
     );
@@ -128,42 +166,35 @@ describe("GraphClient", () => {
     expect(document.querySelector("line")).not.toBeInTheDocument();
   });
 
-  it("shows an overflow list beyond 16 neighbors, toggleable, mixing module and external nodes", async () => {
-    const neighbors: Record<string, unknown>[] = Array.from({ length: 18 }, (_, i) =>
-      node({ id: `module:${i + 2}`, label: `Dep${i}`, module_id: i + 2 }),
-    );
-    neighbors[17] = { id: "external:last", label: "ExternalLast", kind: "external", module_id: null };
+  it("shows a node's full label text rather than truncating it, even when long", async () => {
+    const longLabel = "MerchantPanel_OfferReportMaterializedView";
     fetchMock.mockResolvedValue(
-      graph({ nodes: [{ id: "module:1", label: "Vendor_Center", kind: "module", module_id: 1 }, ...neighbors], edges: [] }),
+      graph({
+        nodes: [
+          { id: "module:1", label: "Vendor_Center", kind: "module", module_id: 1 },
+          node({ label: longLabel }),
+        ],
+      }),
     );
-    const user = userEvent.setup();
     renderWithQueryClient(<GraphClient id="1" />);
 
-    const toggle = await screen.findByText(/more dependencies \(too many to fit on the graph\)/);
-    expect(toggle.textContent).toContain("Show 2 more");
-    expect(screen.queryByText("Dep16")).not.toBeInTheDocument();
-
-    await user.click(toggle);
-
-    expect(screen.getByText("Dep16")).toBeInTheDocument();
-    const overflowLink = screen.getByRole("link", { name: "Dep16" });
-    expect(overflowLink).toHaveAttribute("href", "/modules/18/graph");
-    expect(screen.getByText("ExternalLast")).toBeInTheDocument();
-    expect(screen.queryByRole("link", { name: "ExternalLast" })).not.toBeInTheDocument();
-
-    expect(toggle.textContent).toContain("Hide");
-    await user.click(toggle);
-    expect(screen.queryByText("Dep16")).not.toBeInTheDocument();
+    await waitFor(() => expect(screen.getByText(longLabel)).toBeInTheDocument());
+    // Previously a single-line `truncate` box hid most of a long label, only
+    // showing it in full on hover via the title attribute -- the node's own
+    // rendered text content must now carry the whole name.
+    expect(screen.getByText(longLabel).textContent).toBe(longLabel);
   });
 
-  it("singularizes the overflow count for exactly one extra dependency", async () => {
-    const neighbors = Array.from({ length: 17 }, (_, i) => node({ id: `module:${i + 2}`, label: `Dep${i}`, module_id: i + 2 }));
+  it("renders every node from a large response -- capping the graph is the backend's job now, not the frontend's", async () => {
+    const neighbors = Array.from({ length: 30 }, (_, i) =>
+      node({ id: `module:${i + 2}`, label: `Dep${i}`, module_id: i + 2 }),
+    );
     fetchMock.mockResolvedValue(
       graph({ nodes: [{ id: "module:1", label: "Vendor_Center", kind: "module", module_id: 1 }, ...neighbors], edges: [] }),
     );
     renderWithQueryClient(<GraphClient id="1" />);
 
-    const toggle = await screen.findByText(/more dependency \(too many to fit on the graph\)/);
-    expect(toggle.textContent).toContain("Show 1 more");
+    await waitFor(() => expect(screen.getByText("Dep29")).toBeInTheDocument());
+    expect(screen.getByText("Dep0")).toBeInTheDocument();
   });
 });

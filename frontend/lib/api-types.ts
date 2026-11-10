@@ -240,11 +240,19 @@ export interface paths {
         };
         /**
          * Get Module Dependency Graph
-         * @description One-hop dependency graph centered on a module: depends_on/overrides/plugins
-         *     in both directions. for_type/intercepted_type are bare FQCN strings, not
-         *     foreign keys — resolving which module owns one requires a PhpClass lookup;
-         *     an unresolved FQCN (core class not yet scanned) becomes an "external" node
-         *     rather than a guess. See CLAUDE.md anti-hallucination rules.
+         * @description Dependency graph centered on a module: depends_on/overrides/plugins in
+         *     both directions, expanded breadth-first up to `depth` hops (default 1).
+         *     for_type/intercepted_type are bare FQCN strings, not foreign keys —
+         *     resolving which module owns one requires a PhpClass lookup; an unresolved
+         *     FQCN (core class not yet scanned) becomes an "external" node rather than a
+         *     guess, and external nodes are always leaves — there's no FQCN to expand
+         *     further from a bare composer package name or an unscanned core class. See
+         *     CLAUDE.md anti-hallucination rules.
+         *
+         *     Each hop re-runs the same per-module relation queries (not batched across
+         *     the whole frontier) — straightforward and fine at this project's scale
+         *     (a few hundred modules, _MAX_GRAPH_NODES capping the worst case), not
+         *     worth the complexity of a single batched multi-module query.
          */
         get: operations["get_module_dependency_graph_modules__module_id__graph_get"];
         put?: never;
@@ -410,6 +418,11 @@ export interface components {
             nodes: components["schemas"]["GraphNode"][];
             /** Edges */
             edges: components["schemas"]["GraphEdge"][];
+            /**
+             * Truncated
+             * @default false
+             */
+            truncated: boolean;
         };
         /** DiPluginSummary */
         DiPluginSummary: {
@@ -1273,7 +1286,9 @@ export interface operations {
     };
     get_module_dependency_graph_modules__module_id__graph_get: {
         parameters: {
-            query?: never;
+            query?: {
+                depth?: number;
+            };
             header?: never;
             path: {
                 module_id: number;

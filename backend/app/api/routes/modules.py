@@ -7,7 +7,7 @@ from datetime import datetime
 from pathlib import Path
 from typing import cast
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Query
 from fastapi.responses import JSONResponse, PlainTextResponse, StreamingResponse
 from pydantic import BaseModel
 from sqlalchemy import func, select
@@ -778,6 +778,10 @@ class DependencyGraphResponse(BaseModel):
     center_label: str
     nodes: list[GraphNode]
     edges: list[GraphEdge]
+    # True when the node cap below cut the BFS off before it reached every
+    # module within `depth` hops -- the frontend uses this to say "some of
+    # the graph isn't shown" instead of implying the traversal is complete.
+    truncated: bool = False
 
 
 def _module_node_id(module_id: int) -> str:
@@ -788,15 +792,33 @@ def _external_node_id(name: str) -> str:
     return f"ext:{name}"
 
 
+# Safety cap on the whole BFS traversal, not just one hop -- a highly-connected
+# core module (e.g. Magento_Backend, 50+ direct dependents in this project's
+# own test fleet) would otherwise make depth=3 balloon into thousands of nodes
+# and as many query round trips. The frontend's own MAX_CIRCLE_NODES-style
+# display cap is separate and smaller; this is the backend-side backstop.
+_MAX_GRAPH_NODES = 120
+
+
 @router.get("/modules/{module_id}/graph", response_model=DependencyGraphResponse)
 async def get_module_dependency_graph(
-    module_id: int, session: AsyncSession = Depends(get_session)
+    module_id: int,
+    depth: int = Query(1, ge=1, le=3),
+    session: AsyncSession = Depends(get_session),
 ) -> DependencyGraphResponse:
-    """One-hop dependency graph centered on a module: depends_on/overrides/plugins
-    in both directions. for_type/intercepted_type are bare FQCN strings, not
-    foreign keys — resolving which module owns one requires a PhpClass lookup;
-    an unresolved FQCN (core class not yet scanned) becomes an "external" node
-    rather than a guess. See CLAUDE.md anti-hallucination rules.
+    """Dependency graph centered on a module: depends_on/overrides/plugins in
+    both directions, expanded breadth-first up to `depth` hops (default 1).
+    for_type/intercepted_type are bare FQCN strings, not foreign keys —
+    resolving which module owns one requires a PhpClass lookup; an unresolved
+    FQCN (core class not yet scanned) becomes an "external" node rather than a
+    guess, and external nodes are always leaves — there's no FQCN to expand
+    further from a bare composer package name or an unscanned core class. See
+    CLAUDE.md anti-hallucination rules.
+
+    Each hop re-runs the same per-module relation queries (not batched across
+    the whole frontier) — straightforward and fine at this project's scale
+    (a few hundred modules, _MAX_GRAPH_NODES capping the worst case), not
+    worth the complexity of a single batched multi-module query.
     """
     center = await session.get(Module, module_id)
     if center is None:
@@ -807,12 +829,15 @@ async def get_module_dependency_graph(
         center_id: GraphNode(id=center_id, label=center.name, kind="module", module_id=module_id)
     }
     edges: list[GraphEdge] = []
+    visited_module_ids = {module_id}
+    truncated = False
 
-    def add_module_node(m: Module) -> str:
+    def add_module_node(m: Module) -> tuple[str, bool]:
         node_id = _module_node_id(m.id)
-        if node_id not in nodes:
+        is_new = node_id not in nodes
+        if is_new:
             nodes[node_id] = GraphNode(id=node_id, label=m.name, kind="module", module_id=m.id)
-        return node_id
+        return node_id, is_new
 
     def add_external_node(name: str) -> str:
         node_id = _external_node_id(name)
@@ -824,94 +849,133 @@ async def get_module_dependency_graph(
         if source != target:
             edges.append(GraphEdge(source=source, target=target, relation=relation))
 
-    own_fqcns = (await session.scalars(select(PhpClass.fqcn).where(PhpClass.module_id == module_id))).all()
+    async def expand(module: Module) -> set[int]:
+        """Adds `module`'s own direct neighbors (both directions, all three
+        relation kinds) to the shared nodes/edges accumulators above. Returns
+        the module ids newly seen here (not already visited in an earlier
+        hop) -- the next BFS frontier.
+        """
+        this_id = _module_node_id(module.id)
+        discovered: set[int] = set()
 
-    dependencies = (
-        await session.scalars(select(ModuleDependency).where(ModuleDependency.module_id == module_id))
-    ).all()
-    # Batched instead of one SELECT per dependency — a module with many
-    # composer requirements otherwise issues one query per row here.
-    dependency_names = [dep.depends_on_name for dep in dependencies]
-    modules_by_name = {
-        m.name: m
-        for m in (await session.scalars(select(Module).where(Module.name.in_(dependency_names)))).all()
-    }
-    for dep in dependencies:
-        target_module = modules_by_name.get(dep.depends_on_name)
-        target_id = add_module_node(target_module) if target_module else add_external_node(dep.depends_on_name)
-        add_edge(center_id, target_id, "depends_on")
+        def observe(m: Module) -> str:
+            node_id, is_new = add_module_node(m)
+            if is_new and m.id not in visited_module_ids:
+                discovered.add(m.id)
+            return node_id
 
-    reverse_dependencies = (
-        await session.execute(
-            select(Module)
-            .join(ModuleDependency, ModuleDependency.module_id == Module.id)
-            .where(ModuleDependency.depends_on_name == center.name)
-        )
-    ).scalars().all()
-    for source_module in reverse_dependencies:
-        add_edge(add_module_node(source_module), center_id, "depends_on")
+        own_fqcns = (await session.scalars(select(PhpClass.fqcn).where(PhpClass.module_id == module.id))).all()
 
-    preferences = (await session.scalars(select(DiPreference).where(DiPreference.module_id == module_id))).all()
-    # Batched instead of one SELECT per preference.
-    pref_owner_by_fqcn = {
-        fqcn: owner
-        for owner, fqcn in (
-            await session.execute(
-                select(Module, PhpClass.fqcn)
-                .join(PhpClass, PhpClass.module_id == Module.id)
-                .where(PhpClass.fqcn.in_([pref.for_type for pref in preferences]))
-            )
+        dependencies = (
+            await session.scalars(select(ModuleDependency).where(ModuleDependency.module_id == module.id))
         ).all()
-    }
-    for pref in preferences:
-        owner = pref_owner_by_fqcn.get(pref.for_type)
-        target_id = add_module_node(owner) if owner else add_external_node(pref.for_type)
-        add_edge(center_id, target_id, "overrides")
+        # Batched instead of one SELECT per dependency — a module with many
+        # composer requirements otherwise issues one query per row here.
+        dependency_names = [dep.depends_on_name for dep in dependencies]
+        modules_by_name = {
+            m.name: m
+            for m in (await session.scalars(select(Module).where(Module.name.in_(dependency_names)))).all()
+        }
+        for dep in dependencies:
+            target_module = modules_by_name.get(dep.depends_on_name)
+            target_id = observe(target_module) if target_module else add_external_node(dep.depends_on_name)
+            add_edge(this_id, target_id, "depends_on")
 
-    if own_fqcns:
-        reverse_preferences = (
+        reverse_dependencies = (
             await session.execute(
                 select(Module)
-                .join(DiPreference, DiPreference.module_id == Module.id)
-                .where(DiPreference.for_type.in_(own_fqcns))
+                .join(ModuleDependency, ModuleDependency.module_id == Module.id)
+                .where(ModuleDependency.depends_on_name == module.name)
             )
         ).scalars().all()
-        for source_module in reverse_preferences:
-            add_edge(add_module_node(source_module), center_id, "overrides")
+        for source_module in reverse_dependencies:
+            add_edge(observe(source_module), this_id, "depends_on")
 
-    plugins = (await session.scalars(select(DiPlugin).where(DiPlugin.module_id == module_id))).all()
-    # Batched instead of one SELECT per plugin.
-    plugin_owner_by_fqcn = {
-        fqcn: owner
-        for owner, fqcn in (
-            await session.execute(
-                select(Module, PhpClass.fqcn)
-                .join(PhpClass, PhpClass.module_id == Module.id)
-                .where(PhpClass.fqcn.in_([plugin.intercepted_type for plugin in plugins]))
-            )
-        ).all()
-    }
-    for plugin in plugins:
-        owner = plugin_owner_by_fqcn.get(plugin.intercepted_type)
-        target_id = add_module_node(owner) if owner else add_external_node(plugin.intercepted_type)
-        add_edge(center_id, target_id, "plugins")
+        preferences = (await session.scalars(select(DiPreference).where(DiPreference.module_id == module.id))).all()
+        # Batched instead of one SELECT per preference.
+        pref_owner_by_fqcn = {
+            fqcn: owner
+            for owner, fqcn in (
+                await session.execute(
+                    select(Module, PhpClass.fqcn)
+                    .join(PhpClass, PhpClass.module_id == Module.id)
+                    .where(PhpClass.fqcn.in_([pref.for_type for pref in preferences]))
+                )
+            ).all()
+        }
+        for pref in preferences:
+            owner = pref_owner_by_fqcn.get(pref.for_type)
+            target_id = observe(owner) if owner else add_external_node(pref.for_type)
+            add_edge(this_id, target_id, "overrides")
 
-    if own_fqcns:
-        reverse_plugins = (
-            await session.execute(
-                select(Module)
-                .join(DiPlugin, DiPlugin.module_id == Module.id)
-                .where(DiPlugin.intercepted_type.in_(own_fqcns))
-            )
-        ).scalars().all()
-        for source_module in reverse_plugins:
-            add_edge(add_module_node(source_module), center_id, "plugins")
+        if own_fqcns:
+            reverse_preferences = (
+                await session.execute(
+                    select(Module)
+                    .join(DiPreference, DiPreference.module_id == Module.id)
+                    .where(DiPreference.for_type.in_(own_fqcns))
+                )
+            ).scalars().all()
+            for source_module in reverse_preferences:
+                add_edge(observe(source_module), this_id, "overrides")
+
+        plugins = (await session.scalars(select(DiPlugin).where(DiPlugin.module_id == module.id))).all()
+        # Batched instead of one SELECT per plugin.
+        plugin_owner_by_fqcn = {
+            fqcn: owner
+            for owner, fqcn in (
+                await session.execute(
+                    select(Module, PhpClass.fqcn)
+                    .join(PhpClass, PhpClass.module_id == Module.id)
+                    .where(PhpClass.fqcn.in_([plugin.intercepted_type for plugin in plugins]))
+                )
+            ).all()
+        }
+        for plugin in plugins:
+            owner = plugin_owner_by_fqcn.get(plugin.intercepted_type)
+            target_id = observe(owner) if owner else add_external_node(plugin.intercepted_type)
+            add_edge(this_id, target_id, "plugins")
+
+        if own_fqcns:
+            reverse_plugins = (
+                await session.execute(
+                    select(Module)
+                    .join(DiPlugin, DiPlugin.module_id == Module.id)
+                    .where(DiPlugin.intercepted_type.in_(own_fqcns))
+                )
+            ).scalars().all()
+            for source_module in reverse_plugins:
+                add_edge(observe(source_module), this_id, "plugins")
+
+        return discovered
+
+    frontier: dict[int, Module] = {module_id: center}
+    for _ in range(depth):
+        if not frontier or len(nodes) >= _MAX_GRAPH_NODES:
+            truncated = truncated or bool(frontier)
+            break
+
+        next_frontier_ids: set[int] = set()
+        for member in frontier.values():
+            if len(nodes) >= _MAX_GRAPH_NODES:
+                truncated = True
+                break
+            next_frontier_ids |= await expand(member)
+
+        visited_module_ids |= next_frontier_ids
+        if not next_frontier_ids:
+            break
+        frontier = {
+            m.id: m
+            for m in (await session.scalars(select(Module).where(Module.id.in_(next_frontier_ids)))).all()
+        }
 
     return DependencyGraphResponse(
         center_module_id=module_id,
         center_label=center.name,
         nodes=list(nodes.values()),
         edges=edges,
+        truncated=truncated,
     )
 
 

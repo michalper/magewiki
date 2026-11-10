@@ -159,3 +159,91 @@ async def test_graph_404_for_unknown_module():
         response = await client.get("/modules/999999999/graph")
 
     assert response.status_code == 404
+
+
+@pytest.mark.asyncio
+async def test_graph_is_not_truncated_by_default(graph_fixture):
+    modules, _ = graph_fixture
+    center = modules["center"]
+
+    transport = ASGITransport(app=app)
+    async with AsyncClient(transport=transport, base_url="http://test") as client:
+        response = await client.get(f"/modules/{center.id}/graph")
+
+    assert response.json()["truncated"] is False
+
+
+@pytest.mark.asyncio
+async def test_graph_depth_2_reaches_a_second_hop(db_session):
+    """center -> dep_target (depth 1) -> second_hop (depth 2). At depth=1 only
+    dep_target should appear; at depth=2, second_hop should too.
+    """
+    suffix = uuid.uuid4().hex[:8]
+    center = await _make_module(db_session, suffix, f"Center_{suffix}")
+    dep_target = await _make_module(db_session, f"{suffix}-a", f"DepTarget_{suffix}")
+    second_hop = await _make_module(db_session, f"{suffix}-b", f"SecondHop_{suffix}")
+
+    db_session.add_all(
+        [
+            ModuleDependency(module_id=center.id, depends_on_name=dep_target.name),
+            ModuleDependency(module_id=dep_target.id, depends_on_name=second_hop.name),
+        ]
+    )
+    await db_session.commit()
+
+    transport = ASGITransport(app=app)
+    async with AsyncClient(transport=transport, base_url="http://test") as client:
+        depth_1 = await client.get(f"/modules/{center.id}/graph", params={"depth": 1})
+        depth_2 = await client.get(f"/modules/{center.id}/graph", params={"depth": 2})
+
+    second_hop_id = f"module:{second_hop.id}"
+    depth_1_ids = {n["id"] for n in depth_1.json()["nodes"]}
+    depth_2_ids = {n["id"] for n in depth_2.json()["nodes"]}
+    assert second_hop_id not in depth_1_ids
+    assert second_hop_id in depth_2_ids
+
+    await db_session.execute(delete(Module).where(Module.id.in_([center.id, dep_target.id, second_hop.id])))
+    await db_session.commit()
+
+
+@pytest.mark.asyncio
+async def test_graph_depth_does_not_loop_forever_on_a_cycle(db_session):
+    """a -> b -> a: a two-module mutual dependency cycle. A naive BFS that
+    doesn't track visited module ids would expand this forever at depth=3 --
+    it must terminate and must not duplicate either module's node.
+    """
+    suffix = uuid.uuid4().hex[:8]
+    a = await _make_module(db_session, suffix, f"CycleA_{suffix}")
+    b = await _make_module(db_session, f"{suffix}-b", f"CycleB_{suffix}")
+
+    db_session.add_all(
+        [
+            ModuleDependency(module_id=a.id, depends_on_name=b.name),
+            ModuleDependency(module_id=b.id, depends_on_name=a.name),
+        ]
+    )
+    await db_session.commit()
+
+    transport = ASGITransport(app=app)
+    async with AsyncClient(transport=transport, base_url="http://test") as client:
+        response = await client.get(f"/modules/{a.id}/graph", params={"depth": 3})
+
+    body = response.json()
+    assert response.status_code == 200
+    node_ids = [n["id"] for n in body["nodes"]]
+    assert sorted(node_ids) == sorted({f"module:{a.id}", f"module:{b.id}"})  # no duplicates
+
+    await db_session.execute(delete(Module).where(Module.id.in_([a.id, b.id])))
+    await db_session.commit()
+
+
+@pytest.mark.asyncio
+async def test_graph_rejects_an_out_of_range_depth(graph_fixture):
+    modules, _ = graph_fixture
+    center = modules["center"]
+
+    transport = ASGITransport(app=app)
+    async with AsyncClient(transport=transport, base_url="http://test") as client:
+        response = await client.get(f"/modules/{center.id}/graph", params={"depth": 4})
+
+    assert response.status_code == 422
