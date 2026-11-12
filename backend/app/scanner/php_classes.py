@@ -76,9 +76,11 @@ def _string_literal_value(node: Node, source: bytes) -> str | None:
 def _extract_consts(class_body: Node, source: bytes) -> dict[str, str]:
     consts: dict[str, str] = {}
     for const_el in find_all(class_body, {"const_element"}):
-        name_node = next((c for c in const_el.children if c.type == "name"), None)
-        if name_node is None:
-            continue
+        # A const_element always has a "name" child in tree-sitter-php's
+        # grammar -- verified directly (typed consts, multi-const
+        # statements like `const A = 1, B = 2;`) -- so there's no
+        # "no name" case to guard against here.
+        name_node = next(c for c in const_el.children if c.type == "name")
         value_node = next((c for c in const_el.children if c.type in ("string", "encapsed_string")), None)
         if value_node is None:
             continue

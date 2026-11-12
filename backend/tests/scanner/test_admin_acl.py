@@ -99,3 +99,31 @@ def test_does_not_flag_when_the_extends_name_is_ambiguous_within_the_module():
         _cls("Index", extends=["AbstractAction"]),
     ]
     assert find_missing_acl(classes) == []
+
+
+def test_does_not_flag_a_pathological_resolution_chain_beyond_the_hop_ceiling():
+    # A long, non-repeating extends chain (each class a distinct name, so
+    # the `seen` dedup never short-circuits it) longer than
+    # _MAX_RESOLUTION_HOPS -- must bail out as unresolvable, not loop
+    # forever or flag a real gap it never actually finished checking.
+    chain = [_cls(f"Base{i}", is_abstract=True, extends=[f"Base{i + 1}"]) for i in range(25)]
+    classes = [_cls("Index", extends=["Base0"]), *chain]
+    assert find_missing_acl(classes) == []
+
+
+def test_flags_correctly_when_the_same_parent_is_reachable_via_two_paths():
+    # Index implements two interfaces that both extend a common interface
+    # with no ADMIN_RESOURCE of its own -- "Common" enters the BFS queue
+    # twice (once via each path). Nothing in the chain ever declares
+    # ADMIN_RESOURCE, so resolution must still complete correctly (not
+    # crash or loop) and flag Index, exercising the `seen` dedup that skips
+    # Common's second, already-visited occurrence instead of re-walking it.
+    classes = [
+        _cls("Common", kind="interface"),
+        _cls("InterfaceA", kind="interface", extends=["Common"]),
+        _cls("InterfaceB", kind="interface", extends=["Common"]),
+        _cls("Index", implements=["InterfaceA", "InterfaceB"]),
+    ]
+    findings = find_missing_acl(classes)
+    assert len(findings) == 1
+    assert findings[0].file_path == _ADMIN_PATH
