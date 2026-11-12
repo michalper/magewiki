@@ -122,10 +122,11 @@ const KPI_TILES: {
       "acl_resource_conflict",
       "indexer_id_conflict",
       "view_id_conflict",
+      "missing_acl",
     ],
     accent: "warning",
     description:
-      "Two modules silently fighting over the same plugin hook, Composer package version, REST route, database column, di.xml preference, cron job code, GraphQL field, ACL resource id, indexer id, or mview id — or a circular module.xml sequence that breaks setup:upgrade outright. Each shows up on every module involved.",
+      "Two modules silently fighting over the same plugin hook, Composer package version, REST route, database column, di.xml preference, cron job code, GraphQL field, ACL resource id, indexer id, or mview id — a circular module.xml sequence that breaks setup:upgrade outright — or an admin controller declared with no ACL resource at all, reachable by any logged-in admin. Each shows up on every module involved.",
   },
   {
     label: "License risks",
