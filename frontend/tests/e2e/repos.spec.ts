@@ -74,3 +74,14 @@ test("clicking a repo card navigates to a repo-filtered Modules view", async ({ 
   // root (MAGEWIKI_SCAN_ROOT_2) is also configured.
   await expect(page.getByText(/^1 of \d+ modules$/)).toBeVisible();
 });
+
+test("the duplicate-modules table is omitted when no module has been embedded", async ({ page }) => {
+  // No e2e fixture ever gets a real LLM/embedding key (same constraint
+  // module-detail.spec.ts's "Similar modules" empty-state assertion
+  // already documents) -- nothing in the whole fleet has a 'module' chunk,
+  // so find_duplicate_module_pairs always returns [] here. The ranking
+  // logic itself is fully covered at the pytest layer instead.
+  await page.goto("/repos");
+  await expect(page.getByRole("heading", { name: "Repos" })).toBeVisible();
+  await expect(page.getByText("Possible duplicate modules")).not.toBeVisible();
+});

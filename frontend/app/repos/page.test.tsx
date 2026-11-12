@@ -28,11 +28,11 @@ describe("ReposPage", () => {
     fetchMock.mockReset();
   });
 
-  it("shows loading state before either query resolves", () => {
+  it("shows loading state before any query resolves", () => {
     fetchMock.mockReturnValue(new Promise(() => {}));
     renderWithQueryClient(<ReposPage />);
 
-    expect(screen.getAllByText("Loading...")).toHaveLength(2);
+    expect(screen.getAllByText("Loading...")).toHaveLength(3);
   });
 
   it("shows an error message when a query fails", async () => {
@@ -41,6 +41,7 @@ describe("ReposPage", () => {
 
     await waitFor(() => expect(screen.getByText("Failed to load repos.")).toBeInTheDocument());
     expect(screen.getByText("Failed to load module overlap.")).toBeInTheDocument();
+    expect(screen.getByText("Failed to load duplicate modules.")).toBeInTheDocument();
   });
 
   it("shows an empty-state message when no repos are scanned", async () => {
@@ -135,5 +136,40 @@ describe("ReposPage", () => {
 
     await waitFor(() => expect(screen.getByText("No repos scanned yet.")).toBeInTheDocument());
     expect(screen.queryByText("Shared across stores")).not.toBeInTheDocument();
+  });
+
+  it("renders the duplicate-pairs table with a compare link", async () => {
+    fetchMock.mockImplementation(async (path: string) =>
+      path === "/modules/duplicate-pairs"
+        ? [
+            {
+              module_a_id: 1,
+              module_a_name: "Vendor_Klaviyo",
+              module_a_composer_name: "vendor/klaviyo",
+              module_b_id: 2,
+              module_b_name: "Other_Klaviyo",
+              module_b_composer_name: "other/klaviyo",
+              similarity: 0.92,
+            },
+          ]
+        : [],
+    );
+    renderWithQueryClient(<ReposPage />);
+
+    await waitFor(() => expect(screen.getByText("Vendor_Klaviyo")).toBeInTheDocument());
+    expect(screen.getByText("Other_Klaviyo")).toBeInTheDocument();
+    expect(screen.getByText("92%")).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "Compare" })).toHaveAttribute(
+      "href",
+      "/modules/compare?a=1&b=2",
+    );
+  });
+
+  it("omits the duplicate-pairs table entirely when there are no duplicates", async () => {
+    fetchMock.mockImplementation(async () => []);
+    renderWithQueryClient(<ReposPage />);
+
+    await waitFor(() => expect(screen.getByText("No repos scanned yet.")).toBeInTheDocument());
+    expect(screen.queryByText("Possible duplicate modules")).not.toBeInTheDocument();
   });
 });

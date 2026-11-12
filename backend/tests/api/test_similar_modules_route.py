@@ -93,3 +93,36 @@ async def test_similar_modules_respects_the_limit_query_param():
         response = await client.get("/modules/999999999/similar", params={"limit": 100})
 
     assert response.status_code == 422
+
+
+@pytest.mark.asyncio
+async def test_duplicate_pairs_route_returns_a_real_pair(db_session):
+    suffix = uuid.uuid4().hex[:8]
+    base = int(suffix, 16) % 1500
+    a = await _make_module(db_session, f"{suffix}-a", f"DupA_{suffix}")
+    b = await _make_module(db_session, f"{suffix}-b", f"DupB_{suffix}")
+
+    db_session.add_all(
+        [
+            Chunk(
+                module_id=a.id, chunk_type="module", content_hash=f"c-{a.id}",
+                text="module a summary", embedding=_vector({base: 1.0}),
+            ),
+            Chunk(
+                module_id=b.id, chunk_type="module", content_hash=f"c-{b.id}",
+                text="module b summary", embedding=_vector({base: 0.99, base + 1: 0.01}),
+            ),
+        ]
+    )
+    await db_session.commit()
+
+    transport = ASGITransport(app=app)
+    async with AsyncClient(transport=transport, base_url="http://test") as client:
+        response = await client.get("/modules/duplicate-pairs")
+
+    assert response.status_code == 200
+    body = response.json()
+    pair = next(
+        p for p in body if {p["module_a_id"], p["module_b_id"]} == {a.id, b.id}
+    )
+    assert pair["similarity"] > 0.9

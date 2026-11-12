@@ -197,6 +197,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/modules/duplicate-pairs": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List Duplicate Module Pairs */
+        get: operations["list_duplicate_module_pairs_modules_duplicate_pairs_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/modules/{module_id}": {
         parameters: {
             query?: never;
@@ -476,6 +493,29 @@ export interface components {
             name: string;
             /** Virtual Type */
             virtual_type: string;
+        };
+        /**
+         * DuplicateModulePairEntry
+         * @description Phase 22: a fleet-wide pair of modules whose module-level embeddings
+         *     are close but aren't the same vendor/package -- the same relationship
+         *     GET /modules/{id}/similar surfaces one module at a time, computed for
+         *     the whole fleet at once. See app/search/similar_modules.py.
+         */
+        DuplicateModulePairEntry: {
+            /** Module A Id */
+            module_a_id: number;
+            /** Module A Name */
+            module_a_name: string;
+            /** Module A Composer Name */
+            module_a_composer_name: string | null;
+            /** Module B Id */
+            module_b_id: number;
+            /** Module B Name */
+            module_b_name: string;
+            /** Module B Composer Name */
+            module_b_composer_name: string | null;
+            /** Similarity */
+            similarity: number;
         };
         /** EventObserverSummary */
         EventObserverSummary: {
@@ -1261,6 +1301,37 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["ModuleOverlapEntry"][];
+                };
+            };
+        };
+    };
+    list_duplicate_module_pairs_modules_duplicate_pairs_get: {
+        parameters: {
+            query?: {
+                limit?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DuplicateModulePairEntry"][];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
                 };
             };
         };

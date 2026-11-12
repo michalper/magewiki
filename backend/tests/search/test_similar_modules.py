@@ -4,7 +4,7 @@ from datetime import UTC, datetime
 import pytest
 
 from app.models import Chunk, Module
-from app.search.similar_modules import find_similar_modules
+from app.search.similar_modules import find_duplicate_module_pairs, find_similar_modules
 
 
 def _vector(active: dict[int, float]) -> list[float]:
@@ -145,3 +145,53 @@ async def test_respects_the_limit(db_session):
     results = await find_similar_modules(db_session, target.id, limit=3, min_similarity=0.5)
 
     assert len(results) == 3
+
+
+@pytest.mark.asyncio
+async def test_duplicate_pairs_finds_a_real_pair_above_threshold(db_session):
+    suffix = uuid.uuid4().hex[:8]
+    base = _base_dim(suffix)
+    a = await _make_module(db_session, f"{suffix}-a")
+    b = await _make_module(db_session, f"{suffix}-b")
+
+    await _add_module_chunk(db_session, a, _vector({base: 1.0}))
+    await _add_module_chunk(db_session, b, _vector({base: 0.99, base + 1: 0.01}))
+    await db_session.commit()
+
+    results = await find_duplicate_module_pairs(db_session, min_similarity=0.5)
+
+    pair = next(p for p in results if {p.module_a_id, p.module_b_id} == {a.id, b.id})
+    assert pair.similarity > 0.9
+
+
+@pytest.mark.asyncio
+async def test_duplicate_pairs_excludes_same_vendor_package(db_session):
+    suffix = uuid.uuid4().hex[:8]
+    base = _base_dim(suffix)
+    a = await _make_module(db_session, f"{suffix}-a", composer_name="vendor/shared-package")
+    b = await _make_module(db_session, f"{suffix}-b", composer_name="vendor/shared-package")
+
+    identical_vector = _vector({base: 1.0})
+    await _add_module_chunk(db_session, a, identical_vector)
+    await _add_module_chunk(db_session, b, identical_vector)
+    await db_session.commit()
+
+    results = await find_duplicate_module_pairs(db_session, min_similarity=0.5)
+
+    assert not any({p.module_a_id, p.module_b_id} == {a.id, b.id} for p in results)
+
+
+@pytest.mark.asyncio
+async def test_duplicate_pairs_drops_below_threshold_pairs(db_session):
+    suffix = uuid.uuid4().hex[:8]
+    base = _base_dim(suffix)
+    a = await _make_module(db_session, f"{suffix}-a")
+    b = await _make_module(db_session, f"{suffix}-b")
+
+    await _add_module_chunk(db_session, a, _vector({base: 1.0}))
+    await _add_module_chunk(db_session, b, _vector({base + 1: 1.0}))  # orthogonal
+    await db_session.commit()
+
+    results = await find_duplicate_module_pairs(db_session, min_similarity=0.5)
+
+    assert not any({p.module_a_id, p.module_b_id} == {a.id, b.id} for p in results)

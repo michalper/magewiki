@@ -19,6 +19,8 @@ function downloadSbom(e: MouseEvent, repoRoot: string) {
 type RepoSummary = paths["/repos"]["get"]["responses"][200]["content"]["application/json"][number];
 type ModuleOverlapEntry =
   paths["/modules/overlap"]["get"]["responses"][200]["content"]["application/json"][number];
+type DuplicateModulePairEntry =
+  paths["/modules/duplicate-pairs"]["get"]["responses"][200]["content"]["application/json"][number];
 
 async function fetchRepos(): Promise<RepoSummary[]> {
   return apiFetch("/repos");
@@ -28,10 +30,15 @@ async function fetchModuleOverlap(): Promise<ModuleOverlapEntry[]> {
   return apiFetch("/modules/overlap");
 }
 
+async function fetchDuplicatePairs(): Promise<DuplicateModulePairEntry[]> {
+  return apiFetch("/modules/duplicate-pairs");
+}
+
 export default function ReposPage() {
   useDocumentTitle("Repos");
   const reposQuery = useQuery({ queryKey: ["repos"], queryFn: fetchRepos });
   const overlapQuery = useQuery({ queryKey: ["modules-overlap"], queryFn: fetchModuleOverlap });
+  const duplicatesQuery = useQuery({ queryKey: ["modules-duplicate-pairs"], queryFn: fetchDuplicatePairs });
 
   return (
     <div className="flex flex-col flex-1 gap-6 p-8 max-w-5xl mx-auto w-full" suppressHydrationWarning>
@@ -146,6 +153,51 @@ export default function ReposPage() {
                           </span>
                         ))}
                       </div>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
+
+      {duplicatesQuery.isLoading && <p>Loading...</p>}
+      {duplicatesQuery.isError && <p className="text-destructive">Failed to load duplicate modules.</p>}
+
+      {duplicatesQuery.data && duplicatesQuery.data.length > 0 && (
+        <div className="flex flex-col gap-3">
+          <h2 className="text-lg font-semibold tracking-tight">Possible duplicate modules</h2>
+          <p className="text-sm text-muted-foreground">
+            Different modules (not the same vendor/package) whose AI-generated summaries are
+            semantically very close — likely doing the same third-party integration twice.
+          </p>
+          <div className="rounded-2xl bg-card p-2 shadow-sm">
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="text-left text-muted-foreground">
+                  <th className="p-3 font-medium">Module A</th>
+                  <th className="p-3 font-medium">Module B</th>
+                  <th className="p-3 font-medium">Similarity</th>
+                  <th className="p-3 font-medium"></th>
+                </tr>
+              </thead>
+              <tbody>
+                {duplicatesQuery.data.map((pair) => (
+                  <tr
+                    key={`${pair.module_a_id}-${pair.module_b_id}`}
+                    className="border-t border-border"
+                  >
+                    <td className="p-3 font-mono">{pair.module_a_name}</td>
+                    <td className="p-3 font-mono">{pair.module_b_name}</td>
+                    <td className="p-3">{Math.round(pair.similarity * 100)}%</td>
+                    <td className="p-3">
+                      <Link
+                        href={`/modules/compare?a=${pair.module_a_id}&b=${pair.module_b_id}`}
+                        className="text-primary hover:underline"
+                      >
+                        Compare
+                      </Link>
                     </td>
                   </tr>
                 ))}
