@@ -5,16 +5,17 @@ _ADMIN_RESOURCE_CONST = "ADMIN_RESOURCE"
 _MAX_RESOLUTION_HOPS = 20  # generous ceiling against a pathological extends/implements cycle
 
 
-def _resolves_admin_resource(entry: PhpClassEntry, by_name: dict[str, PhpClassEntry]) -> bool | None:
+def _resolves_admin_resource(entry: PhpClassEntry, by_name: dict[str, list[PhpClassEntry]]) -> bool | None:
     """Whether `entry` (or something it extends/implements, resolved only
     within this module's own class catalog) declares ADMIN_RESOURCE.
 
     Returns True (found), False (fully resolved in-module, never found -- a
     concrete, certain gap), or None (the chain reaches a class/interface name
     not in this module's own catalog -- e.g. the real
-    \\Magento\\Backend\\App\\Action -- so it's ambiguous and must not be
-    flagged; see admin_acl.py's module docstring-equivalent reasoning in the
-    plan this implements).
+    \\Magento\\Backend\\App\\Action -- or a bare name that two unrelated
+    classes in this module both happen to share -- e.g. two different
+    AbstractAction controllers under sibling directories -- so it's
+    ambiguous and must not be flagged).
     """
     seen: set[str] = set()
     queue: list[str] = [entry.class_name]
@@ -28,9 +29,15 @@ def _resolves_admin_resource(entry: PhpClassEntry, by_name: dict[str, PhpClassEn
             continue
         seen.add(name)
 
-        current = entry if name == entry.class_name else by_name.get(name)
-        if current is None:
-            return None  # a referenced parent/interface isn't in this module -- unresolvable
+        if name == entry.class_name:
+            current = entry
+        else:
+            candidates = by_name.get(name)
+            if not candidates:
+                return None  # a referenced parent/interface isn't in this module -- unresolvable
+            if len(candidates) > 1:
+                return None  # bare name collides with >1 class in this module -- can't resolve safely
+            current = candidates[0]
 
         if _ADMIN_RESOURCE_CONST in current.consts:
             return True
@@ -58,7 +65,9 @@ def find_missing_acl(classes: list[PhpClassEntry]) -> list[QualityFinding]:
     base admin-controller classes are commonly abstract with no
     ADMIN_RESOURCE of their own by design (concrete subclasses supply it).
     """
-    by_name = {c.class_name: c for c in classes}
+    by_name: dict[str, list[PhpClassEntry]] = {}
+    for c in classes:
+        by_name.setdefault(c.class_name, []).append(c)
 
     findings: list[QualityFinding] = []
     for entry in classes:

@@ -79,3 +79,23 @@ def test_does_not_flag_a_non_admin_controller():
 def test_does_not_flag_an_interface_under_the_admin_controller_path():
     classes = [_cls("SomeInterface", kind="interface")]
     assert find_missing_acl(classes) == []
+
+
+def test_does_not_flag_when_the_extends_name_is_ambiguous_within_the_module():
+    # Two unrelated classes share the bare name "AbstractAction" -- one
+    # really is Index's parent (and has no ADMIN_RESOURCE of its own), the
+    # other lives under a sibling directory and genuinely does declare one.
+    # Resolving the extends clause by bare name alone can't tell which is
+    # which, so this must be skipped as unresolvable, not flagged as a
+    # concrete gap -- same treatment as a parent class outside the module.
+    classes = [
+        _cls("AbstractAction", file_path="Controller/Adminhtml/Product/AbstractAction.php", is_abstract=True),
+        _cls(
+            "AbstractAction",
+            file_path="Controller/Adminhtml/Category/AbstractAction.php",
+            consts={"ADMIN_RESOURCE": "Vendor_Module::category"},
+            is_abstract=True,
+        ),
+        _cls("Index", extends=["AbstractAction"]),
+    ]
+    assert find_missing_acl(classes) == []
