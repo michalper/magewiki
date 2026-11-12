@@ -1,8 +1,7 @@
 from pathlib import Path
 
-from lxml import etree
-
 from app.scanner.dto import DbColumnEntry, DbTableEntry
+from app.scanner.xml_parse_utils import parse_xml_root
 
 _BOOL_ATTRS = {"true": True, "false": False}
 
@@ -17,12 +16,8 @@ def parse_db_schema_xml(path: Path) -> tuple[list[DbTableEntry], list[DbColumnEn
     nothing needs them yet). Same role lxml plays for di.xml/events.xml: facts
     come from the parser, not the LLM.
     """
-    if not path.is_file():
-        return [], []
-
-    try:
-        root = etree.parse(str(path)).getroot()
-    except etree.XMLSyntaxError:
+    root = parse_xml_root(path)
+    if root is None:
         return [], []
 
     tables: list[DbTableEntry] = []

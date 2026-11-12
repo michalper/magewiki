@@ -1,7 +1,7 @@
 import asyncio
 import logging
 from collections import defaultdict
-from collections.abc import AsyncIterator, Callable
+from collections.abc import AsyncIterator
 from dataclasses import asdict, dataclass, field
 from datetime import UTC, datetime
 from pathlib import Path
@@ -625,25 +625,7 @@ async def _detect_and_persist_plugin_conflicts(session: AsyncSession, root: Path
         class_methods[fqcn].add(method_name)
 
     findings = detect_plugin_conflicts(plugins, class_methods)
-
-    await session.execute(
-        delete(ModuleQualityFinding).where(
-            ModuleQualityFinding.check_type == "plugin_conflict",
-            ModuleQualityFinding.module_id.in_(select(Module.id).where(Module.repo_root == str(root))),
-        )
-    )
-    for module_id, finding in findings:
-        session.add(
-            ModuleQualityFinding(
-                module_id=module_id,
-                check_type=finding.check_type,
-                severity=finding.severity,
-                file_path=finding.file_path,
-                line=finding.line,
-                message=finding.message,
-            )
-        )
-    await session.commit()
+    await _persist_conflict_findings(session, root, "plugin_conflict", findings)
 
 
 async def _detect_and_persist_composer_conflicts(session: AsyncSession, root: Path) -> None:
@@ -662,25 +644,7 @@ async def _detect_and_persist_composer_conflicts(session: AsyncSession, root: Pa
     requirements = [ComposerRequirementRow(*row) for row in requirement_rows]
 
     findings = detect_composer_conflicts(requirements)
-
-    await session.execute(
-        delete(ModuleQualityFinding).where(
-            ModuleQualityFinding.check_type == "composer_conflict",
-            ModuleQualityFinding.module_id.in_(select(Module.id).where(Module.repo_root == str(root))),
-        )
-    )
-    for module_id, finding in findings:
-        session.add(
-            ModuleQualityFinding(
-                module_id=module_id,
-                check_type=finding.check_type,
-                severity=finding.severity,
-                file_path=finding.file_path,
-                line=finding.line,
-                message=finding.message,
-            )
-        )
-    await session.commit()
+    await _persist_conflict_findings(session, root, "composer_conflict", findings)
 
 
 async def _detect_and_persist_webapi_route_conflicts(session: AsyncSession, root: Path) -> None:
@@ -701,55 +665,18 @@ async def _detect_and_persist_webapi_route_conflicts(session: AsyncSession, root
     routes = [WebapiRouteRow(*row) for row in route_rows]
 
     findings = detect_webapi_route_conflicts(routes)
-
-    await session.execute(
-        delete(ModuleQualityFinding).where(
-            ModuleQualityFinding.check_type == "webapi_route_conflict",
-            ModuleQualityFinding.module_id.in_(select(Module.id).where(Module.repo_root == str(root))),
-        )
-    )
-    for module_id, finding in findings:
-        session.add(
-            ModuleQualityFinding(
-                module_id=module_id,
-                check_type=finding.check_type,
-                severity=finding.severity,
-                file_path=finding.file_path,
-                line=finding.line,
-                message=finding.message,
-            )
-        )
-    await session.commit()
+    await _persist_conflict_findings(session, root, "webapi_route_conflict", findings)
 
 
-async def _detect_and_persist_pairwise_id_conflicts(
-    session: AsyncSession,
-    root: Path,
-    *,
-    id_column: Any,
-    module_id_column: Any,
-    row_factory: Callable[..., Any],
-    detect_fn: Callable[[list[Any]], list[tuple[int, Any]]],
-    check_type: str,
+async def _persist_conflict_findings(
+    session: AsyncSession, root: Path, check_type: str, findings: list[tuple[int, Any]]
 ) -> None:
-    """Shared shape behind the acl_resource_conflict/indexer_id_conflict/
-    view_id_conflict checks: read (module_id, module name, id) rows for
-    this repo_root, run the pure `detect_fn` over them, then replace this
-    check_type's findings for the repo_root with whatever it returned.
-    Each check only differs in which columns/row dataclass/detect function/
-    check_type string it plugs in here.
+    """The persistence tail every cross-module conflict check shares: wipe
+    this check_type's existing findings for `root`, then insert whatever
+    (module_id, QualityFinding) pairs the check's own pure detect function
+    returned. Every _detect_and_persist_* function's own fetch query/row
+    dataclass/detect function differ; this part never does.
     """
-    rows = (
-        await session.execute(
-            select(module_id_column, Module.name, id_column)
-            .join(Module, Module.id == module_id_column)
-            .where(Module.repo_root == str(root))
-        )
-    ).all()
-    entries = [row_factory(*row) for row in rows]
-
-    findings = detect_fn(entries)
-
     await session.execute(
         delete(ModuleQualityFinding).where(
             ModuleQualityFinding.check_type == check_type,
@@ -771,39 +698,42 @@ async def _detect_and_persist_pairwise_id_conflicts(
 
 
 async def _detect_and_persist_acl_resource_conflicts(session: AsyncSession, root: Path) -> None:
-    await _detect_and_persist_pairwise_id_conflicts(
-        session,
-        root,
-        id_column=AclResource.resource_id,
-        module_id_column=AclResource.module_id,
-        row_factory=AclResourceRow,
-        detect_fn=detect_acl_resource_conflicts,
-        check_type="acl_resource_conflict",
-    )
+    resource_rows = (
+        await session.execute(
+            select(AclResource.module_id, Module.name, AclResource.resource_id)
+            .join(Module, Module.id == AclResource.module_id)
+            .where(Module.repo_root == str(root))
+        )
+    ).all()
+    resources = [AclResourceRow(*row) for row in resource_rows]
+    findings = detect_acl_resource_conflicts(resources)
+    await _persist_conflict_findings(session, root, "acl_resource_conflict", findings)
 
 
 async def _detect_and_persist_indexer_conflicts(session: AsyncSession, root: Path) -> None:
-    await _detect_and_persist_pairwise_id_conflicts(
-        session,
-        root,
-        id_column=ModuleIndexer.indexer_id,
-        module_id_column=ModuleIndexer.module_id,
-        row_factory=IndexerRow,
-        detect_fn=detect_indexer_conflicts,
-        check_type="indexer_id_conflict",
-    )
+    indexer_rows = (
+        await session.execute(
+            select(ModuleIndexer.module_id, Module.name, ModuleIndexer.indexer_id)
+            .join(Module, Module.id == ModuleIndexer.module_id)
+            .where(Module.repo_root == str(root))
+        )
+    ).all()
+    indexers = [IndexerRow(*row) for row in indexer_rows]
+    findings = detect_indexer_conflicts(indexers)
+    await _persist_conflict_findings(session, root, "indexer_id_conflict", findings)
 
 
 async def _detect_and_persist_mview_conflicts(session: AsyncSession, root: Path) -> None:
-    await _detect_and_persist_pairwise_id_conflicts(
-        session,
-        root,
-        id_column=ModuleMview.view_id,
-        module_id_column=ModuleMview.module_id,
-        row_factory=MviewRow,
-        detect_fn=detect_mview_conflicts,
-        check_type="view_id_conflict",
-    )
+    mview_rows = (
+        await session.execute(
+            select(ModuleMview.module_id, Module.name, ModuleMview.view_id)
+            .join(Module, Module.id == ModuleMview.module_id)
+            .where(Module.repo_root == str(root))
+        )
+    ).all()
+    mviews = [MviewRow(*row) for row in mview_rows]
+    findings = detect_mview_conflicts(mviews)
+    await _persist_conflict_findings(session, root, "view_id_conflict", findings)
 
 
 async def _detect_and_persist_db_schema_conflicts(session: AsyncSession, root: Path) -> None:
@@ -824,25 +754,7 @@ async def _detect_and_persist_db_schema_conflicts(session: AsyncSession, root: P
     columns = [DbColumnRow(*row) for row in column_rows]
 
     findings = detect_db_schema_conflicts(columns)
-
-    await session.execute(
-        delete(ModuleQualityFinding).where(
-            ModuleQualityFinding.check_type == "db_schema_conflict",
-            ModuleQualityFinding.module_id.in_(select(Module.id).where(Module.repo_root == str(root))),
-        )
-    )
-    for module_id, finding in findings:
-        session.add(
-            ModuleQualityFinding(
-                module_id=module_id,
-                check_type=finding.check_type,
-                severity=finding.severity,
-                file_path=finding.file_path,
-                line=finding.line,
-                message=finding.message,
-            )
-        )
-    await session.commit()
+    await _persist_conflict_findings(session, root, "db_schema_conflict", findings)
 
 
 async def _detect_and_persist_circular_dependencies(session: AsyncSession, root: Path) -> None:
@@ -856,25 +768,7 @@ async def _detect_and_persist_circular_dependencies(session: AsyncSession, root:
     deps = [ModuleDependencyRow(*row) for row in dependency_rows]
 
     findings = detect_circular_dependencies(deps)
-
-    await session.execute(
-        delete(ModuleQualityFinding).where(
-            ModuleQualityFinding.check_type == "circular_dependency",
-            ModuleQualityFinding.module_id.in_(select(Module.id).where(Module.repo_root == str(root))),
-        )
-    )
-    for module_id, finding in findings:
-        session.add(
-            ModuleQualityFinding(
-                module_id=module_id,
-                check_type=finding.check_type,
-                severity=finding.severity,
-                file_path=finding.file_path,
-                line=finding.line,
-                message=finding.message,
-            )
-        )
-    await session.commit()
+    await _persist_conflict_findings(session, root, "circular_dependency", findings)
 
 
 async def _detect_and_persist_preference_conflicts(session: AsyncSession, root: Path) -> None:
@@ -888,25 +782,7 @@ async def _detect_and_persist_preference_conflicts(session: AsyncSession, root: 
     preferences = [PreferenceRow(*row) for row in preference_rows]
 
     findings = detect_preference_conflicts(preferences)
-
-    await session.execute(
-        delete(ModuleQualityFinding).where(
-            ModuleQualityFinding.check_type == "preference_conflict",
-            ModuleQualityFinding.module_id.in_(select(Module.id).where(Module.repo_root == str(root))),
-        )
-    )
-    for module_id, finding in findings:
-        session.add(
-            ModuleQualityFinding(
-                module_id=module_id,
-                check_type=finding.check_type,
-                severity=finding.severity,
-                file_path=finding.file_path,
-                line=finding.line,
-                message=finding.message,
-            )
-        )
-    await session.commit()
+    await _persist_conflict_findings(session, root, "preference_conflict", findings)
 
 
 async def _detect_and_persist_cron_job_conflicts(session: AsyncSession, root: Path) -> None:
@@ -920,25 +796,7 @@ async def _detect_and_persist_cron_job_conflicts(session: AsyncSession, root: Pa
     jobs = [CronJobRow(*row) for row in job_rows]
 
     findings = detect_cron_job_conflicts(jobs)
-
-    await session.execute(
-        delete(ModuleQualityFinding).where(
-            ModuleQualityFinding.check_type == "cron_job_conflict",
-            ModuleQualityFinding.module_id.in_(select(Module.id).where(Module.repo_root == str(root))),
-        )
-    )
-    for module_id, finding in findings:
-        session.add(
-            ModuleQualityFinding(
-                module_id=module_id,
-                check_type=finding.check_type,
-                severity=finding.severity,
-                file_path=finding.file_path,
-                line=finding.line,
-                message=finding.message,
-            )
-        )
-    await session.commit()
+    await _persist_conflict_findings(session, root, "cron_job_conflict", findings)
 
 
 async def _detect_and_persist_graphql_field_conflicts(session: AsyncSession, root: Path) -> None:
@@ -959,25 +817,7 @@ async def _detect_and_persist_graphql_field_conflicts(session: AsyncSession, roo
     fields = [GraphQlFieldRow(*row) for row in field_rows]
 
     findings = detect_graphql_field_conflicts(fields)
-
-    await session.execute(
-        delete(ModuleQualityFinding).where(
-            ModuleQualityFinding.check_type == "graphql_field_conflict",
-            ModuleQualityFinding.module_id.in_(select(Module.id).where(Module.repo_root == str(root))),
-        )
-    )
-    for module_id, finding in findings:
-        session.add(
-            ModuleQualityFinding(
-                module_id=module_id,
-                check_type=finding.check_type,
-                severity=finding.severity,
-                file_path=finding.file_path,
-                line=finding.line,
-                message=finding.message,
-            )
-        )
-    await session.commit()
+    await _persist_conflict_findings(session, root, "graphql_field_conflict", findings)
 
 
 _ModuleChildModel = (

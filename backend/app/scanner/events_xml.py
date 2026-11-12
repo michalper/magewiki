@@ -1,17 +1,12 @@
 from pathlib import Path
 
-from lxml import etree
-
 from app.scanner.dto import EventObserverEntry
+from app.scanner.xml_parse_utils import parse_xml_root
 
 
 def parse_events_xml(path: Path) -> list[EventObserverEntry]:
-    if not path.is_file():
-        return []
-
-    try:
-        root = etree.parse(str(path)).getroot()
-    except etree.XMLSyntaxError:
+    root = parse_xml_root(path)
+    if root is None:
         return []
 
     entries: list[EventObserverEntry] = []
