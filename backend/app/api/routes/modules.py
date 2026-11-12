@@ -47,6 +47,7 @@ from app.scanner.orchestrator import (
     scan_paths,
     scan_paths_events,
 )
+from app.search.similar_modules import find_similar_modules
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
@@ -977,6 +978,46 @@ async def get_module_dependency_graph(
         edges=edges,
         truncated=truncated,
     )
+
+
+class SimilarModuleEntry(BaseModel):
+    """Phase 21: a module whose own 'module'-level embedding is close to the
+    requested module's, surfaced as a likely-redundant integration — see
+    app/search/similar_modules.py for the cosine-similarity query and the
+    same-vendor/package exclusion.
+    """
+
+    module_id: int
+    name: str
+    composer_name: str | None
+    similarity: float
+
+
+@router.get("/modules/{module_id}/similar", response_model=list[SimilarModuleEntry])
+async def get_similar_modules(
+    module_id: int,
+    limit: int = Query(10, ge=1, le=50),
+    session: AsyncSession = Depends(get_session),
+) -> list[SimilarModuleEntry]:
+    """The most semantically similar other modules, fleet-wide (not scoped
+    to this module's own repo_root — see find_similar_modules). Returns an
+    empty list, not a 404, when the module exists but hasn't been
+    analyzed/embedded yet — "no similar modules found" and "not analyzed
+    yet" are both legitimately "nothing to show" from this endpoint's
+    perspective; the module detail page's own "not enough analyzed modules
+    yet" empty state covers either case identically.
+    """
+    module = await session.get(Module, module_id)
+    if module is None:
+        raise HTTPException(status_code=404, detail="module not found")
+
+    similar = await find_similar_modules(session, module_id, limit=limit)
+    return [
+        SimilarModuleEntry(
+            module_id=s.module_id, name=s.name, composer_name=s.composer_name, similarity=s.similarity
+        )
+        for s in similar
+    ]
 
 
 class ModuleHistoryEntry(BaseModel):

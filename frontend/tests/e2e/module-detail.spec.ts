@@ -38,6 +38,13 @@ test("the module detail page shows real facts, a pending README, and real qualit
   await expect(page.getByText(/Vendor\\Module/)).toBeVisible();
   await expect(page.getByText("Depends on")).toBeVisible();
   await expect(page.getByText("Magento_Sales").first()).toBeVisible();
+
+  // Phase 21: "Similar modules" reuses the same module-level embeddings the
+  // AI analysis above would have produced -- with no LLM/embedding key
+  // configured for this suite, nothing in the whole fleet is ever embedded,
+  // so the empty state is the one real, deterministic outcome here too.
+  await expect(page.getByText("Similar modules")).toBeVisible();
+  await expect(page.getByText(/Not enough analyzed modules yet to compare/)).toBeVisible();
 });
 
 test("a nonexistent module id shows a real error instead of hanging or crashing", async ({ page }) => {

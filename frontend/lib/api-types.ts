@@ -263,6 +263,32 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/modules/{module_id}/similar": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Similar Modules
+         * @description The most semantically similar other modules, fleet-wide (not scoped
+         *     to this module's own repo_root — see find_similar_modules). Returns an
+         *     empty list, not a 404, when the module exists but hasn't been
+         *     analyzed/embedded yet — "no similar modules found" and "not analyzed
+         *     yet" are both legitimately "nothing to show" from this endpoint's
+         *     perspective; the module detail page's own "not enough analyzed modules
+         *     yet" empty state covers either case identically.
+         */
+        get: operations["get_similar_modules_modules__module_id__similar_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/modules/{module_id}/history": {
         parameters: {
             query?: never;
@@ -963,6 +989,23 @@ export interface components {
             /** Identifier Rank */
             identifier_rank: number | null;
         };
+        /**
+         * SimilarModuleEntry
+         * @description Phase 21: a module whose own 'module'-level embedding is close to the
+         *     requested module's, surfaced as a likely-redundant integration — see
+         *     app/search/similar_modules.py for the cosine-similarity query and the
+         *     same-vendor/package exclusion.
+         */
+        SimilarModuleEntry: {
+            /** Module Id */
+            module_id: number;
+            /** Name */
+            name: string;
+            /** Composer Name */
+            composer_name: string | null;
+            /** Similarity */
+            similarity: number;
+        };
         /** ValidationError */
         ValidationError: {
             /** Location */
@@ -1304,6 +1347,39 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["DependencyGraphResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_similar_modules_modules__module_id__similar_get: {
+        parameters: {
+            query?: {
+                limit?: number;
+            };
+            header?: never;
+            path: {
+                module_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SimilarModuleEntry"][];
                 };
             };
             /** @description Validation Error */

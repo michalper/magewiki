@@ -12,6 +12,7 @@ import { Button } from "@/components/ui/button";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import { TagBadge } from "@/components/tag-badge";
 import { FindingMessage } from "@/components/finding-message";
+import { SimilarModulesCard } from "@/components/similar-modules-card";
 import { apiFetch, apiUrl } from "@/lib/api";
 import { downloadCsv, toCsv } from "@/lib/csv";
 import type { components } from "@/lib/api-types";
@@ -555,6 +556,8 @@ export default function ModuleDetailClient({ id }: { id: string }) {
               <dd className="pt-1.5">{new Date(moduleQuery.data.last_scanned_at).toLocaleString()}</dd>
             </dl>
           </div>
+
+          <SimilarModulesCard moduleId={id} />
 
           <div id="readme" className="flex flex-col gap-4 scroll-mt-20">
             {readmeQuery.isLoading && (

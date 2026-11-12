@@ -2729,3 +2729,84 @@ columns/`acl.xml` resources.
   Phase 19 itself originally used before the two e2e-coverage rounds
   introduced the heavier real-stack discipline for php-analyzer-dependent
   checks specifically.
+
+**Phase 21: semantic duplicate detection + a module comparison page
+(recorded 2026-11-12):** last item in the roadmap, done "po kolei" the
+same session as every phase before it. Two research passes (Explore
+agents, one per side) before writing anything, since this touches both a
+new backend query shape (pgvector cosine similarity over an *existing*
+table, not a new scan) and new frontend pages — confirmed two real
+simplifications this session's earlier assumption didn't anticipate:
+
+- **No new "compare" backend endpoint at all.** `GET /modules/{id}`
+  (`ModuleDetail`) already returns every field the compare page needs
+  (tags, `finding_counts`, `dependencies`) — the compare page just fetches
+  it twice (`useQuery(["module", a], ...)` / `useQuery(["module", b],
+  ...)`), the *same* queryKey `ModuleDetailClient.tsx`'s own `moduleQuery`
+  already uses, so arriving at compare from a module page (or from the new
+  "Similar modules" card) that's already cached is an instant hit, no
+  extra network round trip. Only one genuinely new endpoint was needed:
+  `GET /modules/{id}/similar`.
+- **The one new query** (`app/search/similar_modules.py`): a self-join CTE
+  against `chunks` using the exact same `<=>` pgvector cosine-distance
+  operator `hybrid.py`'s own semantic signal already uses (raw SQL via
+  `text()`, not the SQLAlchemy `.cosine_distance()` comparator — this
+  codebase doesn't use that API anywhere) — but simpler than
+  `hybrid_search`, since both vectors being compared are *already stored*
+  columns, so no query-embedding computation/string-formatting step is
+  needed at all. `chunk_type = 'module'` (confirmed exactly one such row
+  per module, written once per `embed_chunks` regeneration) is the stable
+  "module embedding" to compare. Deliberately fleet-wide, not scoped to
+  one `repo_root` -- unlike cross-module conflict detection, which must
+  stay per-store to match Magento's own per-store declarative-merge
+  semantics, "do we have two modules doing the same third-party
+  integration" is a genuinely cross-repo question (Phase 11's own
+  framing). `min_similarity=0.5` is an explicit, documented judgment-call
+  default (same epistemic honesty as `LICENSE_RISK_PREFIXES`'s own "this
+  project's own opinion" comment), not fetched from settings.
+- **A real test-isolation trap found and fixed while writing
+  `test_similar_modules.py`**: this project's own `db_session` fixture
+  (`tests/conftest.py`) never rolls back between tests -- every committed
+  row from every earlier test in the same pytest run is still real,
+  queryable data. Existing tests get away with this via unique
+  names/repo_roots per test (`uuid.uuid4().hex[:8]` suffixes), but nothing
+  before this needed per-test-*unique embedding vectors* too — a fleet-
+  wide, non-repo-scoped query is exactly the first case where that matters:
+  the first draft's tests all used the literal same one-hot vector
+  (dimension 0) as "the identical/close vector," and once more than one
+  test ran in the same session, each test's own "exact duplicate" started
+  colliding with every other test's "exact duplicate" too, polluting
+  results both ways (confirmed directly -- two tests failed with the
+  *other* test's own leftover modules showing up as false matches). Fixed
+  by deriving each test's own cluster of vectors from its own
+  `uuid.uuid4()` suffix (`_base_dim()`), making different tests'
+  vector clusters orthogonal to each other by construction.
+- **No structured "integrations" field exists yet** (per the roadmap's own
+  "tags, integrations, findings, dependencies" framing) — it's still only
+  free text inside the AI-written README's own `## Integrations` section.
+  Rather than scrape that out of markdown a second time just to populate
+  one compare-page column, the compare page covers the three fields that
+  *are* structured (tags/findings/dependencies) and links each column to
+  its own full module page ("View full module →") for anything not shown
+  side by side — an honest scope trim, not a silent gap.
+- **"Similar modules" needed no embeddings in e2e, by design, and that's
+  fine** — no e2e fixture has an LLM/embedding key configured (same
+  constraint `module-detail.spec.ts` already documents for the AI-doc
+  pending state), so nothing in the whole e2e fleet is ever embedded.
+  Rather than invent a synthetic-vector seeding mechanism with no
+  production equivalent (considered and rejected -- unlike
+  `packagist_cache` seeding, which mirrors a real production code path, a
+  hand-rolled pseudo-embedding generator would be pure test-infra
+  invented from whole cloth), the empty state is asserted for real
+  instead — the similarity *ranking logic itself* is already fully
+  verified for real at the pytest layer (`test_similar_modules.py`,
+  inserting real `Chunk` rows with controlled vectors, no AI call needed
+  there, same as every other backend test). The **compare page**, by
+  contrast, needs no embeddings at all and got full, real e2e coverage
+  (`module-compare.spec.ts`) against `conflict-store`'s already-rich
+  `Vendor_ConflictA`/`Vendor_ConflictB` fixtures.
+- Verified like the php-analyzer rounds, not the lighter Phase 20 path —
+  this one touches real frontend pages and a new route, so the full
+  `.env`-swap/real-docker-stack dance ran again: full Playwright (31/31,
+  up from 29) and full backend pytest (733 passed, up from 724) green
+  before committing.
