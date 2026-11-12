@@ -15,17 +15,30 @@ import path from "node:path";
  * exercises the actual Scan button/progress UI.
  *
  * A second scan root (MAGEWIKI_SCAN_ROOT_2), when configured, points at
- * backend/tests/fixtures/conflict-store -- two synthetic modules that
+ * backend/tests/fixtures/conflict-store -- Vendor_ConflictA/Vendor_ConflictB
  * deliberately conflict with *each other* (not with demo-store's own
  * Vendor_Module; cross-module conflict checks are scoped per repo_root, see
  * app/scanner/orchestrator.py, so a module only ever gets compared against
- * siblings under its own scan root). Its security_advisory/
- * abandoned_dependency/outdated_dependency findings need a deterministic,
- * network-free Packagist response -- seeded directly into the real
- * packagist_cache table via `docker compose exec api python -m app.cli
- * seed-packagist-cache` (the same "the check reads the cache before ever
- * reaching httpx" mechanism this project's own pytest already proves,
- * see app/scanner/packagist_cache.py), before that second scan runs.
+ * siblings under its own scan root). Two more, unrelated modules carry every
+ * single-module check that isn't a cross-module conflict: Acme_QualityChecks
+ * (hardcoded_secret, deprecated_annotation, license_risk,
+ * magento_php_incompatible, and the five php-analyzer static-analysis
+ * checks) and Vendor_PhpunitSample (phpunit_failure, split into its own
+ * module because a committed vendor/bin/phpunit at a module's root breaks
+ * phpmd/phpcs's own file discovery for every other file in that same
+ * module). Acme_QualityChecks is deliberately *not* Vendor_* like its
+ * siblings -- a real bug found while building this fixture: php-analyzer's
+ * phpmd/phpcs --exclude/--ignore flags match "vendor/*" case-insensitively
+ * against a literal "Vendor" path segment, silently excluding every
+ * Vendor_* module's whole directory from both tools (see the decision log).
+ * The security_advisory/abandoned_dependency/outdated_dependency/
+ * magento_php_incompatible findings need a deterministic, network-free
+ * response -- seeded directly into the real packagist_cache table (shared
+ * by both the Packagist- and GitHub-backed checks, see
+ * app/scanner/packagist_cache.py) via `docker compose exec api python -m
+ * app.cli seed-packagist-cache`, the same "the check reads the cache before
+ * ever reaching httpx" mechanism this project's own pytest already proves,
+ * before that second scan runs.
  */
 async function globalSetup() {
   const apiUrl = process.env.PLAYWRIGHT_API_URL ?? "http://localhost:8000";
@@ -81,6 +94,17 @@ async function globalSetup() {
     seedPackagistCache(
       "p2:vendor/conflict-version-probe",
       JSON.stringify({ packages: { "vendor/conflict-version-probe": [{ version: "6.5.0", abandoned: false }] } }),
+    );
+    // magento_php_incompatible (Vendor_QualityChecks, Phase 12b's
+    // check_magento_upgrade_readiness) reads the exact same shared
+    // packagist_cache table via app/scanner/magento_github.py -- these two
+    // keys avoid a real, changing GitHub API call the same way the Packagist
+    // ones above avoid a real Packagist call. Vendor_QualityChecks declares
+    // no magento/* requirement, so only the php-constraint key is ever read.
+    seedPackagistCache("magento-github:latest-release", JSON.stringify({ tag_name: "2.4.8" }));
+    seedPackagistCache(
+      "magento-github:2.4.8:composer.json",
+      JSON.stringify({ require: { php: "~8.1.0||~8.2.0||~8.3.0" }, replace: {} }),
     );
     await seedScan(apiUrl, scanRoots[1]);
   }

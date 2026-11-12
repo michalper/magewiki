@@ -2515,3 +2515,103 @@ license_risk/phpunit_failure/the PHP-toolchain findings).
   full backend pytest (704 passed) against that, then restored the original
   `.env` from the backup and diffed it byte-for-byte to confirm an exact
   restore before doing anything else.
+
+**e2e coverage round 2: the last 10 check_types, two real bugs found along
+the way (recorded 2026-11-12):** asked directly again, after round 1's
+conflict-store work, what was still missing. Remaining: `hardcoded_secret`,
+`deprecated_annotation`, `license_risk`, the five php-analyzer static-
+analysis checks, `magento_php_incompatible`, `phpunit_failure`. User's
+instruction: close every one. Added two more modules inside the same
+`conflict-store` fixture: `Acme_QualityChecks` (every single-module
+parser/cache-backed check plus the five static-analysis checks) and
+`Vendor_PhpunitSample` (a real, deliberately failing PHPUnit run).
+
+- **Bug 1 (real, significant, previously invisible): `MAGEWIKI_MAGENTO_
+  FIXTURE_PATH`'s `docker-compose.yml` fallback was `/tmp`, not `/dev/null`
+  like every other optional scan-root/fixture variable.** Left unset (its
+  default, both locally and in `.github/workflows/ci.yml`'s `e2e-smoke` job
+  — confirmed by reading the workflow directly, it's never set there), this
+  bind-mounts the *host's* `/tmp` read-only onto the *container's* `/tmp`
+  for `api`/`worker`/`php-analyzer` alike. Found because `phpstan`/`phpmd`/
+  `phpcs`/`rector`/`phpmetrics` all silently returned zero findings against
+  a fixture deliberately written to trigger each one — traced to a real
+  `mkdir(): Read-only file system` (phpstan's own cache dir) and a `PHP
+  Fatal error: Uncaught ValueError: Path must not be empty` inside PDepend's
+  Symfony-DI container compilation (phpmd/phpmetrics), both from having
+  nowhere to write a temp file. **This means every one of these five
+  check_types has effectively never produced a real finding in CI**,
+  against any fixture, for as long as this variable has existed unset there
+  — not because the scanned code was clean, but because the tools couldn't
+  write anywhere. Fixed with a one-line `docker-compose.yml` change (the
+  fallback for all three services, matching the `/dev/null` convention
+  every other optional path variable already uses) — this is an app/infra
+  fix, not test-only, so it benefits every real user's own local
+  `docker compose up` too, not just this fixture.
+- **Bug 2 (real, narrower, also previously invisible): `php-analyzer`'s
+  `run_phpmd()`/`run_phpcs()` exclude/ignore flags (`--exclude vendor/*`,
+  `--ignore=*/vendor/*,*/Test/*`) match case-insensitively against a literal
+  "Vendor" path *segment*, not just an actual nested `vendor/` directory.**
+  Found after fixing Bug 1 still left phpmd/phpcs at zero findings while
+  phpstan/rector/phpmetrics (which configure their excludes via a neon/php
+  config file, not a CLI flag) worked correctly on the exact same fixture.
+  Isolated with a clean-room reproduction via `proc_open()` directly inside
+  the real `php-analyzer` container (bypassing any shell-quoting doubt):
+  copying the identical fixture content to `/tmp/probe/Acme/Test1` (no
+  "Vendor" anywhere in the path) made both tools work immediately with the
+  *exact same* exclude/ignore flags unchanged. **Every module this project
+  has ever scanned under `app/code/Vendor/...` — meaning literally every
+  committed test/demo fixture (`demo-store`, `conflict-store`'s own
+  `ConflictA`/`ConflictB`) — has had `phpmd_issue`/`phpcs_violation`
+  silently return zero findings this whole time**, regardless of what the
+  code actually contains. Real customer stores are unaffected in practice
+  (a real company's Composer vendor namespace is essentially never
+  literally the word "Vendor"), which is exactly why this stayed invisible
+  through real-world use against Ordo_Automation (vendor namespace `Ordo`)
+  while still being latently broken for this project's own fixtures.
+  **Deliberately not fixed in `php-analyzer` this session** — the right fix
+  needs to decide how to make the exclude pattern not collide with a
+  legitimate company-namespace segment in general (not just rename this
+  one fixture), which is a real behavior change to production scanning
+  logic deserving its own dedicated look, not a same-session patch bundled
+  into test-fixture work. Worked around for *this* fixture by giving the
+  one new module that needs `phpmd_issue`/`phpcs_violation` coverage an
+  `Acme_` namespace instead of `Vendor_` — zero risk (a brand-new,
+  never-committed module), and it's the only one of the four `conflict-
+  store` modules that needs those two checks to fire at all.
+- **`phpunit_failure` needed its own, fourth module, split out from
+  `Acme_QualityChecks`**: a committed `vendor/bin/phpunit` (the official
+  PHPUnit 11.5.47 `.phar`, ~5.7MB, downloaded from `phar.phpunit.de` and
+  committed as-is — approved explicitly after flagging the binary-blob
+  tradeoff and that it reverses this project's earlier choice to only ever
+  verify this check against an uncommitted real-world fixture) at a
+  module's root was *also* initially suspected to be part of Bug 2, since
+  removing it was the first thing tried — turned out unrelated (Bug 2 fired
+  regardless, confirmed by testing with the phar already removed), but
+  splitting it out stood anyway: a `vendor/` directory containing a ~5.7MB
+  binary at a module's root is a plausible separate risk for any directory-
+  walking tool's performance/behavior, and `phpunit_failure` doesn't need
+  to coexist with the static-analysis triggers in the same module at all.
+  `php-analyzer` has no internet route at all (`docker-compose.yml`'s
+  `php_analyzer_net` is `internal: true`) and mounts are read-only, so a
+  real `composer install` is categorically impossible there — the `.phar`
+  bundles every PHPUnit dependency itself, and the one test extends
+  `PHPUnit\Framework\TestCase` directly with no need for the module's own
+  autoloading, so no `vendor/autoload.php`/bootstrap was needed either.
+- **`magento_php_incompatible` reuses the exact same seeding mechanism as
+  round 1's Packagist checks, no new code**: `app/scanner/magento_github.py`
+  turned out to already share the one `packagist_cache` table/API with
+  `security_advisory`/`abandoned_dependency` (cache keys `"magento-github:
+  latest-release"` and `"magento-github:<tag>:composer.json"`) — the
+  existing `app.cli seed-packagist-cache` subcommand needed zero changes to
+  seed these too.
+- A real, pre-existing `stats.spec.ts` assertion broke for a genuine reason
+  once `Vendor_PhpunitSample`'s real `Test/Unit/` directory joined the
+  fleet: "Have tests" stopped being a guaranteed 0% across every scanned
+  module. Loosened to assert a real percentage renders (matching how the
+  rest of that test already treats non-deterministic-count fields) rather
+  than hardcoding the now-false "still always zero" assumption.
+- Verified exactly like round 1: a quick pytest check of the parser/cache-
+  backed checks first, then the full real stack (`.env` swap/restore
+  protocol, approved again for this round) — full Playwright suite (29/29
+  passed, up from 27) and full backend pytest (704 passed) green before
+  committing.
