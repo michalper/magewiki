@@ -20,18 +20,20 @@ import path from "node:path";
  * Vendor_Module; cross-module conflict checks are scoped per repo_root, see
  * app/scanner/orchestrator.py, so a module only ever gets compared against
  * siblings under its own scan root). Two more, unrelated modules carry every
- * single-module check that isn't a cross-module conflict: Acme_QualityChecks
- * (hardcoded_secret, deprecated_annotation, license_risk,
+ * single-module check that isn't a cross-module conflict: Vendor_
+ * QualityChecks (hardcoded_secret, deprecated_annotation, license_risk,
  * magento_php_incompatible, and the five php-analyzer static-analysis
  * checks) and Vendor_PhpunitSample (phpunit_failure, split into its own
  * module because a committed vendor/bin/phpunit at a module's root breaks
  * phpmd/phpcs's own file discovery for every other file in that same
- * module). Acme_QualityChecks is deliberately *not* Vendor_* like its
- * siblings -- a real bug found while building this fixture: php-analyzer's
- * phpmd/phpcs --exclude/--ignore flags match "vendor/*" case-insensitively
- * against a literal "Vendor" path segment, silently excluding every
- * Vendor_* module's whole directory from both tools (see the decision log).
- * The security_advisory/abandoned_dependency/outdated_dependency/
+ * module). Vendor_QualityChecks briefly lived under an "Acme_" namespace as
+ * a workaround for a real php-analyzer bug: phpcs's --ignore flag is always
+ * matched as an unanchored, case-insensitive substring over each file's
+ * full absolute path, so the bare "star-slash-vendor-star-slash" pattern
+ * matched any ancestor directory merely named "Vendor" too -- fixed in
+ * php-analyzer/public/index.php by anchoring both tools' exclude patterns
+ * to the real scanned module path (see the decision log for the full
+ * root-cause story). The security_advisory/abandoned_dependency/outdated_dependency/
  * magento_php_incompatible findings need a deterministic, network-free
  * response -- seeded directly into the real packagist_cache table (shared
  * by both the Packagist- and GitHub-backed checks, see

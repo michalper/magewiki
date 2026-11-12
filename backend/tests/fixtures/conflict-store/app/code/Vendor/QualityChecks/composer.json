@@ -1,0 +1,15 @@
+{
+    "name": "vendor/quality-checks",
+    "description": "e2e fixture module -- single-module quality checks with no cross-module interaction (hardcoded secrets, deprecated code, license risk, PHP static-analysis findings, Magento upgrade readiness). phpunit_failure lives in the separate Vendor_PhpunitSample module -- see its own composer.json for why.",
+    "type": "magento2-module",
+    "license": ["GPL-3.0"],
+    "require": {
+        "php": "~7.4.0"
+    },
+    "autoload": {
+        "files": ["registration.php"],
+        "psr-4": {
+            "Vendor\\QualityChecks\\": ""
+        }
+    }
+}

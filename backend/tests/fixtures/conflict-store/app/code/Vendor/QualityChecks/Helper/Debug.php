@@ -1,5 +1,5 @@
 <?php
-namespace Acme\QualityChecks\Helper;
+namespace Vendor\QualityChecks\Helper;
 
 /**
  * @deprecated Use a proper logger instead.

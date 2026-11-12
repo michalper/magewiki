@@ -4,7 +4,7 @@ pytest/real-DB layer -- before relying on it inside a full docker-compose +
 Playwright run. Four synthetic modules: Vendor_ConflictA/Vendor_ConflictB
 deliberately collide on every fleet-wide conflict check plus the Phase 19
 acl checks (ConflictA alone carries the missing_acl controller and the
-Packagist-cache-backed external checks); Acme_QualityChecks carries every
+Packagist-cache-backed external checks); Vendor_QualityChecks carries every
 other single-module check (hardcoded_secret, deprecated_annotation,
 license_risk, magento_php_incompatible, and -- verified separately against
 the real php-analyzer sidecar, not provable at this layer -- the five
@@ -131,18 +131,21 @@ async def test_conflict_store_fixture_triggers_every_fleet_wide_check(db_session
     assert "abandoned_dependency" in check_types_a
     assert "outdated_dependency" in check_types_a
 
-    # Acme_QualityChecks (deliberately Acme_*, not Vendor_* -- see its own
-    # composer.json: php-analyzer's phpmd/phpcs --exclude/--ignore flags
-    # match "vendor/*" case-insensitively against a literal "Vendor" path
-    # segment, silently excluding every Vendor_* fixture's whole directory
-    # from both tools): the parser/cache-backed checks provable without the
-    # real php-analyzer sidecar (hardcoded_secret, deprecated_annotation,
+    # Vendor_QualityChecks: the parser/cache-backed checks provable without
+    # the real php-analyzer sidecar (hardcoded_secret, deprecated_annotation,
     # license_risk, magento_php_incompatible). The five static-analysis
     # checks and phpunit_failure (in the separate Vendor_PhpunitSample
     # module) need the real sidecar container and are verified separately,
-    # directly against the real docker-compose stack.
+    # directly against the real docker-compose stack. This module briefly
+    # lived under an "Acme_" namespace as a workaround for a real
+    # php-analyzer bug (phpmd/phpcs's exclude/ignore flags matched "vendor"
+    # case-insensitively against a literal "Vendor" path segment, not just
+    # a real nested vendor/ dir) -- fixed in php-analyzer/public/index.php,
+    # so it's back to "Vendor_" like its siblings, which also makes it a
+    # real regression test for that fix (it would go quiet again if the
+    # anchoring regressed).
     module_c = await db_session.scalar(
-        select(Module).where(Module.repo_root == repo_root, Module.name == "Acme_QualityChecks")
+        select(Module).where(Module.repo_root == repo_root, Module.name == "Vendor_QualityChecks")
     )
     assert module_c is not None
     check_types_c = {
@@ -154,4 +157,4 @@ async def test_conflict_store_fixture_triggers_every_fleet_wide_check(db_session
         ).all()
     }
     for expected in ("hardcoded_secret", "deprecated_annotation", "license_risk", "magento_php_incompatible"):
-        assert expected in check_types_c, f"Acme_QualityChecks missing: {expected}"
+        assert expected in check_types_c, f"Vendor_QualityChecks missing: {expected}"

@@ -2615,3 +2615,73 @@ parser/cache-backed check plus the five static-analysis checks) and
   protocol, approved again for this round) — full Playwright suite (29/29
   passed, up from 27) and full backend pytest (704 passed) green before
   committing.
+
+**php-analyzer's phpcs ancestor-"Vendor" exclusion bug: the real fix
+(recorded 2026-11-12):** the round above worked around this by naming one
+module `Acme_QualityChecks` instead of `Vendor_QualityChecks`. User asked
+for the real fix in a follow-up round. A focused Explore pass read the
+actual *installed* tool source (not docs or assumption) to settle the exact
+mechanism before touching anything, since the previous round's own
+empirical tests left it ambiguous whether phpmd was also affected:
+
+- **`squizlabs/php_codesniffer` 3.13.6 is the entire, confirmed root
+  cause.** `Config.php:1207-1230`: every CLI `--ignore=` pattern is
+  hard-coded to `type='absolute'` — there's no CLI way to request
+  `'relative'` matching at all (only a ruleset XML `<exclude-pattern
+  type="relative">` element can, and `--basepath=` only changes how paths
+  are *displayed in reports*, confirmed by its own doc-comment, never
+  ignore-matching). `Filters/Filter.php`'s `shouldIgnorePath()`: for an
+  `'absolute'` pattern, the string tested is the file's *raw, full
+  absolute path* — `$this->basedir` (set to the real scan argument) is
+  computed but never consulted for this type. A bare `*/vendor/*` becomes
+  the regex (case-insensitive, zero anchors) via a plain `strtr(['*' =>
+  '.*'])` — a pure, unconstrained substring search over the entire path.
+  Any ancestor directory merely *named* "Vendor" (case-folded) anywhere
+  above the scan root matches it, excluding every file.
+- **`phpmd/phpmd` 2.15.0 + `pdepend/pdepend` 2.16.2 turned out NOT actually
+  vulnerable, as `index.php` invokes it today** — contradicting what the
+  previous round's own empirical tests seemed to show. `Engine::
+  addDirectory()` realpath()s the given directory and that becomes
+  `$rootPath`; `Input/Iterator::getLocalPath()` strips that exact root
+  prefix from each file's path *before* `ExcludePathFilter` ever sees the
+  string, so a `Vendor` ancestor segment sits outside the stripped string
+  entirely and can never match. (The previous round's phpmd failures were
+  most likely cross-attributed from phpcs's output in the same combined
+  test pass, or a transient side effect of chasing the `/tmp` bug fixed in
+  the same session — not re-litigated further since the fix below is
+  applied to both tools anyway, for defense-in-depth and to keep their
+  exclude logic parallel/auditable.)
+- **Fix** (`php-analyzer/public/index.php`, both `run_phpmd()` and
+  `run_phpcs()`): anchor the exclude pattern to the real, already-
+  `realpath()`'d `$modulePath` the function already has, instead of a bare
+  wildcard -- `'vendor/*'` → `$modulePath . '/vendor/*'` for phpmd;
+  `'--ignore=*/vendor/*,*/Test/*'` → `'--ignore=' . $modulePath .
+  '/vendor/*,' . $modulePath . '/Test/*'` for phpcs (dropped the extra
+  leading wildcard for `Test/` too — Magento's own convention always puts
+  a module's `Test/` directory directly at its root, the same assumption
+  `php_analyzer_client.py`'s own phpstan `excludePaths` already makes).
+  A match can now only ever occur for a genuine `vendor/`/`Test/`
+  directory physically inside the scanned module, never an ancestor
+  segment above it -- zero behavior change for any real, legitimate
+  exclusion case.
+- **`Vendor_QualityChecks` renamed back from `Acme_QualityChecks`** now
+  that the real bug is fixed -- restores naming consistency with its
+  siblings and turns into a better regression test than the `Acme_`
+  version ever was (a future regression in this exact anchoring would make
+  it go quiet again, which is exactly the scenario being guarded against).
+- **Verified against the real container, not assumed**: deleted the
+  fixture's module rows from a stale local DB first (left over from this
+  same session's earlier `Acme_`/`Vendor_` rename, which was silently
+  masking the real fix behind the orchestrator's own "unchanged file hash,
+  skip recompute" logic -- a real, if self-inflicted, local-verification
+  trap, not a production concern since a real CI run always starts from a
+  fresh database), then a clean rescan: `Vendor_QualityChecks` now shows
+  all 10 of its designed check_types with exact counts matching
+  `quality-checks.spec.ts`'s own assertions (`phpcs_violation` 7,
+  `phpmd_issue` 4, etc.), `demo-store`'s `Vendor_Module` still shows zero
+  phpmd/phpcs findings (genuinely clean code, not a new false positive),
+  and `conflict-store`'s `ConflictA`/`ConflictB` picked up real,
+  previously-invisible `phpmd_issue`/`phpcs_violation` findings of their
+  own now that the tools actually run on them too. Full Playwright (29/29)
+  and full backend pytest (704) green afterward; `.env` restored and
+  diffed byte-for-byte again before anything else.

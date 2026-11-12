@@ -1,5 +1,5 @@
 <?php
-namespace Acme\QualityChecks\Helper;
+namespace Vendor\QualityChecks\Helper;
 
 class Complex
 {

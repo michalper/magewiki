@@ -1,5 +1,5 @@
 <?php
-namespace Acme\QualityChecks\Helper;
+namespace Vendor\QualityChecks\Helper;
 
 // A plain constructor-assigns-to-property pattern -- a candidate trigger for
 // php_compat_issue (Rector's ClassPropertyAssignToConstructorPromotionRector,

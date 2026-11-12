@@ -9,16 +9,18 @@ import { expect, test } from "@playwright/test";
  * (phpunit_failure). Skipped entirely when MAGEWIKI_SCAN_ROOT_2 isn't
  * configured, same pattern as conflicts.spec.ts.
  *
- * Acme_QualityChecks is deliberately under an "Acme_" namespace, not
- * "Vendor_" like every other fixture module here -- a real bug found while
- * building this: php-analyzer's phpmd/phpcs exclude/ignore glob patterns
- * (meant to skip a module's own nested vendor directory) match
- * case-insensitively against a literal "Vendor" path segment too, so a
- * module living under app/code/Vendor/... has its whole directory silently
- * excluded from both tools -- confirmed against the real sidecar, not
- * assumed. See the decision log for the full story and why fixing
- * php-analyzer itself is its own, separate follow-up rather than bundled
- * into this fixture.
+ * Vendor_QualityChecks briefly lived under an "Acme_" namespace: php-
+ * analyzer's phpcs --ignore flag is always matched as an unanchored,
+ * case-insensitive substring over each file's full absolute path (phpcs's
+ * own CLI --ignore= has no "relative" mode), so the bare
+ * star-slash-vendor-star-slash pattern matched any ancestor directory
+ * merely *named* "Vendor" too --
+ * silently excluding every module this project has ever scanned under
+ * app/code/Vendor/... from phpcs entirely. Fixed in
+ * php-analyzer/public/index.php by anchoring both tools' exclude patterns
+ * to the real scanned module path; this module is back to "Vendor_" like
+ * its siblings, which now doubles as the regression test for that fix --
+ * see the decision log for the full root-cause story.
  */
 test.beforeEach(async ({ page }) => {
   await page.addInitScript(() => localStorage.setItem("mw-onboarding-dismissed", "true"));
@@ -31,13 +33,13 @@ async function hasSecondScanRoot(): Promise<boolean> {
   return scanRoots.length > 1;
 }
 
-test("Acme_QualityChecks shows every single-module check this fixture is designed to trigger", async ({
+test("Vendor_QualityChecks shows every single-module check this fixture is designed to trigger", async ({
   page,
 }) => {
   test.skip(!(await hasSecondScanRoot()), "MAGEWIKI_SCAN_ROOT_2 not configured for this run");
 
   await page.goto("/modules");
-  await page.getByLabel("Search modules").fill("Acme_QualityChecks");
+  await page.getByLabel("Search modules").fill("Vendor_QualityChecks");
   await expect(page.getByText(/^1 of \d+ modules$/)).toBeVisible();
 
   // Every row renders twice (a `md:hidden` card for small viewports, a real

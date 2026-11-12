@@ -188,9 +188,17 @@ function run_phpstan(string $root, string $modulePath, string $magentoRoot, stri
 
 function run_phpmd(string $root, string $modulePath, string $phpBinary): array
 {
+    // Anchored to the real, already-realpath()'d $modulePath rather than a
+    // bare "vendor/*" -- PDepend's own exclude filter matches against each
+    // file's path with $modulePath already stripped off (Input/Iterator's
+    // getLocalPath()), so this is mostly defensive today, but it keeps
+    // phpmd's and phpcs's exclude logic parallel and guards the same bug
+    // class if this ever scans a shared parent directory instead of one
+    // module's own leaf directory. See the decision log for the real bug
+    // this mirrors in run_phpcs() below.
     $result = run_command([
         ...with_memory_limit($phpBinary, $root . '/vendor/bin/phpmd'), $modulePath, 'json', 'codesize,unusedcode,design',
-        '--exclude', 'vendor/*',
+        '--exclude', $modulePath . '/vendor/*',
     ]);
     $data = json_decode($result['stdout'], true);
     $findings = [];
@@ -240,10 +248,24 @@ function run_phpcs(string $root, string $modulePath, string $phpBinary): array
         }
     }
     try {
+        // Anchored to the real $modulePath, not a bare "*/vendor/*" --
+        // phpcs's own CLI --ignore= is *always* matched as an unanchored,
+        // case-insensitive substring over the file's full absolute path
+        // (Config.php forces type='absolute'; there's no CLI way to get
+        // 'relative' matching, only a ruleset XML <exclude-pattern> can).
+        // The bare pattern matched any ancestor directory merely *named*
+        // "Vendor" case-insensitively -- which, until this fix, silently
+        // excluded every module this project has ever scanned under
+        // app/code/Vendor/* (its own test/demo fixtures) from phpcs
+        // entirely, confirmed empirically against the real sidecar.
+        // Magento's own convention always puts a module's Test/ directory
+        // directly at its root (same assumption php_analyzer_client.py's
+        // own phpstan excludePaths already makes), so the simpler
+        // two-pattern anchored form below covers the real case.
         run_command([
             ...with_memory_limit($phpBinary, $root . '/vendor/bin/phpcs'), '--standard=' . ($ownRuleset ?? 'Magento2'),
             '--report=json', '--report-file=' . $reportFile, '--extensions=php',
-            '--ignore=*/vendor/*,*/Test/*', $modulePath,
+            '--ignore=' . $modulePath . '/vendor/*,' . $modulePath . '/Test/*', $modulePath,
         ]);
         $data = json_decode((string) file_get_contents($reportFile), true);
     } finally {
