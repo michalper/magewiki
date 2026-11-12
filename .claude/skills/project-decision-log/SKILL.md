@@ -925,6 +925,12 @@ change was made to auto-regenerate this file going forward — flagging here as 
 known gap rather than building out a regeneration-drift-detection step this session
 didn't ask for.
 
+**Closed 2026-11-12** — see the "CI check for stale api-types.ts" part of that
+day's feature-search round entry near the end of this file: `ci.yml`'s `e2e-smoke`
+job now runs `npm run gen:types && git diff --exit-code lib/api-types.ts` against
+its own already-live `api` container, so this exact class of silent breakage can't
+recur unnoticed.
+
 **Regression found while reading this same hash-skip code for the next roadmap item
 (recorded 2026-11-08):** `_FILE_HASH_DEPENDENT_CHECK_TYPES` (see "Hash-skip for
 file-hash-dependent quality checks" above) listed `phpstan_error`/`phpmd_issue`/
@@ -2810,3 +2816,70 @@ simplifications this session's earlier assumption didn't anticipate:
   `.env`-swap/real-docker-stack dance ran again: full Playwright (31/31,
   up from 29) and full backend pytest (733 passed, up from 724) green
   before committing.
+
+**Second feature-search round this session (recorded 2026-11-12):** with
+the roadmap itself fully closed after Phase 21, this round found three
+grounded gaps by auditing what the *last* round's own work hadn't fully
+wired up, rather than inventing new scope — grepping for whether
+`find_similar_modules` had ever reached the agent (it hadn't), checking
+whether Phase 21's "Similar modules" had a fleet-wide equivalent to
+`GET /modules/overlap` (it didn't), and re-reading this log's own
+"known gap" notes for anything still genuinely open (the stale-types gap
+above was still open). Three independent, small changes, three commits:
+
+- **`find_similar_modules` agent tool** (`backend/app/agent/tools.py`):
+  a thin dict-returning wrapper around the existing
+  `app.search.similar_modules.find_similar_modules` — imported under a
+  `_find_similar_modules` alias specifically to avoid shadowing the new
+  tool function's own name, since every other tool function in this file
+  already shares its exact name with its `TOOL_SCHEMAS` entry and this
+  one needed to follow suit. No new query, no new scanning risk — purely
+  wiring already-built logic into `TOOL_FUNCTIONS`/`TOOL_SCHEMAS`, plus a
+  CLAUDE.md update to both the **Agent tools** list and the **Question
+  routing** table (both "settled, always-relevant" per CLAUDE.md's own
+  working-method rule, so they needed updating in the same commit, not
+  left for the decision log alone).
+- **Fleet-wide "possible duplicate modules" view**
+  (`backend/app/search/similar_modules.py`'s new
+  `find_duplicate_module_pairs`, `GET /modules/duplicate-pairs`,
+  `frontend/app/repos/page.tsx`): the self-join query is almost identical
+  to `find_similar_modules`'s own CTE, just without the `target` CTE
+  anchoring it to one `module_id` — `c2.module_id > c1.module_id` in the
+  join condition does the same job the original's `c.module_id !=
+  target.module_id` did, while also ruling out mirrored (B,A) duplicates
+  of the same pair a strict inequality alone wouldn't. Deliberately
+  placed as a **third section on the Repos page**, not a Stats-page KPI
+  tile — the Stats page's whole `KPI_TILES` structure
+  (`frontend/app/stats/page.tsx`) is keyed by `ModuleQualityFinding.check_type`
+  counts, and a cross-module pairwise relationship from embeddings simply
+  isn't that shape. The Repos page already had the right sibling slot:
+  `GET /modules/overlap`'s "Shared across stores" table solves a
+  different-looking but conceptually adjacent problem (the exact same
+  module name reused across `repo_root`s) in the exact same table-plus-
+  empty-state layout this new section copies. Route had to be declared
+  before `GET /modules/{module_id}` in `modules.py`, same ordering
+  constraint `GET /modules/overlap` itself already required (FastAPI
+  matches a static two-segment path against a dynamic one in declaration
+  order). e2e coverage inherits the same honest split Phase 21 already
+  established for "Similar modules": no e2e fixture ever gets a real
+  LLM/embedding key, so `frontend/tests/e2e/repos.spec.ts` can only prove
+  the graceful empty state for real; the actual threshold/exclusion logic
+  is fully covered at the pytest layer (`test_similar_modules.py`,
+  extended rather than given its own file, since both functions are
+  pairwise-similarity queries over the same table).
+- **CI check for stale `frontend/lib/api-types.ts`**: closes the "known
+  gap" flagged in this same log on 2026-11-08 (see above). Placed inside
+  the existing `e2e-smoke` job in `.github/workflows/ci.yml`, immediately
+  after its "Wait for api and web to be ready" step — that job already
+  brings up a live `api` container on `localhost:8000`, the exact
+  host:port `npm run gen:types` (`frontend/package.json`) already
+  targets, so the fix is two lines (`npm run gen:types` then `git diff
+  --exit-code lib/api-types.ts`) with no new job, service, or secret.
+  Verified for real, not just by reading the YAML: regenerated the types
+  file against the actual locally-running stack, confirmed `git diff`
+  came back clean once the regenerated file was committed, confirming
+  the step as written would genuinely pass.
+- Same `.env`-swap/real-docker-stack verification discipline as every
+  round this session: full Playwright (32/32, up from 31) and full
+  backend pytest (740 passed, up from 733) green, `.env` restored from
+  backup and diffed byte-for-byte before finishing.
