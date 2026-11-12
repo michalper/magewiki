@@ -7,21 +7,29 @@ test.beforeEach(async ({ page }) => {
 });
 
 test("the seeded repo shows real stats and a working SBOM download", async ({ page }) => {
-  await page.goto("/repos");
+  // Scoped to the demo-store repo card specifically -- a second scan root
+  // (MAGEWIKI_SCAN_ROOT_2, the conflict-store fixture) may also be
+  // configured and shown as its own card, see global-setup.ts.
+  const scanRootsResponse = await fetch(`${API_URL}/scan-roots`);
+  const { scan_roots: scanRoots } = (await scanRootsResponse.json()) as { scan_roots: string[] };
+  const repoRoot = scanRoots[0];
 
-  await expect(page.getByText("1 module", { exact: true })).toBeVisible();
-  await expect(page.getByText("1/1 enabled")).toBeVisible();
+  await page.goto("/repos");
+  const repoCard = page.locator(`a[href="/modules?repo=${encodeURIComponent(repoRoot)}"]`);
+
+  await expect(repoCard.getByText("1 module", { exact: true })).toBeVisible();
+  await expect(repoCard.getByText("1/1 enabled")).toBeVisible();
   // The fixture module genuinely has no README/tests -- real, deterministic
   // zero counts, not just "the tile renders something".
-  await expect(page.getByText("0/1 with README")).toBeVisible();
-  await expect(page.getByText("0/1 with tests")).toBeVisible();
+  await expect(repoCard.getByText("0/1 with README")).toBeVisible();
+  await expect(repoCard.getByText("0/1 with tests")).toBeVisible();
 
   // downloadSbom() (app/repos/page.tsx) uses window.open(url, "_self") --
   // a real navigation, not an <a download> click, but the backend's
   // Content-Disposition: attachment header (GET /repos/sbom) still makes
   // this a real browser download Playwright can observe the same way.
   const downloadPromise = page.waitForEvent("download");
-  await page.getByRole("button", { name: "Download SBOM" }).click();
+  await repoCard.getByRole("button", { name: "Download SBOM" }).click();
   const download = await downloadPromise;
 
   expect(download.suggestedFilename()).toMatch(/^sbom-.*\.json$/);
@@ -60,5 +68,9 @@ test("clicking a repo card navigates to a repo-filtered Modules view", async ({ 
   // ambiguous.
   const filterBanner = page.locator("div", { hasText: "Filtering by repo:" }).last();
   await expect(filterBanner.getByText(repoRoot, { exact: true })).toBeVisible();
-  await expect(page.getByText("1 of 1 modules")).toBeVisible();
+  // "1 of N modules" -- the repo filter narrows the visible rows to 1, but
+  // the denominator is the *unfiltered* total across every repo (see
+  // app/modules/page.tsx), which is no longer exactly 1 once a second scan
+  // root (MAGEWIKI_SCAN_ROOT_2) is also configured.
+  await expect(page.getByText(/^1 of \d+ modules$/)).toBeVisible();
 });

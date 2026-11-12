@@ -1,0 +1,7 @@
+<?xml version="1.0"?>
+<config xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:noNamespaceSchemaLocation="urn:magento:framework:ObjectManager/etc/config.xsd">
+    <preference for="Vendor\ConflictShared\Api\FooInterface" type="Vendor\ConflictA\Model\Foo"/>
+    <type name="Vendor\ConflictShared\Model\Sample">
+        <plugin name="conflict_a_save_plugin" type="Vendor\ConflictA\Plugin\SavePlugin" sortOrder="10"/>
+    </type>
+</config>

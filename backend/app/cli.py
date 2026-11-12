@@ -1,5 +1,6 @@
 import argparse
 import asyncio
+import json
 import sys
 from collections.abc import Sequence
 from pathlib import Path
@@ -9,6 +10,7 @@ from sqlalchemy import select, update
 from app.db import async_session_factory
 from app.models import FileHash, Module, ModuleDocument
 from app.scanner.orchestrator import ScanAlreadyInProgressError, scan_repository
+from app.scanner.packagist_cache import set_cached
 from app.tasks.queue import get_arq_pool
 
 
@@ -158,6 +160,23 @@ async def _run_resume_stuck(repo_root: str | None) -> int:
     return 0
 
 
+async def _run_seed_packagist_cache(cache_key: str, response_json: str) -> int:
+    """Seeds a packagist_cache row directly -- lets a real scan's
+    security_advisory/abandoned_dependency/outdated_dependency checks read a
+    deterministic, fake response with zero real network call (the checks
+    read the cache before ever reaching httpx, same mechanism proven by
+    test_packagist_cache.py/test_abandoned_dependencies.py's own cache-hit
+    tests). Used by the e2e Playwright suite's global-setup to make the
+    conflict-store fixture's seeded CVE/abandoned/outdated findings
+    deterministic, not a feature end users ever call themselves.
+    """
+    async with async_session_factory() as session:
+        await set_cached(session, cache_key, json.loads(response_json))
+        await session.commit()
+    print(f"Seeded packagist_cache[{cache_key}]")
+    return 0
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(prog="app.cli")
     subparsers = parser.add_subparsers(dest="command", required=True)
@@ -182,6 +201,13 @@ def main(argv: list[str] | None = None) -> int:
     )
     resume_stuck_parser.add_argument("repo_root", nargs="?", help="Limit to modules under this repo root")
 
+    seed_cache_parser = subparsers.add_parser(
+        "seed-packagist-cache",
+        help="Write a fake Packagist response into packagist_cache (test/e2e use only, not for end users)",
+    )
+    seed_cache_parser.add_argument("cache_key", help='e.g. "advisories:vendor/pkg" or "p2:vendor/pkg"')
+    seed_cache_parser.add_argument("response_json", help="The fake Packagist response body, as a JSON string")
+
     args = parser.parse_args(argv)
 
     if args.command == "scan":
@@ -192,8 +218,10 @@ def main(argv: list[str] | None = None) -> int:
         return asyncio.run(_run_resume_failed(args.repo_root))
     if args.command == "resume-stuck":
         return asyncio.run(_run_resume_stuck(args.repo_root))
+    if args.command == "seed-packagist-cache":
+        return asyncio.run(_run_seed_packagist_cache(args.cache_key, args.response_json))
 
-    return 1  # pragma: no cover - unreachable: subparsers required=True restricts args.command to the 4 cases above
+    return 1  # pragma: no cover - unreachable: subparsers required=True restricts args.command to the 5 cases above
 
 
 if __name__ == "__main__":  # pragma: no cover - entry-point guard, exercised via subprocess in tests, not instrumented

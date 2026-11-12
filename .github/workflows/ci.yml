@@ -199,6 +199,13 @@ jobs:
       # The demo-store fixture is parser-only (no AI needed), so this scan
       # succeeds with no LLM/embedding key configured either.
       - run: echo "MAGEWIKI_SCAN_ROOT_1=$(pwd)/backend/tests/fixtures/demo-store" >> .env
+      # Second scan root: two synthetic modules that deliberately conflict with
+      # *each other* (cross-module conflict checks are scoped per repo_root, so
+      # this can't exercise those checks against demo-store's own module) --
+      # gives the e2e suite real coverage of acl_resource_conflict/missing_acl
+      # and the whole fleet-wide conflict family, none of which demo-store's
+      # single module can ever trigger. See frontend/tests/e2e/global-setup.ts.
+      - run: echo "MAGEWIKI_SCAN_ROOT_2=$(pwd)/backend/tests/fixtures/conflict-store" >> .env
       - run: docker compose up -d --build
       - name: Wait for api and web to be ready
         run: |

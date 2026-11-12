@@ -2427,3 +2427,91 @@ captured class/interface/trait + methods + extends/implements, no consts).
   (preference/cron/graphql) either. Left alone deliberately rather than
   folding an unrelated pre-existing docs gap into this phase's diff; flagged
   to the user as a separate docs-sync candidate.
+
+**e2e coverage for every fleet-wide conflict check + security_advisory/
+abandoned_dependency (recorded 2026-11-12):** asked directly after Phase 19
+("czy mamy wszystkie niezbedne testy... e2e playwright?"). Audit: of 24
+check_types, only 2 (`composer_completeness`, `magento_version_blocker`) had
+any Playwright assertion at all, and even those were generic "tile is
+nonzero" checks -- every cross-module conflict check and both externally-
+backed checks had zero e2e representation. Asked how far to close this; the
+user chose the broadest option (every fleet-wide conflict + the new acl
+checks + security_advisory/abandoned_dependency, explicitly not
+license_risk/phpunit_failure/the PHP-toolchain findings).
+
+- **Why a brand-new fixture, not a sibling added to `demo-store`**: confirmed
+  by reading `orchestrator.py` that all 10 cross-module conflict queries
+  filter `Module.repo_root == str(root)` -- a module only ever gets compared
+  against siblings under its *own* scan root, never against a different
+  repo. A colliding sibling would therefore need to live in `demo-store`
+  itself, which would break ~8 existing exact-count assertions
+  (`repos.spec.ts`'s "1 module"/"1/1 enabled", `test_scanner_integration.py`'s
+  `tasks_enqueued == 7`, `test_scan_api.py`, `test_cli_internals.py`).
+  Instead: `backend/tests/fixtures/conflict-store/`, two synthetic modules
+  (`Vendor_ConflictA`/`Vendor_ConflictB`) that conflict with *each other*
+  under their own new scan root (`MAGEWIKI_SCAN_ROOT_2`) -- zero risk to any
+  existing fixture-dependent assertion. Each minimal shape (plugin/
+  composer/webapi/db_schema/circular/preference/cron/graphql/acl conflict,
+  plus a `Controller/Adminhtml` class with no `ADMIN_RESOURCE` on ConflictA
+  only) copied from this project's own `test_orchestrator_*_conflicts.py`
+  fixtures, not invented from scratch -- verified first at the much faster
+  pytest layer (`test_conflict_store_fixture.py`, asserting every expected
+  check_type lands on the right module) before ever touching Playwright.
+- **A real bug this surfaced, not a flaky test**: the first version of the
+  fixture used `guzzlehttp/guzzle` (`^6.0` on ConflictA, `^7.0` on B) for
+  `composer_conflict`, seeded nothing for it, and assumed no network call
+  would matter. The real docker-compose `api` container *does* have outbound
+  internet, and guzzlehttp/guzzle has real historical Packagist security
+  advisories overlapping one of those ranges -- `security_advisory`'s count
+  came back non-deterministic (passed locally with no internet, failed in
+  the real stack with internet), exactly the live-dependency flakiness this
+  project's own `packagist_cache` design exists to avoid everywhere else.
+  Fixed by renaming the `composer_conflict` package to a fully fake
+  `vendor/conflict-version-probe` and seeding its cache "clean" (empty
+  advisories, a version satisfying ConflictA's `^6.0` so it doesn't also
+  read as outdated there) -- now provably network-independent regardless of
+  what real-world Packagist data does in the future.
+- **Seeding `security_advisory`/`abandoned_dependency` deterministically**:
+  confirmed directly (`app/scanner/packagist_cache.py`) that both checks read
+  the cache *before* ever reaching `httpx` -- pre-seeding a `packagist_cache`
+  row makes the real scan use it with zero network traffic, the same
+  mechanism this project's own `test_abandoned_dependencies.py` cache-hit
+  test already proves. New `app/cli.py` subcommand,
+  `seed-packagist-cache <cache_key> <json>` (plain `argparse`, same shape as
+  `scan`/`resume-*`), calls `set_cached()` directly -- not a new HTTP route,
+  since `docker compose exec api python -m app.<module>` is already this
+  project's own documented pattern (README.md) for one-off operational
+  commands, and a CLI command reachable only via `docker compose exec`
+  carries zero new attack surface, unlike a web route would.
+- **`frontend/tests/e2e/global-setup.ts`** now loops to a second scan root
+  when configured: seeds three `packagist_cache` rows via
+  `execFileSync("docker", ["compose", "exec", "-T", "api", ...])` (array
+  args, not a shell string, so the JSON payload's own quotes never need
+  escaping), then `POST /scan`s `conflict-store` the same way `demo-store`
+  already was. `docker-compose.yml` needed zero changes (`MAGEWIKI_SCAN_ROOT_
+  1/2/3` were already generically bind-mounted into api/worker/php-analyzer);
+  `.github/workflows/ci.yml`'s `e2e-smoke` job needed exactly one new line
+  setting `MAGEWIKI_SCAN_ROOT_2`.
+- **Two pre-existing `repos.spec.ts` tests broke, for real reasons, once a
+  second repo actually existed**: "Download SBOM" became a strict-mode
+  ambiguous match (one button per repo card, now two cards), and
+  `"1 of 1 modules"` stopped being true (the denominator is the *unfiltered*
+  total across every repo, confirmed by reading `app/modules/page.tsx`, not
+  per-repo) once conflict-store's two modules joined demo-store's one. Fixed
+  by scoping the first test to the demo-store repo card specifically (same
+  `a[href="/modules?repo=..."]` locator the second test already used) and
+  loosening the second to `/^1 of \d+ modules$/` -- the same fix this
+  session's own `conflicts.spec.ts` already needed for the identical reason.
+- **Local verification required a real safety detour**: this machine's own
+  root `.env` has `DATABASE_URL` pointed at the real production Neon
+  instance (the public demo's database) -- `docker-compose.yml`'s
+  `env_file: .env` directive reads that literal file regardless of `docker
+  compose --env-file`, which only affects `${VAR}` substitution inside the
+  compose YAML, not `env_file:`-loaded variables. Asked the user before
+  touching it; backed up the real `.env` to the scratchpad directory first,
+  overwrote it with a safe all-local-docker version (local `db`/`redis`,
+  no LLM/embedding keys, both scan roots), ran the full real
+  `docker compose up -d --build` + `npx playwright test` (27/27 passed) +
+  full backend pytest (704 passed) against that, then restored the original
+  `.env` from the backup and diffed it byte-for-byte to confirm an exact
+  restore before doing anything else.
