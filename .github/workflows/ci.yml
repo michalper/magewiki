@@ -211,6 +211,18 @@ jobs:
         run: |
           timeout 120 bash -c 'until curl -sf http://localhost:8000/scan-roots > /dev/null; do sleep 2; done'
           timeout 120 bash -c 'until curl -sf http://localhost:3000/modules > /dev/null; do sleep 2; done'
+      # Closes a known gap (see the decision log's "Stale generated OpenAPI
+      # types" entry): frontend/lib/api-types.ts is hand-regenerated via
+      # `npm run gen:types` against a live backend, and nothing previously
+      # caught it going stale -- which once left a Settings flow silently
+      # broken end-to-end for several sessions. The api container is
+      # already live here on the same host:port gen:types targets, so no
+      # new service is needed.
+      - name: Check generated API types are up to date
+        working-directory: frontend
+        run: |
+          npm run gen:types
+          git diff --exit-code lib/api-types.ts
       - working-directory: frontend
         run: npx playwright test
         env:
