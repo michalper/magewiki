@@ -12,6 +12,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.config import settings
 from app.db import engine
 from app.models import (
+    AclResource,
     ComposerPackageRequirement,
     ConfigField,
     CronJob,
@@ -33,6 +34,9 @@ from app.models import (
     WebapiRoute,
 )
 from app.scanner.abandoned_dependencies import check_abandoned_outdated
+from app.scanner.acl_conflicts import AclResourceRow, detect_acl_resource_conflicts
+from app.scanner.acl_xml import parse_acl_xml
+from app.scanner.admin_acl import find_missing_acl
 from app.scanner.alerts import send_quality_alert
 from app.scanner.circular_dependencies import ModuleDependencyRow, detect_circular_dependencies
 from app.scanner.composer_conflicts import ComposerRequirementRow, detect_composer_conflicts
@@ -46,6 +50,7 @@ from app.scanner.deprecated_scanner import scan_deprecated_annotations
 from app.scanner.di_xml import parse_di_xml
 from app.scanner.discovery import find_modules
 from app.scanner.dto import (
+    AclResourceEntry,
     ComposerResult,
     ConfigFieldEntry,
     CronJobEntry,
@@ -115,6 +120,10 @@ _FILE_HASH_DEPENDENT_CHECK_TYPES = (
     # A module's own Test/Unit/ result is purely a function of its own code,
     # same as every check_php_static_analysis finding above -- same reason.
     "phpunit_failure",
+    # A module's own Controller/Adminhtml classes and their extends/implements/
+    # consts are purely a function of its own PHP files, same reason as
+    # deprecated_annotation/hardcoded_secret above.
+    "missing_acl",
 )
 
 
@@ -164,6 +173,7 @@ class _ParsedModule:
     db_tables: list[DbTableEntry]
     db_columns: list[DbColumnEntry]
     queue_bindings: list[QueueBindingEntry]
+    acl_resources: list[AclResourceEntry]
 
 
 async def scan_repository(repo_root: str, session: AsyncSession) -> ScanResult:
@@ -357,6 +367,7 @@ async def _run_scan(root: Path, session: AsyncSession) -> AsyncIterator[dict]:
                 d.root / "etc" / "queue_topology.xml",
                 d.root / "etc" / "queue_consumer.xml",
             )
+            acl_resources = parse_acl_xml(d.root / "etc" / "acl.xml")
         except OSError as exc:
             # Each parser already checks .is_file() before reading, but a
             # permission error or a race (file removed/replaced between that
@@ -391,6 +402,7 @@ async def _run_scan(root: Path, session: AsyncSession) -> AsyncIterator[dict]:
                 db_tables=db_tables,
                 db_columns=db_columns,
                 queue_bindings=queue_bindings,
+                acl_resources=acl_resources,
             )
         )
         all_plugin_classes.update(p.plugin_class for p in di.plugins)
@@ -544,6 +556,9 @@ async def _run_scan(root: Path, session: AsyncSession) -> AsyncIterator[dict]:
     # Same reasoning again: needs every scanned module's graphql_fields
     # already committed, recomputes across the whole repo_root.
     await _detect_and_persist_graphql_field_conflicts(session, root)
+    # Same reasoning again: needs every scanned module's acl_resources
+    # already committed, recomputes across the whole repo_root.
+    await _detect_and_persist_acl_resource_conflicts(session, root)
 
     # Phase 16: module history. Runs last, after every conflict check above,
     # since a module's finding_counts aren't complete until cross-module
@@ -669,6 +684,38 @@ async def _detect_and_persist_webapi_route_conflicts(session: AsyncSession, root
     await session.execute(
         delete(ModuleQualityFinding).where(
             ModuleQualityFinding.check_type == "webapi_route_conflict",
+            ModuleQualityFinding.module_id.in_(select(Module.id).where(Module.repo_root == str(root))),
+        )
+    )
+    for module_id, finding in findings:
+        session.add(
+            ModuleQualityFinding(
+                module_id=module_id,
+                check_type=finding.check_type,
+                severity=finding.severity,
+                file_path=finding.file_path,
+                line=finding.line,
+                message=finding.message,
+            )
+        )
+    await session.commit()
+
+
+async def _detect_and_persist_acl_resource_conflicts(session: AsyncSession, root: Path) -> None:
+    resource_rows = (
+        await session.execute(
+            select(AclResource.module_id, Module.name, AclResource.resource_id)
+            .join(Module, Module.id == AclResource.module_id)
+            .where(Module.repo_root == str(root))
+        )
+    ).all()
+    resources = [AclResourceRow(*row) for row in resource_rows]
+
+    findings = detect_acl_resource_conflicts(resources)
+
+    await session.execute(
+        delete(ModuleQualityFinding).where(
+            ModuleQualityFinding.check_type == "acl_resource_conflict",
             ModuleQualityFinding.module_id.in_(select(Module.id).where(Module.repo_root == str(root))),
         )
     )
@@ -872,6 +919,7 @@ _ModuleChildModel = (
     | type[DbTable]
     | type[DbColumn]
     | type[QueueBinding]
+    | type[AclResource]
 )
 
 
@@ -1071,6 +1119,7 @@ async def _persist_module(
     await _sync_module_children(session, module.id, DbTable, pm.db_tables)
     await _sync_module_children(session, module.id, DbColumn, pm.db_columns)
     await _sync_module_children(session, module.id, QueueBinding, pm.queue_bindings)
+    await _sync_module_children(session, module.id, AclResource, pm.acl_resources)
 
     classes = catalog_module_classes(pm.discovered.root)
     outcome.classes = len(classes)
@@ -1186,6 +1235,7 @@ async def _persist_module(
             ),
             *scan_deprecated_annotations(pm.discovered.root),
             *scan_hardcoded_secrets(pm.discovered.root),
+            *find_missing_acl(classes),
             *session_findings,
             *php_static_findings,
             *phpunit_findings,

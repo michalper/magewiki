@@ -54,6 +54,40 @@ def _collect_namespaced_declarations(root: Node, source: bytes) -> list[tuple[No
     return results
 
 
+def _string_literal_value(node: Node, source: bytes) -> str | None:
+    """A plain, non-interpolated string literal's text, or None for anything
+    unresolvable without evaluating an expression (concatenation, a constant
+    reference like `self::OTHER`, a non-string literal). Verified empirically
+    against tree-sitter-php's real grammar shape: a simple string/encapsed_string
+    node has exactly one "string_content" child (zero for an empty literal);
+    interpolation or escape sequences would add more children, which this
+    deliberately treats as "not simple" rather than guessing.
+    """
+    if node.type not in ("string", "encapsed_string"):
+        return None
+    content_children = [c for c in node.children if c.type == "string_content"]
+    if len(content_children) == 0:
+        return ""
+    if len(content_children) != 1:
+        return None
+    return node_text(content_children[0], source)
+
+
+def _extract_consts(class_body: Node, source: bytes) -> dict[str, str]:
+    consts: dict[str, str] = {}
+    for const_el in find_all(class_body, {"const_element"}):
+        name_node = next((c for c in const_el.children if c.type == "name"), None)
+        if name_node is None:
+            continue
+        value_node = next((c for c in const_el.children if c.type in ("string", "encapsed_string")), None)
+        if value_node is None:
+            continue
+        value = _string_literal_value(value_node, source)
+        if value is not None:
+            consts[node_text(name_node, source)] = value
+    return consts
+
+
 def _extract_methods(class_body: Node, source: bytes) -> list[PhpMethodEntry]:
     methods = []
     for method_node in find_all(class_body, {"method_declaration"}):
@@ -98,6 +132,8 @@ def parse_php_file(path: Path, relative_file_path: str) -> list[PhpClassEntry]:
 
         body = decl.child_by_field_name("body")
         methods = _extract_methods(body, source) if body is not None else []
+        consts = _extract_consts(body, source) if body is not None else {}
+        is_abstract = any(c.type == "abstract_modifier" for c in decl.children)
 
         entries.append(
             PhpClassEntry(
@@ -111,6 +147,8 @@ def parse_php_file(path: Path, relative_file_path: str) -> list[PhpClassEntry]:
                 start_line=decl.start_point[0] + 1,
                 end_line=decl.end_point[0] + 1,
                 methods=methods,
+                is_abstract=is_abstract,
+                consts=consts,
             )
         )
 

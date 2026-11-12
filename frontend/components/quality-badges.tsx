@@ -1,9 +1,9 @@
 import { SeverityBadge, type Severity } from "@/components/severity-badge";
 
-// Single source of truth for the 12 module_quality_findings check types —
-// was an independently re-typed list of 12 fields/badges/sums in the
-// backend's response models (3 construction sites) and 3 frontend pages
-// (modules, repos, stats). Adding a new check type now means one row here.
+// Single source of truth for every module_quality_findings check type —
+// was an independently re-typed list of fields/badges/sums in the backend's
+// response models (3 construction sites) and 3 frontend pages (modules,
+// repos, stats). Adding a new check type now means one row here.
 export const CHECK_TYPES: { key: string; severity: Severity; label: (n: number) => string }[] = [
   { key: "hardcoded_secret", severity: "blocking", label: (n) => `${n} secret${n === 1 ? "" : "s"}` },
   { key: "security_advisory", severity: "blocking", label: (n) => `${n} CVE` },
@@ -28,6 +28,8 @@ export const CHECK_TYPES: { key: string; severity: Severity; label: (n: number) 
   { key: "preference_conflict", severity: "warning", label: (n) => `${n} preference-conflict${n === 1 ? "" : "s"}` },
   { key: "cron_job_conflict", severity: "warning", label: (n) => `${n} cron-conflict${n === 1 ? "" : "s"}` },
   { key: "graphql_field_conflict", severity: "warning", label: (n) => `${n} graphql-conflict${n === 1 ? "" : "s"}` },
+  { key: "acl_resource_conflict", severity: "warning", label: (n) => `${n} acl-conflict${n === 1 ? "" : "s"}` },
+  { key: "missing_acl", severity: "warning", label: (n) => `${n} missing-acl` },
 ];
 
 export function sumFindingCounts(findingCounts: Record<string, number>): number {

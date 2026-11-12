@@ -62,6 +62,7 @@ describe("StatsPage", () => {
           preference_conflict: 1,
           cron_job_conflict: 1,
           graphql_field_conflict: 1,
+          acl_resource_conflict: 2,
         },
       }),
       mod({
@@ -100,12 +101,12 @@ describe("StatsPage", () => {
     );
 
     // Cross-module conflicts: plugin_conflict 1 + composer_conflict 1 + db_schema_conflict 1 + circular_dependency 1
-    // + preference_conflict 1 + cron_job_conflict 1 + graphql_field_conflict 1 = 7
+    // + preference_conflict 1 + cron_job_conflict 1 + graphql_field_conflict 1 + acl_resource_conflict 2 = 9
     const conflictsTile = screen.getByText("Cross-module conflicts").closest("a")!;
-    expect(conflictsTile).toHaveTextContent("7");
+    expect(conflictsTile).toHaveTextContent("9");
     expect(conflictsTile).toHaveAttribute(
       "href",
-      "/modules?finding=plugin_conflict,composer_conflict,webapi_route_conflict,db_schema_conflict,circular_dependency,preference_conflict,cron_job_conflict,graphql_field_conflict",
+      "/modules?finding=plugin_conflict,composer_conflict,webapi_route_conflict,db_schema_conflict,circular_dependency,preference_conflict,cron_job_conflict,graphql_field_conflict,acl_resource_conflict",
     );
 
     // License risks: 1

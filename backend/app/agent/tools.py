@@ -414,8 +414,9 @@ TOOL_SCHEMAS = [
                 "security_advisory (known CVEs), abandoned_dependency, outdated_dependency, phpstan_error, "
                 "phpmd_issue, phpcs_violation, php_compat_issue, magento_php_incompatible, magento_version_blocker, "
                 "plugin_conflict, phpmetrics_issue, composer_conflict, webapi_route_conflict, db_schema_conflict, "
-                "circular_dependency, license_risk, phpunit_failure. When check_type is set, each returned module "
-                "also has a finding_count for that specific check_type."
+                "circular_dependency, license_risk, phpunit_failure, preference_conflict, cron_job_conflict, "
+                "graphql_field_conflict, acl_resource_conflict, missing_acl. When check_type is set, each "
+                "returned module also has a finding_count for that specific check_type."
             ),
             "parameters": {
                 "type": "object",

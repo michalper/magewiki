@@ -2339,3 +2339,91 @@ compromising appears, instead of requiring someone to check the UI.
   confirms a scan with nothing alertable invokes it with an empty list
   (always called, no-ops internally) rather than skipping the call
   entirely.
+
+**Phase 19: cross-module conflict detection round 3 -- acl.xml, plus a new
+unprotected-admin-controller check (recorded 2026-11-12):** another "po
+kolei" roadmap round, this time started from a fresh research pass over the
+actual codebase (grepped check_type/parser/embedding/chat-history/compare-UI
+state) rather than re-mining `docs/v1-port-roadmap.md`, which was already
+fully exhausted. Full scope requested explicitly after a scoping question --
+the duplicate-ACL-resource-id conflict is the same `webapi_conflicts.py`-
+style pattern already used four times; the unprotected-admin-controller
+check is genuinely new ground, the first check in this codebase needing PHP
+class *constant* extraction (`catalog_module_classes` previously only
+captured class/interface/trait + methods + extends/implements, no consts).
+
+- **`acl_resource_conflict`**: `app/scanner/acl_xml.py` parses `etc/acl.xml`
+  (found via a `.//resources` descendant search, same defensiveness as
+  `system_xml.py`'s `.//section`, rather than a fixed path assumption about
+  the `<config><acl>` wrapper depth) into one `AclResource` row per
+  `<resource>`, recursively flattened with `parent_id` kept for a future
+  citation use even though the conflict check itself only needs
+  `(resource_id, module_id)`. `acl_conflicts.py` groups by `resource_id`
+  alone (no secondary attribute to compare, unlike `db_schema_conflicts.py`)
+  -- same "flag a concrete, certain conflict" pragmatism as
+  `webapi_conflicts.py`. New table `acl_resources` (migration 0036), new
+  check_type `acl_resource_conflict` (migration 0037, combined with
+  `missing_acl` below in one migration, mirroring how 0033 added three
+  conflict check_types together).
+- **`missing_acl`**: a `Controller/Adminhtml/*` class with no resolvable
+  `ADMIN_RESOURCE` constant -- a real Magento security footgun (the admin
+  action becomes reachable by any logged-in admin, not just one with a
+  specific permission). The real design problem: `ADMIN_RESOURCE` is a PHP
+  constant and PHP constants are inherited, but resolving a `use`-aliased
+  parent class name to its real FQCN is infrastructure this project doesn't
+  have anywhere, and building it was ruled out of scope for this phase
+  during planning. `admin_acl.py`'s `find_missing_acl()` resolves
+  `extends`/`implements` chains **only within the same module's own class
+  catalog** (by unqualified name, the only resolution available without
+  `use`-alias support): the chain reaching a class name the module doesn't
+  define itself (e.g. the real `\Magento\Backend\App\Action`) stops
+  resolution and does **not** flag -- ambiguous, can't be sure either way --
+  while a chain that's fully resolvable in-module (including "no parent at
+  all") and never finds `ADMIN_RESOURCE` is a certain, flaggable gap.
+  Severity `warning`, not `blocking`, reflecting that real uncertainty.
+  Abstract classes are excluded outright (not in the original plan -- added
+  during implementation once `abstract_modifier` turned out to be trivially
+  readable from tree-sitter-php's own grammar): Magento's own base
+  admin-controller classes are routinely abstract with no `ADMIN_RESOURCE`
+  of their own by design, since only a concrete subclass is ever dispatched.
+- **New tree-sitter-php capability**: `PhpClassEntry` gained `consts: dict[str,
+  str]` and `is_abstract: bool`. Constant *values* are captured only for a
+  simple, non-interpolated string literal (`node.type in ("string",
+  "encapsed_string")` with exactly zero or one `string_content` child,
+  verified empirically against the real grammar shape before writing the
+  extraction code, same discipline this project already applies elsewhere)
+  -- a concatenation, a `self::OTHER`-style constant reference, or any
+  non-string literal is left out rather than guessed, since those are
+  unresolvable without evaluating an expression. Neither field is persisted
+  to the `php_classes` table -- `find_missing_acl` consumes the in-memory
+  `catalog_module_classes()` result already computed once per module in
+  `_persist_module`, not a second parse pass or a DB round-trip.
+- Both new check_types are correctly categorized in
+  `_FILE_HASH_DEPENDENT_CHECK_TYPES`: `missing_acl` belongs there (purely a
+  function of this module's own PHP files, same as `deprecated_annotation`),
+  `acl_resource_conflict` does not (fleet-wide, like every other `_conflict`
+  type already in the family) -- confirmed by checking that no existing
+  `_conflict` check_type is in that tuple before adding the new one.
+- Drive-by fix, flagged during research and folded into the same edit:
+  `agent/tools.py`'s `list_modules` tool description had drifted out of sync
+  with the real check_type list since migration 0033 (missing
+  `preference_conflict`/`cron_job_conflict`/`graphql_field_conflict`) --
+  resynced in full while adding the two Phase 19 types to the same string,
+  rather than compounding the drift with a fourth untracked gap.
+- Verified end-to-end: full backend suite (701 passed, 2 skipped -- the
+  Ordo-fixture-gated tests, unrelated), full frontend suite (229 passed,
+  one pre-existing stats-page test updated for the new tile member), a real
+  `alembic downgrade`/`upgrade head` round-trip against a live Postgres
+  (not assumed from the migration file alone), and `ruff check`/`tsc
+  --noEmit`/`eslint` all clean. `ruff format --check` was deliberately not
+  used as a gate -- it would reformat most of this project's own pre-existing,
+  intentionally-long-line code too, confirming it isn't part of this
+  project's actual enforced style despite `pyproject.toml`'s `line-length =
+  100`.
+- **Not done this round**: the README's existing "Cross-module conflict
+  detection" section only ever documented the original five checks (plugin/
+  composer/webapi/db_schema/circular) and was already stale before this
+  phase -- it never got the three Phase 15 additions
+  (preference/cron/graphql) either. Left alone deliberately rather than
+  folding an unrelated pre-existing docs gap into this phase's diff; flagged
+  to the user as a separate docs-sync candidate.

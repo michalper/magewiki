@@ -78,3 +78,31 @@ def test_parse_php_file_captures_a_class_extends_clause(tmp_path: Path):
 
     assert len(entries) == 1
     assert entries[0].extends == ["ParentClass"]
+
+
+def test_parse_php_file_captures_simple_string_const_declarations(tmp_path: Path):
+    path = tmp_path / "Foo.php"
+    path.write_text(
+        "<?php\n"
+        "class Foo {\n"
+        "    const ADMIN_RESOURCE = 'Vendor_Module::foo';\n"
+        "    const EMPTY = '';\n"
+        "    const NOT_A_STRING = 1;\n"
+        "    const NOT_RESOLVABLE = self::ADMIN_RESOURCE;\n"
+        "}\n"
+    )
+
+    entries = parse_php_file(path, "Foo.php")
+
+    assert len(entries) == 1
+    assert entries[0].consts == {"ADMIN_RESOURCE": "Vendor_Module::foo", "EMPTY": ""}
+
+
+def test_parse_php_file_captures_abstract_modifier(tmp_path: Path):
+    path = tmp_path / "Foo.php"
+    path.write_text("<?php\nabstract class Foo {}\nclass Bar {}\n")
+
+    entries = {e.class_name: e for e in parse_php_file(path, "Foo.php")}
+
+    assert entries["Foo"].is_abstract is True
+    assert entries["Bar"].is_abstract is False

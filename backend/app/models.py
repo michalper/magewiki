@@ -117,6 +117,9 @@ class Module(Base):
     db_columns: Mapped[list["DbColumn"]] = relationship(
         back_populates="module", cascade="all, delete-orphan"
     )
+    acl_resources: Mapped[list["AclResource"]] = relationship(
+        back_populates="module", cascade="all, delete-orphan"
+    )
     queue_bindings: Mapped[list["QueueBinding"]] = relationship(
         back_populates="module", cascade="all, delete-orphan"
     )
@@ -299,6 +302,18 @@ class DbTable(Base):
     module: Mapped[Module] = relationship(back_populates="db_tables")
 
 
+class AclResource(Base):
+    __tablename__ = "acl_resources"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    module_id: Mapped[int] = mapped_column(ForeignKey("modules.id", ondelete="CASCADE"))
+    resource_id: Mapped[str] = mapped_column(Text, index=True)
+    title: Mapped[str | None] = mapped_column(Text)
+    parent_id: Mapped[str | None] = mapped_column(Text)
+
+    module: Mapped[Module] = relationship(back_populates="acl_resources")
+
+
 class DbColumn(Base):
     __tablename__ = "db_columns"
 
@@ -361,7 +376,7 @@ class ModuleQualityFinding(Base):
             "'magento_php_incompatible','magento_version_blocker','plugin_conflict','phpmetrics_issue',"
             "'composer_conflict','webapi_route_conflict','db_schema_conflict','circular_dependency',"
             "'license_risk','phpunit_failure','preference_conflict','cron_job_conflict',"
-            "'graphql_field_conflict')",
+            "'graphql_field_conflict','acl_resource_conflict','missing_acl')",
             name="ck_module_quality_findings_check_type",
         ),
         CheckConstraint(
