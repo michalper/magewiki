@@ -15,12 +15,14 @@ WITH target AS (
     WHERE c.module_id = :module_id AND c.chunk_type = 'module'
 )
 SELECT c.module_id, m.name, m.composer_name,
-       1 - (c.embedding <=> target.embedding) AS similarity,
-       target.identity AS target_identity
+       1 - (c.embedding <=> target.embedding) AS similarity
 FROM chunks c
 JOIN target ON true
 JOIN modules m ON m.id = c.module_id
-WHERE c.chunk_type = 'module' AND c.module_id != target.module_id
+WHERE c.chunk_type = 'module'
+  AND c.module_id != target.module_id
+  AND COALESCE(m.composer_name, m.name) != target.identity
+  AND 1 - (c.embedding <=> target.embedding) >= :min_similarity
 ORDER BY c.embedding <=> target.embedding
 LIMIT :limit
 """)
@@ -35,6 +37,8 @@ JOIN chunks c2 ON c2.chunk_type = 'module' AND c2.module_id > c1.module_id
 JOIN modules m1 ON m1.id = c1.module_id
 JOIN modules m2 ON m2.id = c2.module_id
 WHERE c1.chunk_type = 'module'
+  AND COALESCE(m1.composer_name, m1.name) != COALESCE(m2.composer_name, m2.name)
+  AND 1 - (c1.embedding <=> c2.embedding) >= :min_similarity
 ORDER BY similarity DESC
 LIMIT :limit
 """)
@@ -79,31 +83,20 @@ async def find_similar_modules(
     embedded) -- the `target` CTE comes back empty, so the `JOIN target ON
     true` yields zero rows; same "doesn't exist yet" handling
     hybrid.py/evaluation/faithfulness.py already use for this table.
-    """
-    # Over-fetch (limit * 4) before filtering, since the same-vendor exclusion
-    # and the min_similarity cutoff below can both drop real SQL-returned rows
-    # -- filtering first, then capping to `limit`, keeps the final list
-    # genuinely the top-`limit` *eligible* matches, not a short list merely
-    # because the first few SQL rows happened to get filtered out.
-    rows = (
-        await session.execute(_SIMILAR_SQL, {"module_id": module_id, "limit": limit * 4})
-    ).all()
 
-    results: list[SimilarModule] = []
-    for row in rows:
-        if row.similarity < min_similarity:
-            continue
-        identity = row.composer_name or row.name
-        if identity == row.target_identity:
-            continue
-        results.append(
-            SimilarModule(
-                module_id=row.module_id, name=row.name, composer_name=row.composer_name, similarity=row.similarity
-            )
+    The min_similarity cutoff and the same-vendor/package exclusion are
+    both pushed into the query's WHERE clause, so `LIMIT :limit` is exact
+    -- no Python-side filtering or over-fetch guess needed.
+    """
+    rows = (
+        await session.execute(
+            _SIMILAR_SQL, {"module_id": module_id, "limit": limit, "min_similarity": min_similarity}
         )
-        if len(results) >= limit:
-            break
-    return results
+    ).all()
+    return [
+        SimilarModule(module_id=row.module_id, name=row.name, composer_name=row.composer_name, similarity=row.similarity)
+        for row in rows
+    ]
 
 
 async def find_duplicate_module_pairs(
@@ -114,29 +107,22 @@ async def find_duplicate_module_pairs(
     find_similar_modules surfaces one module at a time, computed for the
     whole fleet at once (e.g. for a "possible duplicates" overview). `c2.
     module_id > c1.module_id` in the self-join rules out both self-pairs
-    and mirrored duplicates (A,B and B,A).
+    and mirrored duplicates (A,B and B,A). Like find_similar_modules, the
+    min_similarity cutoff and the same-vendor/package exclusion are both
+    in the query's WHERE clause, so `LIMIT :limit` is exact.
     """
-    rows = (await session.execute(_DUPLICATE_PAIRS_SQL, {"limit": limit * 4})).all()
-
-    results: list[DuplicateModulePair] = []
-    for row in rows:
-        if row.similarity < min_similarity:
-            continue
-        a_identity = row.a_composer or row.a_name
-        b_identity = row.b_composer or row.b_name
-        if a_identity == b_identity:
-            continue
-        results.append(
-            DuplicateModulePair(
-                module_a_id=row.a_id,
-                module_a_name=row.a_name,
-                module_a_composer_name=row.a_composer,
-                module_b_id=row.b_id,
-                module_b_name=row.b_name,
-                module_b_composer_name=row.b_composer,
-                similarity=row.similarity,
-            )
+    rows = (
+        await session.execute(_DUPLICATE_PAIRS_SQL, {"limit": limit, "min_similarity": min_similarity})
+    ).all()
+    return [
+        DuplicateModulePair(
+            module_a_id=row.a_id,
+            module_a_name=row.a_name,
+            module_a_composer_name=row.a_composer,
+            module_b_id=row.b_id,
+            module_b_name=row.b_name,
+            module_b_composer_name=row.b_composer,
+            similarity=row.similarity,
         )
-        if len(results) >= limit:
-            break
-    return results
+        for row in rows
+    ]
