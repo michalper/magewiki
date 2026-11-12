@@ -198,7 +198,7 @@ function run_phpmd(string $root, string $modulePath, string $phpBinary): array
     // this mirrors in run_phpcs() below.
     $result = run_command([
         ...with_memory_limit($phpBinary, $root . '/vendor/bin/phpmd'), $modulePath, 'json', 'codesize,unusedcode,design',
-        '--exclude', $modulePath . '/vendor/*',
+        '--exclude', preg_quote($modulePath, '`') . '/vendor/*',
     ]);
     $data = json_decode($result['stdout'], true);
     $findings = [];
@@ -262,10 +262,21 @@ function run_phpcs(string $root, string $modulePath, string $phpBinary): array
         // directly at its root (same assumption php_analyzer_client.py's
         // own phpstan excludePaths already makes), so the simpler
         // two-pattern anchored form below covers the real case.
+        //
+        // $modulePath itself is preg_quote()'d (delimiter backtick, matching
+        // Filter::shouldIgnorePath()'s own `pattern`i wrap) before the
+        // literal /vendor/* and /Test/* suffixes are appended -- phpcs's
+        // own strtr() only ever translates a bare "*" into ".*" and "\,"
+        // back into ",", so this keeps that translation working for our two
+        // intentional wildcards while stopping any regex metacharacter that
+        // happens to appear in the real path (e.g. a parenthesis in a
+        // directory name) from being interpreted as part of the pattern
+        // instead of matched literally.
+        $quotedModulePath = preg_quote($modulePath, '`');
         run_command([
             ...with_memory_limit($phpBinary, $root . '/vendor/bin/phpcs'), '--standard=' . ($ownRuleset ?? 'Magento2'),
             '--report=json', '--report-file=' . $reportFile, '--extensions=php',
-            '--ignore=' . $modulePath . '/vendor/*,' . $modulePath . '/Test/*', $modulePath,
+            '--ignore=' . $quotedModulePath . '/vendor/*,' . $quotedModulePath . '/Test/*', $modulePath,
         ]);
         $data = json_decode((string) file_get_contents($reportFile), true);
     } finally {
