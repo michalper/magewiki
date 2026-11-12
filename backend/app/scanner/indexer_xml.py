@@ -1,22 +1,18 @@
 from pathlib import Path
 
-from lxml import etree
-
 from app.scanner.dto import IndexerEntry
+from app.scanner.xml_parse_utils import parse_xml_root
 
 
 def parse_indexer_xml(path: Path) -> list[IndexerEntry]:
     """Parse a module's etc/indexer.xml into structured facts — indexer
-    processes a module registers, with their view_id (links to mview.xml)
-    and backing class. Same role lxml plays for di.xml/webapi.xml: facts
-    come from the parser, not the LLM.
+    processes a module registers, with their own view_id attribute (no
+    check in this codebase currently cross-references it against
+    mview.xml's own view ids) and backing class. Same role lxml plays for
+    di.xml/webapi.xml: facts come from the parser, not the LLM.
     """
-    if not path.is_file():
-        return []
-
-    try:
-        root = etree.parse(str(path)).getroot()
-    except etree.XMLSyntaxError:
+    root = parse_xml_root(path)
+    if root is None:
         return []
 
     entries: list[IndexerEntry] = []

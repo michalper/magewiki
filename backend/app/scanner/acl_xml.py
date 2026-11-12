@@ -1,8 +1,7 @@
 from pathlib import Path
 
-from lxml import etree
-
 from app.scanner.dto import AclResourceEntry
+from app.scanner.xml_parse_utils import parse_xml_root
 
 
 def _walk_resources(resource_el, parent_id: str | None, out: list[AclResourceEntry]) -> None:
@@ -21,17 +20,12 @@ def parse_acl_xml(path: Path) -> list[AclResourceEntry]:
     `<resource>` elements nest arbitrarily (a resource's children are its own
     sub-resources) — walked recursively and flattened to one entry per
     resource, each carrying its immediate parent's id (or None for a
-    top-level resource). The nesting itself isn't needed by anything
-    downstream yet (the acl_resource_conflict check only needs
-    (resource_id, module_id) pairs), but parent_id is kept since it's free
-    and may be useful for citations later.
+    top-level resource) and title. Only resource_id is currently read back
+    (by the acl_resource_conflict check, which needs (resource_id,
+    module_id) pairs) -- parent_id/title aren't consumed by anything yet.
     """
-    if not path.is_file():
-        return []
-
-    try:
-        root = etree.parse(str(path)).getroot()
-    except etree.XMLSyntaxError:
+    root = parse_xml_root(path)
+    if root is None:
         return []
 
     # Real shape: <config><acl><resources><resource id="..."/></resources></acl></config>

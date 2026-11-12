@@ -1,8 +1,7 @@
 from pathlib import Path
 
-from lxml import etree
-
 from app.scanner.dto import MviewEntry
+from app.scanner.xml_parse_utils import parse_xml_root
 
 
 def parse_mview_xml(path: Path) -> list[MviewEntry]:
@@ -11,12 +10,8 @@ def parse_mview_xml(path: Path) -> list[MviewEntry]:
     indexer), with their backing class and group. Same role lxml plays for
     di.xml/webapi.xml: facts come from the parser, not the LLM.
     """
-    if not path.is_file():
-        return []
-
-    try:
-        root = etree.parse(str(path)).getroot()
-    except etree.XMLSyntaxError:
+    root = parse_xml_root(path)
+    if root is None:
         return []
 
     entries: list[MviewEntry] = []
