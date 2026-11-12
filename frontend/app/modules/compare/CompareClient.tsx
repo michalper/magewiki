@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import { useMemo } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { EnabledBadge } from "@/components/enabled-badge";
 import { StateBadge } from "@/components/state-badge";
@@ -29,13 +30,9 @@ async function fetchModules(): Promise<ModuleSummary[]> {
   return apiFetch("/modules");
 }
 
-function dependenciesList(module: ModuleDetail, allModules: ModuleSummary[] | undefined) {
+function dependenciesList(module: ModuleDetail, idByName: Map<string, number>) {
   if (module.dependencies.length === 0) {
     return <span className="text-muted-foreground">—</span>;
-  }
-  const idByName = new Map<string, number>();
-  for (const m of allModules ?? []) {
-    if (m.repo_root === module.repo_root) idByName.set(m.name, m.id);
   }
   return (
     <div className="flex flex-wrap items-center gap-x-1">
@@ -65,6 +62,14 @@ function dependenciesList(module: ModuleDetail, allModules: ModuleSummary[] | un
 // this page doesn't attempt to scrape out and re-render a second time;
 // "View full module →" links to each module's own detail page for that.
 function ModuleColumn({ module, allModules }: { module: ModuleDetail; allModules: ModuleSummary[] | undefined }) {
+  const idByName = useMemo(() => {
+    const map = new Map<string, number>();
+    for (const m of allModules ?? []) {
+      if (m.repo_root === module.repo_root) map.set(m.name, m.id);
+    }
+    return map;
+  }, [allModules, module.repo_root]);
+
   return (
     <div className="rounded-2xl bg-card p-5 shadow-sm flex flex-col gap-4 flex-1 min-w-0">
       <div className="flex flex-wrap items-start justify-between gap-3">
@@ -104,7 +109,7 @@ function ModuleColumn({ module, allModules }: { module: ModuleDetail; allModules
 
       <div className="flex flex-col gap-1.5">
         <span className="text-sm font-medium">Depends on</span>
-        {dependenciesList(module, allModules)}
+        {dependenciesList(module, idByName)}
       </div>
     </div>
   );
