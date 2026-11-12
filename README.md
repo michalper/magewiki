@@ -97,7 +97,7 @@ it's enforced and how to resume paused modules once you raise it.
 
 ## Cross-module conflict detection
 
-Every quality check above looks at one module at a time. These five look across
+Every quality check above looks at one module at a time. These nine look across
 the whole scanned fleet for a pair of modules that silently fight over the same
 thing — all free, parser-derived, zero AI involved:
 
@@ -115,8 +115,23 @@ thing — all free, parser-derived, zero AI involved:
   column with a different type or nullability; Magento's declarative schema
   merges modules by sequence order, so one definition silently wins.
 - **Circular module dependencies** — module A sequenced after B, after C, after
-  A in `module.xml`. Unlike the other four, this one is a guaranteed break:
+  A in `module.xml`. Unlike the others, this one is a guaranteed break:
   Magento's own `setup:upgrade` fails outright on a circular sequence.
+- **di.xml preference conflicts** — two modules declaring a different
+  implementation for the same interface; Magento resolves each interface to
+  exactly one preference by module-sequence order, so one module's
+  implementation silently wins and the other's is never actually used.
+- **crontab.xml job conflicts** — two modules registering the same cron job
+  name with a different backing class.
+- **GraphQL field conflicts** — two modules extending the same GraphQL type
+  with the same field name, backed by a different resolver class.
+- **acl.xml resource conflicts** — two modules declaring the same admin ACL
+  resource id; Magento merges every module's ACL tree by id, so one
+  declaration silently wins.
+
+A separate, per-module **missing ACL** check flags a `Controller/Adminhtml/*`
+class with no resolvable `ADMIN_RESOURCE` constant — that admin action is
+reachable by any logged-in admin, not just one with a specific permission.
 
 Each scanned repo also exports a standard **CycloneDX SBOM** (`GET /repos/sbom` or
 the "Download SBOM" button on the Repos page) — one component per module, with its
