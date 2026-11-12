@@ -158,7 +158,13 @@ async def test_duplicate_pairs_finds_a_real_pair_above_threshold(db_session):
     await _add_module_chunk(db_session, b, _vector({base: 0.99, base + 1: 0.01}))
     await db_session.commit()
 
-    results = await find_duplicate_module_pairs(db_session, min_similarity=0.5)
+    # limit=10_000: this check is fleet-wide and db_session never rolls back
+    # between tests (see _base_dim's own comment above), so every earlier
+    # test's committed pairs are still real, queryable rows -- a high
+    # explicit limit keeps this test's own pair from being crowded out of
+    # the ranking as the pytest run accumulates more of them, instead of
+    # relying on the default limit=50 staying bigger than that count forever.
+    results = await find_duplicate_module_pairs(db_session, min_similarity=0.5, limit=10_000)
 
     pair = next(p for p in results if {p.module_a_id, p.module_b_id} == {a.id, b.id})
     assert pair.similarity > 0.9
@@ -176,7 +182,7 @@ async def test_duplicate_pairs_excludes_same_vendor_package(db_session):
     await _add_module_chunk(db_session, b, identical_vector)
     await db_session.commit()
 
-    results = await find_duplicate_module_pairs(db_session, min_similarity=0.5)
+    results = await find_duplicate_module_pairs(db_session, min_similarity=0.5, limit=10_000)
 
     assert not any({p.module_a_id, p.module_b_id} == {a.id, b.id} for p in results)
 

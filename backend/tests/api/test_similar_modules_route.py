@@ -118,7 +118,12 @@ async def test_duplicate_pairs_route_returns_a_real_pair(db_session):
 
     transport = ASGITransport(app=app)
     async with AsyncClient(transport=transport, base_url="http://test") as client:
-        response = await client.get("/modules/duplicate-pairs")
+        # A high explicit limit -- same reasoning as
+        # tests/search/test_similar_modules.py's own fix: this check is
+        # fleet-wide and db_session never rolls back between tests, so this
+        # pair could otherwise get crowded out of the default limit=50 as
+        # the pytest run accumulates more qualifying pairs over time.
+        response = await client.get("/modules/duplicate-pairs", params={"limit": 200})
 
     assert response.status_code == 200
     body = response.json()
