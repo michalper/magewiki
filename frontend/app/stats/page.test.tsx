@@ -2,7 +2,7 @@ import { screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { renderWithQueryClient } from "../../test-utils";
-import StatsPage from "./page";
+import StatsPage, { truncateLabelTail } from "./page";
 
 vi.mock("@/lib/api", () => ({ apiFetch: vi.fn() }));
 
@@ -21,6 +21,20 @@ function mod(overrides: Partial<Record<string, unknown>> = {}) {
     ...overrides,
   };
 }
+
+describe("truncateLabelTail", () => {
+  // Recharts' YAxis tickFormatter is the only real caller, and jsdom's
+  // ResponsiveContainer never gets a real measured size (see the "narrow
+  // (mobile) viewport" test below), so Recharts never actually invokes it
+  // in any test here -- testing the pure function directly instead.
+  it("returns a short label unchanged", () => {
+    expect(truncateLabelTail("Vendor_Module", 20)).toBe("Vendor_Module");
+  });
+
+  it("truncates from the start, keeping the tail", () => {
+    expect(truncateLabelTail("Vendor_VeryLongModuleName", 11)).toBe("…ModuleName");
+  });
+});
 
 describe("StatsPage", () => {
   beforeEach(() => {

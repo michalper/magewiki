@@ -156,6 +156,40 @@ describe("ChatPage", () => {
     );
   });
 
+  it("omits the RRF score from the retrieval-debug text when it is null", async () => {
+    // A source can have real per-signal ranks with no fused RRF score of its
+    // own (e.g. a result that only matched one signal) -- every other test
+    // here with score: null also has every rank null (skipping this text
+    // entirely), so this is the only case that reaches the RRF-score line
+    // with score actually null.
+    streamSseMock.mockImplementation(async (_url, _body, onEvent: (e: ChatEvent) => void) => {
+      onEvent({
+        event: "sources",
+        sources: [
+          {
+            module_id: 11,
+            module_name: "Vendor_NoScore",
+            relative_path: null,
+            score: null,
+            semantic_rank: 4,
+            keyword_rank: null,
+            identifier_rank: null,
+          },
+        ],
+      });
+      onEvent({ event: "done", tokens_in: 1, tokens_out: 1, cost_usd: "0" });
+    });
+    const user = userEvent.setup();
+    render(<ChatPage />);
+
+    await user.type(screen.getByLabelText("Chat message"), "hi");
+    await user.click(screen.getByRole("button", { name: "Send" }));
+
+    await waitFor(() =>
+      expect(screen.getByLabelText('How "Vendor_NoScore" was found')).toBeInTheDocument(),
+    );
+  });
+
   it("renders no source chips for an empty sources list", async () => {
     streamSseMock.mockImplementation(async (_url, _body, onEvent: (e: ChatEvent) => void) => {
       onEvent({ event: "sources", sources: [] });

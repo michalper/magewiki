@@ -291,7 +291,7 @@ const MOBILE_LABEL_CHARS = 11;
 // names collapse to the same "Magento_…" (same lesson already learned on the
 // module list and the dependency graph) -- keep the tail, where Magento
 // module names actually differ, instead.
-function truncateLabelTail(label: string, maxChars: number): string {
+export function truncateLabelTail(label: string, maxChars: number): string {
   if (label.length <= maxChars) return label;
   return `…${label.slice(-(maxChars - 1))}`;
 }

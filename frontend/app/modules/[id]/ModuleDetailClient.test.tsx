@@ -357,7 +357,13 @@ describe("ModuleDetailClient", () => {
     it("falls back to the field_id when a config field has no label, and omits the type suffix when unset", async () => {
       mockApis({
         module: moduleDetail({
-          config_fields: [{ section_id: "vendor_module", group_id: "general", field_id: "raw_field", label: null, field_type: null }],
+          // A second field in the exact same section+group -- exercises the
+          // "this section/group was already seen" branch of the grouping
+          // loop, not just "first field creates a new section and group."
+          config_fields: [
+            { section_id: "vendor_module", group_id: "general", field_id: "raw_field", label: null, field_type: null },
+            { section_id: "vendor_module", group_id: "general", field_id: "second_field", label: "Second", field_type: "text" },
+          ],
         }),
         readme: "## Configuration\n\nraw",
       });
@@ -365,6 +371,7 @@ describe("ModuleDetailClient", () => {
 
       await waitFor(() => expect(screen.getByText("raw_field")).toBeInTheDocument());
       expect(screen.getByTitle("vendor_module/general/raw_field")).toBeInTheDocument();
+      expect(screen.getByText("Second")).toBeInTheDocument();
     });
 
     it("falls back to the raw markdown for Plugins/Observers/Configuration when there is no structured data", async () => {
@@ -547,7 +554,12 @@ describe("ModuleDetailClient", () => {
             current_hash: "hash-a",
             state: "up_to_date",
             enabled: true,
-            finding_counts: { phpstan_error: 2 },
+            // graphql_field_conflict only ever appears here, on the older
+            // entry -- exercises current.finding_counts[checkType] ?? 0's
+            // own fallback (a check_type fully resolved away, not merely
+            // decreased), the mirror case of security_advisory appearing
+            // only on the newer entry below.
+            finding_counts: { phpstan_error: 2, graphql_field_conflict: 1 },
           },
         ],
       });
@@ -559,6 +571,40 @@ describe("ModuleDetailClient", () => {
       expect(screen.getByText("Enabled status changed to false.")).toBeInTheDocument();
       expect(screen.getByText(/▲ phpstan_error \+3/)).toBeInTheDocument();
       expect(screen.getByText(/▲ security_advisory \+1/)).toBeInTheDocument();
+      expect(screen.getByText(/▼ graphql_field_conflict -1/)).toBeInTheDocument();
+    });
+
+    it("shows an unknown enabled status change and reports no change when nothing differs", async () => {
+      mockApis({
+        history: [
+          {
+            scanned_at: "2026-03-01T00:00:00Z",
+            current_hash: "hash-c",
+            state: "up_to_date",
+            enabled: null,
+            finding_counts: {},
+          },
+          {
+            scanned_at: "2026-02-01T00:00:00Z",
+            current_hash: "hash-c",
+            state: "up_to_date",
+            enabled: true,
+            finding_counts: {},
+          },
+          {
+            scanned_at: "2026-01-01T00:00:00Z",
+            current_hash: "hash-c",
+            state: "up_to_date",
+            enabled: true,
+            finding_counts: {},
+          },
+        ],
+      });
+      renderWithQueryClient(<ModuleDetailClient id="1" />);
+      await waitFor(() => expect(screen.getByText("History")).toBeInTheDocument());
+
+      expect(screen.getByText("Enabled status changed to unknown.")).toBeInTheDocument();
+      expect(screen.getByText("No change.")).toBeInTheDocument();
     });
 
     it("shows a resolved finding as a decreasing delta and reports no change when nothing differs", async () => {

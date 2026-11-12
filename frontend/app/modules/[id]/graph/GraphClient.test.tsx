@@ -200,4 +200,41 @@ describe("GraphClient", () => {
     await waitFor(() => expect(screen.getByText("Dep29")).toBeInTheDocument());
     expect(screen.getByText("Dep0")).toBeInTheDocument();
   });
+
+  it("handles an empty graph (no nodes at all) without crashing", async () => {
+    // Also exercises the center-module-not-found case (layoutNodes' own
+    // simNodes.find(...) can't find a center in an empty list either) and
+    // computeCanvas's !Number.isFinite(minX) fallback (the for-loop over
+    // nodes never runs at all, so minX/minY/maxX/maxY all stay at their
+    // initial Infinity/-Infinity).
+    fetchMock.mockResolvedValue(graph({ nodes: [], edges: [] }));
+    renderWithQueryClient(<GraphClient id="1" />);
+
+    await waitFor(() => expect(screen.getByText("0 nodes shown")).toBeInTheDocument());
+  });
+
+  it("shows a scroll hint once the canvas is measured wider than its container", async () => {
+    // jsdom never measures real layout (scrollWidth/clientWidth are always
+    // 0), so canScroll's own effect never naturally sees a canvas wider
+    // than its box here -- overriding the two getters on the prototype
+    // (rather than one specific DOM node, which React may replace across
+    // a refetch) makes every element report "wider than its visible box"
+    // regardless of which node the effect ends up reading from.
+    const scrollWidthDesc = Object.getOwnPropertyDescriptor(Element.prototype, "scrollWidth")!;
+    const clientWidthDesc = Object.getOwnPropertyDescriptor(Element.prototype, "clientWidth")!;
+    Object.defineProperty(Element.prototype, "scrollWidth", { configurable: true, get: () => 2000 });
+    Object.defineProperty(Element.prototype, "clientWidth", { configurable: true, get: () => 500 });
+
+    try {
+      fetchMock.mockResolvedValue(graph());
+      renderWithQueryClient(<GraphClient id="1" />);
+
+      await waitFor(() =>
+        expect(screen.getByText("· scroll/drag inside the graph to see the rest")).toBeInTheDocument(),
+      );
+    } finally {
+      Object.defineProperty(Element.prototype, "scrollWidth", scrollWidthDesc);
+      Object.defineProperty(Element.prototype, "clientWidth", clientWidthDesc);
+    }
+  });
 });

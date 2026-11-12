@@ -80,10 +80,14 @@ describe("CompareClient", () => {
     fetchMock.mockImplementation(async (path: string) => {
       // A real entry for module 1's own dependency, in the same repo_root --
       // exercises idByName's real match (module.repo_root === dep's own
-      // repo_root) and dependenciesList's "found, render a link" branch,
-      // not just the "not found, muted text" one every other test here hits.
+      // repo_root) and dependenciesList's "found, render a link" branch.
+      // A second entry with a *different* repo_root exercises idByName's
+      // own repo_root mismatch skip (it must never match across stores).
       if (path === "/modules") {
-        return [moduleDetail({ id: 99, name: "Magento_Backend", repo_root: "/sites/store" })];
+        return [
+          moduleDetail({ id: 99, name: "Magento_Backend", repo_root: "/sites/store" }),
+          moduleDetail({ id: 100, name: "Other_Store_Module", repo_root: "/sites/other-store" }),
+        ];
       }
       if (path === "/modules/1") {
         return moduleDetail({
@@ -91,11 +95,14 @@ describe("CompareClient", () => {
           name: "Vendor_A",
           tags: ["payments"],
           finding_counts: { missing_acl: 1 },
-          dependencies: ["Magento_Backend"],
+          // A second, unresolved dependency -- exercises both the "not
+          // found, muted text" fallback and the comma separator between
+          // two (not just one) rendered dependency entries.
+          dependencies: ["Magento_Backend", "Vendor_Unresolved"],
         });
       }
       if (path === "/modules/2") {
-        return moduleDetail({ id: 2, name: "Vendor_B", composer_name: "vendor/b" });
+        return moduleDetail({ id: 2, name: "Vendor_B", composer_name: null });
       }
       throw new Error(`unexpected path: ${path}`);
     });
@@ -104,10 +111,31 @@ describe("CompareClient", () => {
 
     await waitFor(() => expect(screen.getByText("Vendor_A")).toBeInTheDocument());
     expect(screen.getByText("Vendor_B")).toBeInTheDocument();
-    expect(screen.getByText("vendor/b")).toBeInTheDocument();
     expect(screen.getByText("payments")).toBeInTheDocument();
     expect(screen.getByText("1 missing-acl")).toBeInTheDocument();
     expect(screen.getByRole("link", { name: "Magento_Backend" })).toHaveAttribute("href", "/modules/99");
+    expect(screen.getByText("Vendor_Unresolved")).toBeInTheDocument();
+    expect(screen.getByText(",")).toBeInTheDocument();
+    // module 2's own composer_name is null -- the dash fallback, not "vendor/b".
+    expect(screen.getAllByText("—").length).toBeGreaterThan(0);
+  });
+
+  it("shows no dependencies as a dash, and tolerates the module list still loading", async () => {
+    // allModules stays undefined for as long as /modules hasn't resolved --
+    // exercises idByName's own `allModules ?? []` fallback, not just an
+    // already-resolved (even if empty) array.
+    setSearch("?a=1&b=2");
+    fetchMock.mockImplementation(async (path: string) => {
+      if (path === "/modules") return new Promise(() => {});
+      if (path === "/modules/1") return moduleDetail({ id: 1, name: "Vendor_A" });
+      if (path === "/modules/2") return moduleDetail({ id: 2, name: "Vendor_B" });
+      throw new Error(`unexpected path: ${path}`);
+    });
+
+    renderWithQueryClient(<CompareClient />);
+
+    await waitFor(() => expect(screen.getByText("Vendor_A")).toBeInTheDocument());
+    expect(screen.getAllByText("—").length).toBeGreaterThan(0);
   });
 
   it("picking a module from either dropdown updates the URL and re-renders", async () => {
@@ -143,5 +171,19 @@ describe("CompareClient", () => {
     renderWithQueryClient(<CompareClient />);
 
     await waitFor(() => expect(screen.getByText("Failed to load module 1.")).toBeInTheDocument());
+  });
+
+  it("shows an error for module B specifically when only it fails to load", async () => {
+    setSearch("?a=1&b=2");
+    fetchMock.mockImplementation(async (path: string) => {
+      if (path === "/modules") return [];
+      if (path === "/modules/1") return moduleDetail({ id: 1, name: "Vendor_A" });
+      if (path === "/modules/2") throw new Error("boom");
+      throw new Error(`unexpected path: ${path}`);
+    });
+
+    renderWithQueryClient(<CompareClient />);
+
+    await waitFor(() => expect(screen.getByText("Failed to load module 2.")).toBeInTheDocument());
   });
 });
