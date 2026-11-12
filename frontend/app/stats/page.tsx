@@ -120,10 +120,12 @@ const KPI_TILES: {
       "cron_job_conflict",
       "graphql_field_conflict",
       "acl_resource_conflict",
+      "indexer_id_conflict",
+      "view_id_conflict",
     ],
     accent: "warning",
     description:
-      "Two modules silently fighting over the same plugin hook, Composer package version, REST route, database column, di.xml preference, cron job code, GraphQL field, or ACL resource id — or a circular module.xml sequence that breaks setup:upgrade outright. Each shows up on every module involved.",
+      "Two modules silently fighting over the same plugin hook, Composer package version, REST route, database column, di.xml preference, cron job code, GraphQL field, ACL resource id, indexer id, or mview id — or a circular module.xml sequence that breaks setup:upgrade outright. Each shows up on every module involved.",
   },
   {
     label: "License risks",

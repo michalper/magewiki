@@ -2685,3 +2685,47 @@ empirical tests left it ambiguous whether phpmd was also affected:
   own now that the tools actually run on them too. Full Playwright (29/29)
   and full backend pytest (704) green afterward; `.env` restored and
   diffed byte-for-byte again before anything else.
+
+**Phase 20: cross-module conflict detection round 4 -- indexer.xml/mview.xml
+(recorded 2026-11-12):** next item in the CLAUDE.md roadmap after Phase 19,
+done "po kolei" the same session. Same exact pattern as every prior round
+in this family (`webapi_conflicts.py`'s exact-duplicate-key shape): two
+modules declaring the same `indexer.xml` `<indexer id="...">` or the same
+`mview.xml` `<view id="...">` hit the identical declarative-merge silent-
+override risk already covered for `di.xml` preferences/`db_schema.xml`
+columns/`acl.xml` resources.
+
+- Neither `indexer.xml` nor `mview.xml` has a real example anywhere in this
+  repo to verify against (unlike acl.xml/webapi.xml, which this project's
+  own fixtures already exercised) -- schema confirmed via web search
+  against real Magento core documentation/examples instead, then verified
+  working end-to-end against synthetic fixture XML in the orchestrator
+  integration tests (the same "verify directly" discipline this project
+  applies everywhere, just via a different source since no local Magento
+  checkout exists here).
+- **Two separate tables (`module_indexers`, `module_mviews`), not CLAUDE.md's
+  own roadmap-note shorthand of a single "module_indexers" table for
+  both** -- `indexer.xml` and `mview.xml` facts have different attribute
+  shapes (`indexer_id`/`view_id`/`class` vs `view_id`/`class`/`group`), and
+  this codebase's own convention is one table per distinct fact shape
+  (`DbTable`/`DbColumn`, `CronJob`, `GraphQlField`, `AclResource` are all
+  separate too) -- the roadmap note was shorthand written before scoping
+  this phase properly, not a binding design decision.
+- `mview.xml`'s `group` attribute is stored as `group_name` on
+  `ModuleMview`, not `group` -- a reserved SQL word, same reason other
+  columns in this schema avoid bare reserved words.
+- Extended the existing `conflict-store` fixture (`Vendor_ConflictA`/
+  `Vendor_ConflictB`) with colliding `indexer.xml`/`mview.xml` declarations
+  rather than building a new fixture -- purely additive new files on
+  already-proven, already-committed modules, zero risk to anything
+  already passing. The `mview.xml` subscribes to `conflict_sample_table`,
+  the same table each module already declares in its own `db_schema.xml`
+  from Phase 19's round, for a touch of realism.
+- Lighter verification than the last two rounds: this phase is pure
+  lxml/SQL with no php-analyzer/static-analysis involvement, so the full
+  `.env`-swap/real-docker-stack dance wasn't needed -- local `db`/`redis`
+  plus the full backend pytest suite (724 passed, up from 704) and
+  frontend vitest (229 passed) were sufficient, the same lighter path
+  Phase 19 itself originally used before the two e2e-coverage rounds
+  introduced the heavier real-stack discipline for php-analyzer-dependent
+  checks specifically.

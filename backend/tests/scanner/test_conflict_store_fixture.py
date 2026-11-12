@@ -3,7 +3,8 @@ actually triggers every check_type it's designed for, at the much faster
 pytest/real-DB layer -- before relying on it inside a full docker-compose +
 Playwright run. Four synthetic modules: Vendor_ConflictA/Vendor_ConflictB
 deliberately collide on every fleet-wide conflict check plus the Phase 19
-acl checks (ConflictA alone carries the missing_acl controller and the
+acl checks and the Phase 20 indexer/mview checks (ConflictA alone carries
+the missing_acl controller and the
 Packagist-cache-backed external checks); Vendor_QualityChecks carries every
 other single-module check (hardcoded_secret, deprecated_annotation,
 license_risk, magento_php_incompatible, and -- verified separately against
@@ -34,6 +35,8 @@ _FLEET_WIDE_CHECK_TYPES = {
     "cron_job_conflict",
     "graphql_field_conflict",
     "acl_resource_conflict",
+    "indexer_id_conflict",
+    "view_id_conflict",
 }
 
 

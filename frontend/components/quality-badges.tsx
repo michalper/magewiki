@@ -30,6 +30,8 @@ export const CHECK_TYPES: { key: string; severity: Severity; label: (n: number) 
   { key: "graphql_field_conflict", severity: "warning", label: (n) => `${n} graphql-conflict${n === 1 ? "" : "s"}` },
   { key: "acl_resource_conflict", severity: "warning", label: (n) => `${n} acl-conflict${n === 1 ? "" : "s"}` },
   { key: "missing_acl", severity: "warning", label: (n) => `${n} missing-acl` },
+  { key: "indexer_id_conflict", severity: "warning", label: (n) => `${n} indexer-conflict${n === 1 ? "" : "s"}` },
+  { key: "view_id_conflict", severity: "warning", label: (n) => `${n} view-conflict${n === 1 ? "" : "s"}` },
 ];
 
 export function sumFindingCounts(findingCounts: Record<string, number>): number {

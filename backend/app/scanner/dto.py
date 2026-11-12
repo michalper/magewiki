@@ -131,6 +131,20 @@ class AclResourceEntry:
 
 
 @dataclass
+class IndexerEntry:
+    indexer_id: str
+    view_id: str | None
+    class_name: str | None
+
+
+@dataclass
+class MviewEntry:
+    view_id: str
+    class_name: str | None
+    group_name: str | None
+
+
+@dataclass
 class ConfigFieldEntry:
     section_id: str
     group_id: str
