@@ -112,6 +112,19 @@ def test_string_literal_value_returns_none_for_a_non_string_node():
     assert _string_literal_value(integer_node, source) is None
 
 
+def test_string_literal_value_returns_none_for_a_string_with_an_escape_sequence():
+    # An escape sequence inside an encapsed_string splits it into more than
+    # one string_content child (confirmed empirically: `"Hello\n World"`
+    # parses as ['"', 'string_content', 'escape_sequence', 'string_content',
+    # '"']) -- not a plain literal this function can resolve, same
+    # "unresolvable without evaluating an expression" case as interpolation.
+    source = b'<?php\nconst FOO = "Hello\\n World";\n'
+    tree = parse_php(source)
+    (string_node,) = find_all(tree.root_node, {"encapsed_string"})
+
+    assert _string_literal_value(string_node, source) is None
+
+
 def test_parse_php_file_captures_abstract_modifier(tmp_path: Path):
     path = tmp_path / "Foo.php"
     path.write_text("<?php\nabstract class Foo {}\nclass Bar {}\n")
