@@ -1,4 +1,5 @@
 import { screen, waitFor } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { renderWithQueryClient } from "../../../test-utils";
 import CompareClient from "./CompareClient";
@@ -77,7 +78,13 @@ describe("CompareClient", () => {
   it("renders both modules side by side, each with their own real findings", async () => {
     setSearch("?a=1&b=2");
     fetchMock.mockImplementation(async (path: string) => {
-      if (path === "/modules") return [];
+      // A real entry for module 1's own dependency, in the same repo_root --
+      // exercises idByName's real match (module.repo_root === dep's own
+      // repo_root) and dependenciesList's "found, render a link" branch,
+      // not just the "not found, muted text" one every other test here hits.
+      if (path === "/modules") {
+        return [moduleDetail({ id: 99, name: "Magento_Backend", repo_root: "/sites/store" })];
+      }
       if (path === "/modules/1") {
         return moduleDetail({
           id: 1,
@@ -100,7 +107,28 @@ describe("CompareClient", () => {
     expect(screen.getByText("vendor/b")).toBeInTheDocument();
     expect(screen.getByText("payments")).toBeInTheDocument();
     expect(screen.getByText("1 missing-acl")).toBeInTheDocument();
-    expect(screen.getByText("Magento_Backend")).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "Magento_Backend" })).toHaveAttribute("href", "/modules/99");
+  });
+
+  it("picking a module from either dropdown updates the URL and re-renders", async () => {
+    setSearch("");
+    fetchMock.mockImplementation(async (path: string) => {
+      if (path === "/modules") return [moduleDetail({ id: 1, name: "Vendor_A" }), moduleDetail({ id: 2, name: "Vendor_B" })];
+      if (path === "/modules/1") return moduleDetail({ id: 1, name: "Vendor_A" });
+      if (path === "/modules/2") return moduleDetail({ id: 2, name: "Vendor_B" });
+      throw new Error(`unexpected path: ${path}`);
+    });
+    const user = userEvent.setup();
+
+    renderWithQueryClient(<CompareClient />);
+
+    await waitFor(() => expect(screen.getByText("Module A")).toBeInTheDocument());
+    await user.selectOptions(screen.getByLabelText("Module A"), "1");
+    await user.selectOptions(screen.getByLabelText("Module B"), "2");
+
+    expect(window.location.search).toBe("?a=1&b=2");
+    await waitFor(() => expect(screen.getByText("Vendor_A")).toBeInTheDocument());
+    expect(screen.getByText("Vendor_B")).toBeInTheDocument();
   });
 
   it("shows an error for a module that fails to load", async () => {
