@@ -6,6 +6,8 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { ChevronDown, ChevronRight } from "lucide-react";
 import { streamSse } from "@/lib/sse";
 import { downloadCsv, toCsv } from "@/lib/csv";
+import { AccessTokenPrompt } from "@/components/access-token-gate";
+import { AccessTokenRequiredError } from "@/lib/access-token";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { EnabledBadge } from "@/components/enabled-badge";
@@ -473,6 +475,7 @@ export default function ModulesPage() {
   const [scanProgress, setScanProgress] = useState<{ index: number; total: number } | null>(null);
   const [scanResult, setScanResult] = useState<ScanResponse | null>(null);
   const [scanError, setScanError] = useState<string | null>(null);
+  const [scanNeedsToken, setScanNeedsToken] = useState(false);
   const scanLogRef = useRef<HTMLDivElement>(null);
   const scanAbortControllerRef = useRef<AbortController | null>(null);
 
@@ -498,6 +501,7 @@ export default function ModulesPage() {
     setScanProgress(null);
     setScanResult(null);
     setScanError(null);
+    setScanNeedsToken(false);
 
     const controller = new AbortController();
     scanAbortControllerRef.current = controller;
@@ -545,7 +549,12 @@ export default function ModulesPage() {
     } catch (err) {
       // An intentional abort (navigating away) isn't a failure worth showing —
       // the controls it would update may not even be mounted anymore.
-      if ((err as Error).name !== "AbortError") {
+      if ((err as Error).name === "AbortError") {
+        // no-op
+      } else if (err instanceof AccessTokenRequiredError) {
+        setScanStatus("idle");
+        setScanNeedsToken(true);
+      } else {
         setScanStatus("error");
         setScanError((err as Error).message);
       }
@@ -708,6 +717,15 @@ export default function ModulesPage() {
             : "Scan"}
         </Button>
       </form>
+
+      {scanNeedsToken && (
+        <AccessTokenPrompt
+          onUnlock={() => {
+            setScanNeedsToken(false);
+            void startScan();
+          }}
+        />
+      )}
 
       {scanRootsQuery.data &&
         (scanRootsQuery.data.scan_roots.length > 0 ? (

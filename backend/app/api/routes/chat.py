@@ -8,6 +8,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.agent.loop import run_agent
 from app.agent.prompt import AUDIENCE_DEV, AUDIENCE_PM
+from app.api.auth import require_write_access
 from app.api.sse import format_sse
 from app.db import get_session
 
@@ -38,7 +39,7 @@ async def _sse_stream(session: AsyncSession, messages: list[dict], audience: str
         yield format_sse({"event": "error", "detail": "chat failed unexpectedly — check server logs"})
 
 
-@router.post("/chat")
+@router.post("/chat", dependencies=[Depends(require_write_access)])
 async def chat(request: ChatRequest, session: AsyncSession = Depends(get_session)) -> StreamingResponse:
     audience = request.audience if request.audience in (AUDIENCE_PM, AUDIENCE_DEV) else AUDIENCE_DEV
     messages = [{"role": m.role, "content": m.content} for m in request.messages]

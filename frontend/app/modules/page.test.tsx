@@ -1,6 +1,7 @@
 import { screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { AccessTokenRequiredError } from "@/lib/access-token";
 import { renderWithQueryClient } from "../../test-utils";
 import ModulesPage from "./page";
 
@@ -71,10 +72,12 @@ describe("ModulesPage", () => {
     fetchMock.mockReset();
     streamSseMock.mockReset();
     setSearch("");
+    localStorage.clear();
   });
 
   afterEach(() => {
     setSearch("");
+    localStorage.clear();
   });
 
   it("shows a loading state", () => {
@@ -599,6 +602,30 @@ describe("ModulesPage", () => {
       await waitFor(() =>
         expect(screen.getByText("a scan of /sites/store-a is already in progress")).toBeInTheDocument(),
       );
+    });
+
+    it("shows an access-token prompt on a 401 and retries the scan after unlocking", async () => {
+      mockApi();
+      streamSseMock.mockRejectedValueOnce(new AccessTokenRequiredError());
+      streamSseMock.mockImplementationOnce(async (_url, _body, onEvent: (e: ScanStreamEvent) => void) => {
+        onEvent({ event: "discovered", total: 1 });
+      });
+      const user = userEvent.setup();
+      renderWithQueryClient(<ModulesPage />);
+
+      await waitFor(() => expect(screen.getByLabelText("Path to scan")).toBeInTheDocument());
+      await user.type(screen.getByLabelText("Path to scan"), "/sites/store-a");
+      await user.click(screen.getByRole("button", { name: "Scan" }));
+
+      await waitFor(() => expect(screen.getByLabelText("Access token")).toBeInTheDocument());
+      expect(streamSseMock).toHaveBeenCalledTimes(1);
+
+      await user.type(screen.getByLabelText("Access token"), "secret-token");
+      await user.click(screen.getByRole("button", { name: "Unlock" }));
+
+      expect(localStorage.getItem("magewiki-access-token")).toBe("secret-token");
+      await waitFor(() => expect(streamSseMock).toHaveBeenCalledTimes(2));
+      expect(screen.queryByLabelText("Access token")).not.toBeInTheDocument();
     });
 
     it("shows a generic failure message when the stream rejects, but not for an intentional abort", async () => {

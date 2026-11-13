@@ -1,6 +1,7 @@
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { AccessTokenRequiredError } from "@/lib/access-token";
 import type { ChatEvent } from "@/lib/chat-types";
 import ChatPage from "./page";
 
@@ -13,6 +14,11 @@ const streamSseMock = vi.mocked(streamSse);
 describe("ChatPage", () => {
   beforeEach(() => {
     streamSseMock.mockReset();
+    localStorage.clear();
+  });
+
+  afterEach(() => {
+    localStorage.clear();
   });
 
   it("shows the empty-state prompt before any message is sent", () => {
@@ -307,6 +313,30 @@ describe("ChatPage", () => {
 
     expect(devButton).toHaveClass("bg-primary");
     expect(pmButton).not.toHaveClass("bg-primary");
+  });
+
+  it("shows an access-token prompt on a 401 and retries after unlocking", async () => {
+    streamSseMock.mockRejectedValueOnce(new AccessTokenRequiredError());
+    streamSseMock.mockImplementationOnce(async (_url, _body, onEvent: (e: ChatEvent) => void) => {
+      onEvent({ event: "token", text: "answer" });
+      onEvent({ event: "done", tokens_in: 1, tokens_out: 1, cost_usd: "0" });
+    });
+    const user = userEvent.setup();
+    render(<ChatPage />);
+
+    await user.type(screen.getByLabelText("Chat message"), "hi");
+    await user.click(screen.getByRole("button", { name: "Send" }));
+
+    await waitFor(() => expect(screen.getByLabelText("Access token")).toBeInTheDocument());
+    expect(streamSseMock).toHaveBeenCalledTimes(1);
+
+    await user.type(screen.getByLabelText("Access token"), "secret-token");
+    await user.click(screen.getByRole("button", { name: "Unlock" }));
+
+    expect(localStorage.getItem("magewiki-access-token")).toBe("secret-token");
+    await waitFor(() => expect(screen.getByText("answer")).toBeInTheDocument());
+    expect(streamSseMock).toHaveBeenCalledTimes(2);
+    expect(screen.queryByLabelText("Access token")).not.toBeInTheDocument();
   });
 
   it("disables the input and shows a thinking state while streaming", async () => {

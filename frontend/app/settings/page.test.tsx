@@ -1,6 +1,7 @@
 import { screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { AccessTokenRequiredError } from "@/lib/access-token";
 import { renderWithQueryClient } from "../../test-utils";
 import SettingsPage from "./page";
 
@@ -25,6 +26,11 @@ function settings(overrides: Partial<Record<string, unknown>> = {}) {
 describe("SettingsPage", () => {
   beforeEach(() => {
     fetchMock.mockReset();
+    localStorage.clear();
+  });
+
+  afterEach(() => {
+    localStorage.clear();
   });
 
   it("shows a loading state", () => {
@@ -209,6 +215,32 @@ describe("SettingsPage", () => {
         screen.getByText("changing llm_api_base requires providing llm_api_key again"),
       ).toBeInTheDocument(),
     );
+  });
+
+  it("shows an access-token prompt on a 401 and retries the same update after unlocking", async () => {
+    let patchCalls = 0;
+    fetchMock.mockImplementation(async (path: string, init?: RequestInit) => {
+      if (init?.method === "PATCH") {
+        patchCalls += 1;
+        if (patchCalls === 1) throw new AccessTokenRequiredError();
+        return settings();
+      }
+      return settings();
+    });
+    const user = userEvent.setup();
+    renderWithQueryClient(<SettingsPage />);
+
+    await waitFor(() => expect(screen.getByText("anthropic/claude-haiku-5-5")).toBeInTheDocument());
+    await user.type(screen.getByLabelText("LLM model"), "anthropic/claude-sonnet-5-5");
+    await user.click(screen.getAllByRole("button", { name: "Save" })[0]);
+
+    await waitFor(() => expect(screen.getByLabelText("Access token")).toBeInTheDocument());
+    await user.type(screen.getByLabelText("Access token"), "secret-token");
+    await user.click(screen.getByRole("button", { name: "Unlock" }));
+
+    expect(localStorage.getItem("magewiki-access-token")).toBe("secret-token");
+    await waitFor(() => expect(patchCalls).toBe(2));
+    await waitFor(() => expect(screen.queryByLabelText("Access token")).not.toBeInTheDocument());
   });
 
   it("offers a Confirm re-embed button when the backend asks for confirmation, and resends with it set", async () => {

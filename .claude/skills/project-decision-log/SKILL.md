@@ -3188,3 +3188,79 @@ Cleaning up the old stale "failure" entry (mark `inactive`, then delete)
 needed a `gh api` write call that the harness's auto-mode classifier
 blocked as an "External System Writes" action -- left for the user to
 run themselves rather than worked around.
+
+**Phase 24: lightweight access gate on write/cost-incurring endpoints
+(recorded 2026-11-13):** the project's own roadmap note (`docs/v1-port-
+roadmap.md`, written when Phase 13 was scoped) had explicitly flagged this
+as owed once the public demo existed: "worth a lightweight access gate
+(not full OAuth) when the public demo actually starts." Confirmed before
+writing anything that the live Fly.io demo has no active budget leak today
+(README: no LLM key/scan root configured there), so this is a genuine
+prerequisite for a future "turn on a real key on the public demo" step,
+not a fix for an active incident.
+
+- Scope was deliberately narrow: one shared secret
+  (`WRITE_ACCESS_TOKEN`, empty = disabled, same convention as
+  `WEBHOOK_HMAC_SECRET`/`ALERT_WEBHOOK_URL`) gating only the handful of
+  endpoints that cost money or mutate shared global state -- `POST /chat`,
+  `PATCH /settings/llm`, `POST /scan`/`POST /scan/stream`. All read-only
+  browsing (module list/detail, search, stats, `GET /settings/llm`) stays
+  open, since the whole point of a public portfolio demo is that visitors
+  can browse the already-scanned data freely.
+- The real motivating risk turned out to be broader than "chat costs
+  money": `PATCH /settings/llm` mutates the single shared `RuntimeLlmConfig`
+  row every visitor's session reads from -- once a real key exists, an
+  unauthenticated caller could already redirect it to an attacker's
+  `llm_api_base` (a prior, separately-fixed security bug noted elsewhere in
+  this log) without this gate. Protecting that route was treated as equally
+  important as protecting `/chat` itself, not an afterthought.
+- `backend/app/api/auth.py`'s `require_write_access` reuses the exact
+  `hmac.compare_digest` primitive `webhooks.py`'s HMAC check already
+  established, applied via FastAPI's `dependencies=[Depends(...)]` route
+  parameter (not a body check) so it runs before the route body does any
+  work. Deliberately a no-op whenever the token is unset -- every existing
+  local/self-hosted `docker compose up` user's behavior is unchanged.
+- Explicitly rejected a login page, sessions/cookies, or per-user accounts
+  -- CLAUDE.md already states a blanket auth layer is a bigger
+  architectural decision than this single-user tool needs; a single shared
+  secret an operator hands out alongside the demo link is the right size
+  for "keep random bots and drive-by visitors from burning the budget," not
+  "support multiple distinct identities."
+- Frontend: `frontend/lib/access-token.ts`'s `getStoredAccessToken`/
+  `setStoredAccessToken` wrap `localStorage` (try/catch, same defensive
+  pattern this project's other browser-storage reads already use).
+  `apiFetch`/`streamSse` attach the stored token as `X-Access-Token`
+  automatically and throw a dedicated `AccessTokenRequiredError` on a 401
+  instead of the generic "API responded with 401" both already fell back
+  to, letting each page tell "needs a token" apart from every other
+  failure. A new shared `<AccessTokenPrompt>` component (inline input +
+  button, matching this app's existing convention of plain inline error
+  text rather than a modal -- no modal/dialog system exists anywhere else
+  in this codebase for anything but the onboarding wizard) is wired into
+  the three call sites that hit a gated route: chat send, the settings
+  PATCH mutation (retried via TanStack Query's own retained
+  `mutation.variables`, not a separately-tracked ref), and the Modules
+  page's scan trigger.
+- Verified: new backend tests (`tests/api/test_access_gate.py`, mirroring
+  `test_webhooks_scan.py`'s shape) plus the full backend suite (799
+  passed, 2 skipped) with no regression on the now-gated routes' own
+  existing tests; full frontend suite (265 passed) including new
+  prompt-and-retry coverage in `chat`/`settings`/`modules` page tests and
+  the `api.ts`/`sse.ts`/`access-token.ts` unit tests; `ruff`/`mypy`/`tsc`/
+  `eslint` all clean. No real-stack `docker compose`/Playwright pass this
+  round -- this phase has no new Playwright-relevant user journey (the
+  gate is off by default in every e2e environment, matching every real
+  local/self-hosted deployment too), so the lighter backend+frontend-unit-
+  test verification already used for schema-only phases (e.g. Phase 20)
+  was judged sufficient.
+- **Correction to this same session's own research**: the candidate list
+  presented to the user alongside this one included "CSV export of the
+  module/report table" as a missing feature, based on a `grep -rli export
+  frontend/src` that returned nothing -- `frontend/src` doesn't exist in
+  this repo (the real root is `frontend/app`/`frontend/lib`/
+  `frontend/components`); CSV export already shipped (`frontend/lib/csv.ts`,
+  wired into the Modules page's "Export CSV" button). Caught only once
+  actually reading `modules/page.tsx`'s real imports while wiring this
+  phase's scan-trigger gate -- a reminder that a path-based absence check
+  is only as good as the path being right, not a substitute for actually
+  opening the file.

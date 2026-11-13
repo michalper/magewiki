@@ -29,6 +29,14 @@ class Settings(BaseSettings):
     embedding_dimensions: int = 1536
     openai_api_key: str = ""
     webhook_hmac_secret: str = ""
+    # Phase 24: a single shared secret gating the endpoints that cost money or
+    # mutate shared global state (POST /chat, PATCH /settings/llm, POST /scan[/stream])
+    # once this deployment is exposed publicly — lets an operator safely enable a real
+    # LLM key on the public demo without anonymous visitors spending the budget or
+    # rewriting the one shared RuntimeLlmConfig row. Empty disables the gate entirely,
+    # same convention as webhook_hmac_secret above (today's open behavior unchanged for
+    # local/self-hosted docker-compose use).
+    write_access_token: str = ""
     ollama_base_url: str = ""
     php_analyzer_url: str = "http://php-analyzer:8080"
     # General-purpose scan roots (see CLAUDE.md "Scan, cron, and cost control" decision

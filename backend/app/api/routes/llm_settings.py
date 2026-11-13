@@ -4,6 +4,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.analyzer.embeddings import embed_text
+from app.api.auth import require_write_access
 from app.config import settings
 from app.db import get_session
 from app.models import Module, RuntimeLlmConfig
@@ -61,7 +62,7 @@ async def get_llm_settings(session: AsyncSession = Depends(get_session)) -> LlmS
     return await _effective_response(session, row)
 
 
-@router.patch("/settings/llm", response_model=LlmSettingsResponse)
+@router.patch("/settings/llm", response_model=LlmSettingsResponse, dependencies=[Depends(require_write_access)])
 async def update_llm_settings(
     update: LlmSettingsUpdate, session: AsyncSession = Depends(get_session)
 ) -> LlmSettingsResponse:

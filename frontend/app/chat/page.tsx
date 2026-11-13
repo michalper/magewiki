@@ -14,7 +14,9 @@ import {
   TooltipProvider,
   TooltipTrigger,
 } from "@/components/ui/tooltip";
+import { AccessTokenPrompt } from "@/components/access-token-gate";
 import { apiUrl } from "@/lib/api";
+import { AccessTokenRequiredError } from "@/lib/access-token";
 import type { Audience, ChatEvent, Source } from "@/lib/chat-types";
 import { streamSse } from "@/lib/sse";
 import { useDocumentTitle } from "@/lib/use-document-title";
@@ -112,7 +114,9 @@ export default function ChatPage() {
   const [input, setInput] = useState("");
   const [audience, setAudience] = useState<Audience>("dev");
   const [isStreaming, setIsStreaming] = useState(false);
+  const [needsToken, setNeedsToken] = useState(false);
   const abortControllerRef = useRef<AbortController | null>(null);
+  const lastHistoryRef = useRef<{ role: "user" | "assistant"; content: string }[] | null>(null);
 
   useEffect(() => {
     // Navigating away mid-answer must not leave the backend's LLM call still
@@ -121,15 +125,9 @@ export default function ChatPage() {
     return () => abortControllerRef.current?.abort();
   }, []);
 
-  async function handleSubmit(e: React.FormEvent) {
-    e.preventDefault();
-    const question = input.trim();
-    if (!question || isStreaming) return;
-
-    const history = [...messages, { role: "user" as const, content: question }];
-    setMessages([...history, { role: "assistant", content: "" }]);
-    setInput("");
+  async function runChat(history: { role: "user" | "assistant"; content: string }[]) {
     setIsStreaming(true);
+    setNeedsToken(false);
 
     const controller = new AbortController();
     abortControllerRef.current = controller;
@@ -157,7 +155,11 @@ export default function ChatPage() {
     } catch (err) {
       // An intentional abort (navigating away) isn't a failure worth showing —
       // the message list it would update may not even be mounted anymore.
-      if ((err as Error).name !== "AbortError") {
+      if ((err as Error).name === "AbortError") {
+        // no-op
+      } else if (err instanceof AccessTokenRequiredError) {
+        setNeedsToken(true);
+      } else {
         setMessages((prev) => {
           const next = [...prev];
           next[next.length - 1] = { ...next[next.length - 1], error: "Failed to reach the API." };
@@ -167,6 +169,23 @@ export default function ChatPage() {
     } finally {
       setIsStreaming(false);
     }
+  }
+
+  async function handleSubmit(e: React.FormEvent) {
+    e.preventDefault();
+    const question = input.trim();
+    if (!question || isStreaming) return;
+
+    const history = [...messages, { role: "user" as const, content: question }];
+    setMessages([...history, { role: "assistant", content: "" }]);
+    setInput("");
+    lastHistoryRef.current = history;
+
+    await runChat(history);
+  }
+
+  function retryAfterUnlock() {
+    if (lastHistoryRef.current) runChat(lastHistoryRef.current);
   }
 
   return (
@@ -227,6 +246,8 @@ export default function ChatPage() {
           </div>
         ))}
       </div>
+
+      {needsToken && <AccessTokenPrompt onUnlock={retryAfterUnlock} />}
 
       <form className="flex gap-2" onSubmit={handleSubmit}>
         <Input

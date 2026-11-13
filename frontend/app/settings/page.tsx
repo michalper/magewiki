@@ -2,10 +2,12 @@
 
 import { useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { AccessTokenPrompt } from "@/components/access-token-gate";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { apiFetch } from "@/lib/api";
+import { AccessTokenRequiredError } from "@/lib/access-token";
 import type { components } from "@/lib/api-types";
 import { useDocumentTitle } from "@/lib/use-document-title";
 
@@ -83,6 +85,8 @@ export default function SettingsPage() {
     setPendingEmbeddingUpdate(full);
     patchMutation.mutate(full);
   }
+
+  const needsToken = patchMutation.isError && patchMutation.error instanceof AccessTokenRequiredError;
 
   const reembedConfirmMessage =
     patchMutation.isError &&
@@ -223,6 +227,14 @@ export default function SettingsPage() {
             </div>
           </section>
 
+          {needsToken && (
+            <AccessTokenPrompt
+              onUnlock={() => {
+                if (patchMutation.variables) patchMutation.mutate(patchMutation.variables);
+              }}
+            />
+          )}
+
           {reembedConfirmMessage && pendingEmbeddingUpdate && (
             <div className="flex flex-col gap-2 rounded-2xl bg-card p-5 shadow-sm">
               <p className="text-destructive text-sm">{reembedConfirmMessage}</p>
@@ -238,7 +250,7 @@ export default function SettingsPage() {
             </div>
           )}
 
-          {patchMutation.isError && !reembedConfirmMessage && (
+          {patchMutation.isError && !reembedConfirmMessage && !needsToken && (
             <p className="text-destructive text-sm">
               {patchMutation.error instanceof Error ? patchMutation.error.message : "Failed to save settings."}
             </p>

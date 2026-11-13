@@ -16,6 +16,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.analyzer.facts import gather_module_facts
 from app.analyzer.readme import render_readme_markdown
 from app.analyzer.schemas import ModuleDoc
+from app.api.auth import require_write_access
 from app.api.sse import format_sse
 from app.config import settings
 from app.db import get_session
@@ -295,7 +296,7 @@ def _scan_response(result: ScanResult, duration_seconds: float) -> ScanResponse:
     )
 
 
-@router.post("/scan", response_model=ScanResponse)
+@router.post("/scan", response_model=ScanResponse, dependencies=[Depends(require_write_access)])
 async def scan(request: ScanRequest, session: AsyncSession = Depends(get_session)) -> ScanResponse:
     _validate_scan_path(request.path)
 
@@ -339,7 +340,7 @@ async def _scan_sse_stream(path: str, session: AsyncSession) -> AsyncIterator[st
         yield format_sse({"event": "error", "detail": "scan failed unexpectedly — check server logs"})
 
 
-@router.post("/scan/stream")
+@router.post("/scan/stream", dependencies=[Depends(require_write_access)])
 async def scan_stream(request: ScanRequest, session: AsyncSession = Depends(get_session)) -> StreamingResponse:
     """Live progress for a scan — same scan_paths_events() generator the
     non-streaming /scan drains silently, but piped straight to the client as
