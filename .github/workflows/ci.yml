@@ -137,21 +137,21 @@ jobs:
       # actually changed, instead of rebuilding from scratch a second and
       # third time. Scope names match image-scan's own matrix.image values
       # and e2e-smoke's own three cache-from/-to calls below.
-      - uses: docker/build-push-action@v6
+      - uses: docker/build-push-action@v7
         with:
           context: ./backend
           tags: magewiki-backend-ci
           load: true
           cache-from: type=gha,scope=backend
           cache-to: type=gha,mode=max,scope=backend
-      - uses: docker/build-push-action@v6
+      - uses: docker/build-push-action@v7
         with:
           context: ./frontend
           tags: magewiki-frontend-ci
           load: true
           cache-from: type=gha,scope=frontend
           cache-to: type=gha,mode=max,scope=frontend
-      - uses: docker/build-push-action@v6
+      - uses: docker/build-push-action@v7
         with:
           context: .
           file: php-analyzer/Dockerfile
@@ -182,7 +182,7 @@ jobs:
     steps:
       - uses: actions/checkout@v7
       - uses: docker/setup-buildx-action@v3
-      - uses: docker/build-push-action@v6
+      - uses: docker/build-push-action@v7
         with:
           context: ${{ matrix.context }}
           file: ${{ matrix.dockerfile }}
@@ -255,19 +255,19 @@ jobs:
       # third time. Tags match docker compose config --images' own
       # auto-generated names (<project>-<service>, project name "magewiki"
       # from this repo's directory name).
-      - uses: docker/build-push-action@v6
+      - uses: docker/build-push-action@v7
         with:
           context: ./backend
           tags: magewiki-api,magewiki-worker,magewiki-migrate
           load: true
           cache-from: type=gha,scope=backend
-      - uses: docker/build-push-action@v6
+      - uses: docker/build-push-action@v7
         with:
           context: ./frontend
           tags: magewiki-web
           load: true
           cache-from: type=gha,scope=frontend
-      - uses: docker/build-push-action@v6
+      - uses: docker/build-push-action@v7
         with:
           context: .
           file: php-analyzer/Dockerfile
