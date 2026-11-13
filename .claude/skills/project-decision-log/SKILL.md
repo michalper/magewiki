@@ -2936,3 +2936,87 @@ config file nothing here parsed yet.
   Playwright (32/32) and full backend pytest (762 passed, up from 747)
   green, 100% backend line coverage maintained throughout, before
   committing.
+
+**Phase 22b: fleet-wide total-findings trend chart (recorded 2026-11-13):**
+part 2 of the same round, immediately after the `routes.xml` conflict
+checks above. `GET /modules/{id}/history` (Phase 16) was confirmed the
+only route reading `module_history_snapshots` -- the Stats page's KPI
+tiles answer "what's true right now," the per-module history view answers
+"what changed for one module," and nothing answered "is the whole fleet
+getting better or worse."
+
+- `get_fleet_trend()` reconstructs a fleet-wide timeline in Python, not a
+  SQL lateral join: `module_history_snapshots` is deduplicated per module
+  (one row per *change* -- see `app/scanner/history.py` -- not one row per
+  scan), so there's no single "fleet state at date X" to read directly.
+  Carrying each module's own last-known `finding_counts` forward in a
+  plain `dict[module_id, int]` as the merged, chronologically-sorted
+  timeline advances is simpler and safer than expressing "last known value
+  per group as of each row" as a lateral join, and the whole fleet's
+  history comfortably fits in memory at this project's scale (sparse
+  change-events, not a dense time series).
+- Route is `GET /modules/history/trend` -- three static path segments, so
+  no ordering conflict with the existing `GET /modules/{module_id}/history`
+  (FastAPI only matches routes with the same segment count, and no other
+  3-segment route under `/modules/` shares a literal third segment of
+  `trend`).
+- The real test-isolation trap this one hit: `tests/search/test_fleet_trend.py`
+  and `tests/api/test_fleet_trend_route.py` both insert real `Module` rows
+  with `state="up_to_date"` to get real snapshots persisted, and `db_session`
+  never rolls back between tests. The first full-suite run showed 4
+  unrelated failures in `test_llm_settings_api.py` (its "how many
+  already-embedded modules would be affected by an embedding-model change"
+  check counts ALL `up_to_date` modules fleet-wide, with no scoping) --
+  root-caused by running `test_llm_settings_api.py` alone (18/18 passed) vs.
+  together with the new tests (4 failed), confirming leaked fixture rows,
+  not a real bug in the embedding-model-change logic. Fixed by having both
+  new test files delete their own `Module` rows (cascades to their
+  snapshots via the existing FK `ondelete="CASCADE"`) before returning --
+  same fixture-hygiene discipline Phase 21's own similarity tests needed
+  for the same underlying reason (no rollback between tests + a fleet-wide
+  query elsewhere).
+- Frontend: `stats/page.test.tsx` used a single `fetchMock.mockResolvedValue(...)`
+  for its one `/modules` call; adding a second endpoint on the same page
+  meant every existing test's `/modules` fixture would have also silently
+  answered the new `/modules/history/trend` query with mismatched data.
+  Converted every call site to the `mockImplementation`-branch-by-path
+  convention `repos/page.test.tsx` already established, via a small local
+  `mockModules()` helper, rather than inventing a new pattern.
+- Verified against the real stack again (full Playwright 33/33 -- including
+  a new assertion that the chart renders real data from global-setup.ts's
+  own first scan, not its empty state -- and full backend pytest 764/764,
+  100% coverage) before committing.
+
+**Phase 22c: `get_module_history` agent tool (recorded 2026-11-13):** part 3,
+closing out the same round. `app/agent/tools.py` had zero mention of
+history (confirmed via grep) even though `GET /modules/{id}/history`
+(Phase 16) already exposed it over REST -- the same shape of gap
+`find_similar_modules` closed earlier this session for Phase 21's
+embeddings: real data sitting behind a REST endpoint the chat agent had
+no way to reach, so a PM asking "what changed in this module recently?"
+only ever got generic hybrid-search text with no real answer.
+
+- Deliberately duplicates the REST route's own query (`ModuleHistorySnapshot`
+  filtered by `module_id`, ordered `scanned_at` desc) rather than extracting
+  a shared helper -- two short, simple call sites reading the same table is
+  within this session's own established "three similar lines" tolerance,
+  and `app/api/routes/modules.py` and `app/agent/tools.py` have no existing
+  import relationship worth creating just for this.
+- Same `found: False` / `found: True` dict shape every other tool in this
+  file already returns (`get_dependencies`, `find_similar_modules`) --
+  `module_name` plus a `history` list, `limit` defaulting to 10 (an agent
+  asking "what changed recently" doesn't need the module's entire history,
+  just the recent tail -- the REST page already covers "show me everything").
+- Registered in both `TOOL_FUNCTIONS` and `TOOL_SCHEMAS`, and CLAUDE.md's
+  own **Agent tools** list and **Question routing** table updated in the
+  same commit -- both are "settled, always-relevant" reference material
+  per CLAUDE.md's own working-method rule, not roadmap history, so they get
+  edited directly rather than only recorded here.
+- Tests mirror `find_similar_modules`'s own tool-test structure exactly
+  (newest-first ordering, not-found, empty-history), reusing the file's
+  existing `_make_bare_module` helper and the same explicit
+  `delete(Module)`-after-test cleanup discipline Phase 22b's fleet-trend
+  tests needed for the same db_session-never-rolls-back reason.
+- Verified via the full backend pytest (767 passed, up from 764, 100%
+  coverage maintained) -- no frontend or real-stack changes in this part,
+  so no Playwright/`.env`-swap pass was needed.

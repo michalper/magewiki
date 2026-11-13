@@ -87,7 +87,7 @@ Agentic RAG over hybrid search in Postgres: an agent with tools (tool calling vi
 
 **Multi-level index**: module README (top level) → per-file summaries → code fragments (methods, XML blocks) for citation only. Chunking follows code structure, not character count. Source code for citations lives in the database; `read_file` reads from the database, not disk.
 
-**Agent tools**: `search_modules`, `get_module`, `get_dependencies`, `find_similar_modules`, `find_by_event`, `find_by_class`, `read_file(path, lines)`, `list_modules`.
+**Agent tools**: `search_modules`, `get_module`, `get_dependencies`, `find_similar_modules`, `get_module_history`, `find_by_event`, `find_by_class`, `read_file(path, lines)`, `list_modules`.
 
 **Question routing**:
 
@@ -97,6 +97,7 @@ Agentic RAG over hybrid search in Postgres: an agent with tools (tool calling vi
 | "Show all payment modules", "how many…" | `list_modules` (SQL over tags/integrations/status) with total count and pagination |
 | "Who listens to this event?", "who overrides this class?" | `find_by_event`, `find_by_class` (SQL) |
 | "Do we have two modules doing the same integration?" | `find_similar_modules` (embedding cosine similarity) |
+| "What changed in this module recently?", "is this module getting better or worse?" | `get_module_history` (SQL over `module_history_snapshots`) |
 
 Enumeration questions go through SQL, because top-k retrieval doesn't guarantee completeness by nature.
 

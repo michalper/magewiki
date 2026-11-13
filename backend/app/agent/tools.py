@@ -13,6 +13,7 @@ from app.models import (
     Module,
     ModuleDependency,
     ModuleDocument,
+    ModuleHistorySnapshot,
     ModuleQualityFinding,
     PhpClass,
 )
@@ -130,6 +131,35 @@ async def find_similar_modules(session: AsyncSession, module_id: int, limit: int
         "similar": [
             {"module_id": s.module_id, "name": s.name, "composer_name": s.composer_name, "similarity": s.similarity}
             for s in similar
+        ],
+    }
+
+
+async def get_module_history(session: AsyncSession, module_id: int, limit: int = 10) -> dict:
+    module = await session.get(Module, module_id)
+    if module is None:
+        return {"found": False}
+
+    rows = (
+        await session.scalars(
+            select(ModuleHistorySnapshot)
+            .where(ModuleHistorySnapshot.module_id == module_id)
+            .order_by(ModuleHistorySnapshot.scanned_at.desc())
+            .limit(limit)
+        )
+    ).all()
+    return {
+        "found": True,
+        "module_name": module.name,
+        "history": [
+            {
+                "scanned_at": row.scanned_at.isoformat(),
+                "current_hash": row.current_hash,
+                "state": row.state,
+                "enabled": row.enabled,
+                "finding_counts": row.finding_counts,
+            }
+            for row in rows
         ],
     }
 
@@ -323,6 +353,7 @@ TOOL_FUNCTIONS: dict[str, Callable[..., Awaitable[dict]]] = {
     "get_module": get_module,
     "get_dependencies": get_dependencies,
     "find_similar_modules": find_similar_modules,
+    "get_module_history": get_module_history,
     "find_by_event": find_by_event,
     "find_by_class": find_by_class,
     "read_file": read_file,
@@ -391,6 +422,26 @@ TOOL_SCHEMAS = [
                 "properties": {
                     "module_id": {"type": "integer"},
                     "limit": {"type": "integer", "description": "Max results, default 5"},
+                },
+                "required": ["module_id"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "get_module_history",
+            "description": (
+                "Get a module's own change history: one entry per scan that actually changed something "
+                "(hash, state, enabled status, or quality-finding counts), newest first. Use for 'what changed "
+                "in this module recently?' or 'is this module getting better or worse?'. Returns found=false if "
+                "the module doesn't exist, and an empty list if nothing has changed since its first scan."
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "module_id": {"type": "integer"},
+                    "limit": {"type": "integer", "description": "Max entries, default 10"},
                 },
                 "required": ["module_id"],
             },

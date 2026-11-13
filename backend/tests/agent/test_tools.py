@@ -12,12 +12,20 @@ from app.agent.tools import (
     find_similar_modules,
     get_dependencies,
     get_module,
+    get_module_history,
     list_modules,
     read_file,
     search_modules,
 )
 from app.analyzer.prompts import MODULE_SYNTHESIS_PROMPT_VERSION
-from app.models import AnalysisCache, Chunk, Module, ModuleDocument, ModuleQualityFinding
+from app.models import (
+    AnalysisCache,
+    Chunk,
+    Module,
+    ModuleDocument,
+    ModuleHistorySnapshot,
+    ModuleQualityFinding,
+)
 from tests.conftest import scan_demo_store
 
 
@@ -580,4 +588,58 @@ async def test_list_modules_filters_by_check_type_and_reports_its_finding_count(
         assert "finding_count" not in m
 
     await db_session.execute(delete(Module).where(Module.id.in_([with_cve.id, without_cve.id])))
+    await db_session.commit()
+
+
+@pytest.mark.asyncio
+async def test_get_module_history_tool_returns_newest_first(db_session):
+    suffix = uuid.uuid4().hex[:8]
+    module = await _make_bare_module(db_session, suffix)
+    older = ModuleHistorySnapshot(
+        module_id=module.id,
+        scanned_at=datetime(2026, 1, 1, tzinfo=UTC),
+        current_hash="hash-a",
+        state="up_to_date",
+        enabled=True,
+        finding_counts={"phpstan_error": 3},
+    )
+    newer = ModuleHistorySnapshot(
+        module_id=module.id,
+        scanned_at=datetime(2026, 2, 1, tzinfo=UTC),
+        current_hash="hash-b",
+        state="up_to_date",
+        enabled=True,
+        finding_counts={"phpstan_error": 1},
+    )
+    db_session.add_all([older, newer])
+    await db_session.commit()
+
+    result = await get_module_history(db_session, module_id=module.id)
+
+    assert result["found"] is True
+    assert result["module_name"] == module.name
+    assert [entry["current_hash"] for entry in result["history"]] == ["hash-b", "hash-a"]
+    assert result["history"][0]["finding_counts"] == {"phpstan_error": 1}
+
+    await db_session.execute(delete(Module).where(Module.id == module.id))
+    await db_session.commit()
+
+
+@pytest.mark.asyncio
+async def test_get_module_history_tool_not_found(db_session):
+    result = await get_module_history(db_session, module_id=999999999)
+    assert result == {"found": False}
+
+
+@pytest.mark.asyncio
+async def test_get_module_history_tool_empty_list_with_no_snapshots(db_session):
+    suffix = uuid.uuid4().hex[:8]
+    module = await _make_bare_module(db_session, suffix)
+    await db_session.commit()
+
+    result = await get_module_history(db_session, module_id=module.id)
+
+    assert result == {"found": True, "module_name": module.name, "history": []}
+
+    await db_session.execute(delete(Module).where(Module.id == module.id))
     await db_session.commit()
