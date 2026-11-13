@@ -313,6 +313,7 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       contents: read
+      deployments: write
     concurrency:
       group: fly-deploy
       cancel-in-progress: false
@@ -324,12 +325,46 @@ jobs:
         run: |
           curl -L https://fly.io/install.sh | sh
           echo "$HOME/.fly/bin" >> "$GITHUB_PATH"
+      # The "production" environment on GitHub's own Deployments tab used to
+      # show a single, permanently stale entry from the very first manual
+      # Fly.io setup (never updated since -- flyctl deploy itself never
+      # touches the Deployments API, only Fly's own one-time GitHub App
+      # ping did). Posting a real status here per CI run makes that tab an
+      # accurate mirror of this job's own outcome, not a dead artifact from
+      # day one. required_contexts: [] skips GitHub's legacy commit-status
+      # gating -- readiness is already enforced by `needs:` above.
+      - name: Create GitHub deployment
+        id: gh_deployment
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          id=$(gh api "repos/${{ github.repository }}/deployments" --input - --jq .id <<'PAYLOAD'
+          {"ref": "${{ github.sha }}", "environment": "production", "auto_merge": false, "required_contexts": [], "description": "api+web via flyctl"}
+          PAYLOAD
+          )
+          echo "id=$id" >> "$GITHUB_OUTPUT"
+          gh api "repos/${{ github.repository }}/deployments/$id/statuses" -f state=in_progress
       - name: Deploy API (backend/fly.toml -> magewiki-api)
+        id: deploy_api
         working-directory: backend
         run: flyctl deploy --remote-only
       - name: Deploy Web (frontend/fly.toml -> magewiki-web)
+        id: deploy_web
         working-directory: frontend
         run: flyctl deploy --config fly.toml --dockerfile Dockerfile.fly --remote-only
+      - name: Report deployment status
+        if: always()
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          if [ "${{ steps.deploy_api.outcome }}" = "success" ] && [ "${{ steps.deploy_web.outcome }}" = "success" ]; then
+            state=success
+          else
+            state=failure
+          fi
+          gh api "repos/${{ github.repository }}/deployments/${{ steps.gh_deployment.outputs.id }}/statuses" \
+            -f state="$state" \
+            -f environment_url="https://magewiki-web.fly.dev"
 
   rag-eval-comment:
     if: github.event_name == 'pull_request'

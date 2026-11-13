@@ -3159,3 +3159,32 @@ than picking one:
   models just to prove the container starts and is reachable), then tore
   it down and removed the now-unused `ollama_data` volume before restoring
   the real `.env`.
+
+**GitHub Deployments tracking wired to the real deploy job (recorded
+2026-11-13):** the user noticed GitHub's own Deployments tab
+(repos/.../deployments) showed exactly one entry, ever -- created
+2026-11-10 by Fly.io's own GitHub App integration on what was apparently
+the very first deploy, permanently stuck on "failure" even though that
+same commit's real `Deploy to Fly.io` CI job succeeded (confirmed via `gh
+run view`), and never updated again despite many real successful deploys
+since (`gh api repos/.../deployments --jq length` stayed at 1 through a
+brand-new, verified-live deploy). Root cause: `flyctl deploy` itself never
+calls GitHub's Deployments API at all -- that one entry was a one-time
+side effect of Fly's GitHub App detecting the app, not something the CI
+job ever drove.
+
+Fixed by having the `deploy` job in `ci.yml` own its own GitHub Deployment
+record directly via `gh api` (no third-party Action) -- one deployment
+created per CI run (`environment: "production"`, `required_contexts: []`
+to skip GitHub's legacy commit-status gating, since readiness is already
+enforced by the job's own `needs:`), posted `in_progress` before
+`flyctl deploy` runs, then `success`/`failure` after both the api and web
+deploys finish (`if: always()`, keyed off `steps.deploy_api.outcome`/
+`steps.deploy_web.outcome`) -- one combined status for both Fly apps,
+not two separate deployment records, since they deploy together as one
+release. Needed `deployments: write` added to the job's `permissions:`.
+
+Cleaning up the old stale "failure" entry (mark `inactive`, then delete)
+needed a `gh api` write call that the harness's auto-mode classifier
+blocked as an "External System Writes" action -- left for the user to
+run themselves rather than worked around.
