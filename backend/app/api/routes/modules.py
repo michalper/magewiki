@@ -47,6 +47,7 @@ from app.scanner.orchestrator import (
     scan_paths,
     scan_paths_events,
 )
+from app.search.fleet_trend import get_fleet_trend
 from app.search.similar_modules import find_duplicate_module_pairs, find_similar_modules
 
 router = APIRouter()
@@ -1100,3 +1101,19 @@ async def get_module_history(
         )
         for row in rows
     ]
+
+
+class FleetTrendPointEntry(BaseModel):
+    """Phase 22b: one fleet-wide total-findings data point, oldest first --
+    see app/search/fleet_trend.py for how it's reconstructed from Phase 16's
+    per-module snapshots.
+    """
+
+    scanned_at: datetime
+    total_findings: int
+
+
+@router.get("/modules/history/trend", response_model=list[FleetTrendPointEntry])
+async def get_fleet_trend_route(session: AsyncSession = Depends(get_session)) -> list[FleetTrendPointEntry]:
+    points = await get_fleet_trend(session)
+    return [FleetTrendPointEntry(scanned_at=p.scanned_at, total_findings=p.total_findings) for p in points]

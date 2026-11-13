@@ -328,6 +328,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/modules/history/trend": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Fleet Trend Route */
+        get: operations["get_fleet_trend_route_modules_history_trend_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/search": {
         parameters: {
             query?: never;
@@ -527,6 +544,21 @@ export interface components {
             observer_class: string;
             /** Disabled */
             disabled: boolean;
+        };
+        /**
+         * FleetTrendPointEntry
+         * @description Phase 22b: one fleet-wide total-findings data point, oldest first --
+         *     see app/search/fleet_trend.py for how it's reconstructed from Phase 16's
+         *     per-module snapshots.
+         */
+        FleetTrendPointEntry: {
+            /**
+             * Scanned At
+             * Format: date-time
+             */
+            scanned_at: string;
+            /** Total Findings */
+            total_findings: number;
         };
         /** GraphEdge */
         GraphEdge: {
@@ -1491,6 +1523,26 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_fleet_trend_route_modules_history_trend_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["FleetTrendPointEntry"][];
                 };
             };
         };

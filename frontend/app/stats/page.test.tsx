@@ -22,6 +22,14 @@ function mod(overrides: Partial<Record<string, unknown>> = {}) {
   };
 }
 
+// StatsPage fetches both /modules and /modules/history/trend -- branching by
+// path (same convention as repos/page.test.tsx) keeps the fleet-trend query
+// resolving to [] (its own real empty state) instead of silently receiving
+// this test file's /modules fixtures.
+function mockModules(modules: unknown[]) {
+  fetchMock.mockImplementation(async (path: string) => (path === "/modules" ? modules : []));
+}
+
 describe("truncateLabelTail", () => {
   // Recharts' YAxis tickFormatter is the only real caller, and jsdom's
   // ResponsiveContainer never gets a real measured size (see the "narrow
@@ -54,13 +62,13 @@ describe("StatsPage", () => {
   });
 
   it("shows an empty-state message with no modules", async () => {
-    fetchMock.mockResolvedValue([]);
+    mockModules([]);
     renderWithQueryClient(<StatsPage />);
     await waitFor(() => expect(screen.getByText("No modules scanned yet.")).toBeInTheDocument());
   });
 
   it("sums every finding type across modules into the stat tiles", async () => {
-    fetchMock.mockResolvedValue([
+    mockModules([
       mod({
         id: 1,
         finding_counts: {
@@ -135,7 +143,7 @@ describe("StatsPage", () => {
   });
 
   it("renders a stat tile as a plain div (not a link) when its count is zero", async () => {
-    fetchMock.mockResolvedValue([mod()]);
+    mockModules([mod()]);
     renderWithQueryClient(<StatsPage />);
 
     await waitFor(() => expect(screen.getByText("Hardcoded secrets")).toBeInTheDocument());
@@ -145,7 +153,7 @@ describe("StatsPage", () => {
   });
 
   it("always renders the outdated-dependencies tile as a link target even with no accent", async () => {
-    fetchMock.mockResolvedValue([mod({ finding_counts: { outdated_dependency: 5 } })]);
+    mockModules([mod({ finding_counts: { outdated_dependency: 5 } })]);
     renderWithQueryClient(<StatsPage />);
 
     await waitFor(() => expect(screen.getByText("Outdated dependencies")).toBeInTheDocument());
@@ -156,7 +164,7 @@ describe("StatsPage", () => {
   });
 
   it("shows an info tooltip trigger for a tile with a description, without navigating on click", async () => {
-    fetchMock.mockResolvedValue([mod({ finding_counts: { hardcoded_secret: 1 } })]);
+    mockModules([mod({ finding_counts: { hardcoded_secret: 1 } })]);
     const user = userEvent.setup();
     renderWithQueryClient(<StatsPage />);
 
@@ -169,7 +177,7 @@ describe("StatsPage", () => {
   });
 
   it('shows "no findings" copy when nothing has any quality findings', async () => {
-    fetchMock.mockResolvedValue([mod()]);
+    mockModules([mod()]);
     renderWithQueryClient(<StatsPage />);
 
     await waitFor(() =>
@@ -178,11 +186,42 @@ describe("StatsPage", () => {
   });
 
   it("renders the top-findings chart section when at least one module has findings", async () => {
-    fetchMock.mockResolvedValue([mod({ finding_counts: { hardcoded_secret: 1 } })]);
+    mockModules([mod({ finding_counts: { hardcoded_secret: 1 } })]);
     renderWithQueryClient(<StatsPage />);
 
     await waitFor(() => expect(screen.getByText("Top modules by quality findings")).toBeInTheDocument());
     expect(screen.queryByText("No quality findings across any scanned module.")).not.toBeInTheDocument();
+  });
+
+  it("shows the fleet-trend chart's empty state when there is no history yet", async () => {
+    fetchMock.mockImplementation(async (path: string) => (path === "/modules" ? [mod()] : []));
+    renderWithQueryClient(<StatsPage />);
+
+    await waitFor(() =>
+      expect(screen.getByText("Total findings across the fleet, over time")).toBeInTheDocument(),
+    );
+    expect(
+      screen.getByText("No history yet — this fills in once a rescan changes something for at least one module."),
+    ).toBeInTheDocument();
+  });
+
+  it("renders the fleet-trend chart's line section when history points exist", async () => {
+    fetchMock.mockImplementation(async (path: string) =>
+      path === "/modules"
+        ? [mod()]
+        : [
+            { scanned_at: "2026-01-01T00:00:00Z", total_findings: 3 },
+            { scanned_at: "2026-02-01T00:00:00Z", total_findings: 5 },
+          ],
+    );
+    renderWithQueryClient(<StatsPage />);
+
+    await waitFor(() =>
+      expect(screen.getByText("Total findings across the fleet, over time")).toBeInTheDocument(),
+    );
+    expect(
+      screen.queryByText("No history yet — this fills in once a rescan changes something for at least one module."),
+    ).not.toBeInTheDocument();
   });
 
   it("still renders the top-findings chart section on a narrow (mobile) viewport", async () => {
@@ -204,7 +243,7 @@ describe("StatsPage", () => {
     })) as typeof window.matchMedia;
 
     try {
-      fetchMock.mockResolvedValue([mod({ finding_counts: { hardcoded_secret: 1 } })]);
+      mockModules([mod({ finding_counts: { hardcoded_secret: 1 } })]);
       renderWithQueryClient(<StatsPage />);
 
       await waitFor(() => expect(screen.getByText("Top modules by quality findings")).toBeInTheDocument());
@@ -227,7 +266,7 @@ describe("StatsPage", () => {
 
     it("still gets a plain, auto-generated tile instead of being invisible", async () => {
       const { default: StatsPageWithExtraCheckType } = await import("./page");
-      fetchMock.mockResolvedValue([mod({ finding_counts: { brand_new_check: 5 } })]);
+      mockModules([mod({ finding_counts: { brand_new_check: 5 } })]);
       renderWithQueryClient(<StatsPageWithExtraCheckType />);
 
       await waitFor(() => expect(screen.getByText("Brand new check")).toBeInTheDocument());

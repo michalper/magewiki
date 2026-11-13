@@ -37,6 +37,22 @@ test("KPI tiles show real, non-zero counts from the seeded scan", async ({ page 
   await expect(testsTile.getByText(/\d+%/)).toBeVisible();
 });
 
+test("the fleet-trend chart renders real history from the seeded scan, not its empty state", async ({
+  page,
+}) => {
+  // global-setup.ts's own scan is this fleet's first-ever scan of each
+  // fixture module, and Phase 16's write_history_snapshots() writes a
+  // baseline snapshot on that very first analysis (there's no prior
+  // snapshot to compare against, so the "change" is trivially real) --
+  // the chart should show a real line, not its "no history yet" copy.
+  await page.goto("/stats");
+
+  await expect(page.getByText("Total findings across the fleet, over time")).toBeVisible();
+  await expect(
+    page.getByText("No history yet — this fills in once a rescan changes something for at least one module."),
+  ).not.toBeVisible();
+});
+
 test("a KPI tile's info tooltip reveals its real description on hover", async ({ page }) => {
   await page.goto("/stats");
 

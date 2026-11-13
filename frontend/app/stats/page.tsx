@@ -10,6 +10,8 @@ import {
   CartesianGrid,
   Cell,
   LabelList,
+  Line,
+  LineChart,
   Pie,
   PieChart,
   ResponsiveContainer,
@@ -32,6 +34,8 @@ import { useMediaQuery } from "@/lib/use-media-query";
 
 type ModuleSummary =
   paths["/modules"]["get"]["responses"][200]["content"]["application/json"][number];
+type FleetTrendPoint =
+  paths["/modules/history/trend"]["get"]["responses"][200]["content"]["application/json"][number];
 
 function sumByCheckType(modules: ModuleSummary[], checkType: string): number {
   return modules.reduce((sum, m) => sum + (m.finding_counts[checkType] ?? 0), 0);
@@ -162,6 +166,10 @@ function prettifyCheckType(checkType: string): string {
 
 async function fetchModules(): Promise<ModuleSummary[]> {
   return apiFetch("/modules");
+}
+
+async function fetchFleetTrend(): Promise<FleetTrendPoint[]> {
+  return apiFetch("/modules/history/trend");
 }
 
 function StatTile({
@@ -354,11 +362,66 @@ function TopFindingsBar({ modules }: { modules: ModuleSummary[] }) {
   );
 }
 
+function FleetTrendChart({ points }: { points: FleetTrendPoint[] }) {
+  const palette = useChartPalette();
+  // Phase 22b: module_history_snapshots is deduplicated per module (one row
+  // per *change*, not per scan -- app/search/fleet_trend.py carries each
+  // module's own last-known total forward), so a brand-new scan with
+  // nothing changed since baseline yet has no points at all -- that's the
+  // one real, deterministic empty state here, not a transient loading gap.
+  if (points.length === 0) {
+    return (
+      <div className="rounded-2xl bg-card p-5 shadow-sm">
+        <h3 className="text-sm font-medium mb-2 text-muted-foreground">
+          Total findings across the fleet, over time
+        </h3>
+        <p className="text-sm text-muted-foreground">
+          No history yet — this fills in once a rescan changes something for at least one module.
+        </p>
+      </div>
+    );
+  }
+
+  const data = points.map((p) => ({
+    scannedAt: p.scanned_at,
+    label: new Date(p.scanned_at).toLocaleDateString(),
+    total: p.total_findings,
+  }));
+
+  return (
+    <div className="rounded-2xl bg-card p-5 shadow-sm">
+      <h3 className="text-sm font-medium mb-2 text-muted-foreground">
+        Total findings across the fleet, over time
+      </h3>
+      <p className="text-xs text-muted-foreground mb-2">
+        Is the fleet as a whole getting better or worse — not just one module&apos;s own history
+      </p>
+      <ResponsiveContainer width="100%" height={240}>
+        <LineChart data={data} margin={{ left: 0, right: 16, top: 8, bottom: 0 }}>
+          <CartesianGrid stroke={palette.ink.gridline} />
+          <XAxis dataKey="label" tick={{ fill: palette.ink.muted, fontSize: 12 }} />
+          <YAxis allowDecimals={false} tick={{ fill: palette.ink.muted, fontSize: 12 }} />
+          <Tooltip />
+          <Line
+            type="monotone"
+            dataKey="total"
+            stroke={palette.sequential}
+            strokeWidth={2}
+            dot={{ r: 3, fill: palette.sequential }}
+          />
+        </LineChart>
+      </ResponsiveContainer>
+    </div>
+  );
+}
+
 export default function StatsPage() {
   useDocumentTitle("Stats");
   const modulesQuery = useQuery({ queryKey: ["modules"], queryFn: fetchModules });
+  const fleetTrendQuery = useQuery({ queryKey: ["fleet-trend"], queryFn: fetchFleetTrend });
   const palette = useChartPalette();
   const modules = useMemo(() => modulesQuery.data ?? [], [modulesQuery.data]);
+  const fleetTrend = useMemo(() => fleetTrendQuery.data ?? [], [fleetTrendQuery.data]);
 
   const totals = useMemo(
     () => ({
@@ -450,6 +513,7 @@ export default function StatsPage() {
           </div>
 
           <TopFindingsBar modules={modules} />
+          <FleetTrendChart points={fleetTrend} />
         </>
       )}
     </div>
