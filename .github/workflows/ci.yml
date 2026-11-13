@@ -126,7 +126,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
-      - uses: docker/setup-buildx-action@v3
+      - uses: docker/setup-buildx-action@v4
       # cache-from/cache-to: type=gha -- the three images built here are
       # rebuilt again, unchanged, by image-scan's own matrix and by
       # e2e-smoke's `docker compose up --build`, each on its own separate
@@ -181,7 +181,7 @@ jobs:
             dockerfile: php-analyzer/Dockerfile
     steps:
       - uses: actions/checkout@v7
-      - uses: docker/setup-buildx-action@v3
+      - uses: docker/setup-buildx-action@v4
       - uses: docker/build-push-action@v6
         with:
           context: ${{ matrix.context }}
@@ -245,7 +245,7 @@ jobs:
       # and the whole fleet-wide conflict family, none of which demo-store's
       # single module can ever trigger. See frontend/tests/e2e/global-setup.ts.
       - run: echo "MAGEWIKI_SCAN_ROOT_2=$(pwd)/backend/tests/fixtures/conflict-store" >> .env
-      - uses: docker/setup-buildx-action@v3
+      - uses: docker/setup-buildx-action@v4
       # Pre-build and tag the three images docker-compose.yml's services
       # expect (api/worker/migrate share one backend build, same dedup
       # docker compose build itself would do), reading the same GHA cache
