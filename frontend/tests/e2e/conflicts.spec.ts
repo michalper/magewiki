@@ -49,6 +49,8 @@ test("Vendor_ConflictA shows every fleet-wide conflict badge plus its own single
     "1 frontname-conflict",
     "1 virtualtype-conflict",
     "1 widget-conflict",
+    "1 menu-conflict",
+    "1 cache-conflict",
     "1 missing-acl",
     "1 CVE",
     "1 abandoned",
@@ -84,6 +86,8 @@ test("Vendor_ConflictB shows every fleet-wide conflict badge but none of Conflic
     "1 frontname-conflict",
     "1 virtualtype-conflict",
     "1 widget-conflict",
+    "1 menu-conflict",
+    "1 cache-conflict",
   ]) {
     await expect(table.getByText(label, { exact: true })).toBeVisible();
   }

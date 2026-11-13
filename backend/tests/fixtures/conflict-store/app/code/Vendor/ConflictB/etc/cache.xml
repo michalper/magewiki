@@ -1,0 +1,7 @@
+<?xml version="1.0"?>
+<config xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:noNamespaceSchemaLocation="urn:magento:framework:App/Cache/etc/cache.xsd">
+    <type name="conflict_shared_cache" instance="Vendor\ConflictB\Model\Cache\Type" translate="label,description">
+        <label>Conflict B Cache</label>
+        <description>Conflict B cache type.</description>
+    </type>
+</config>

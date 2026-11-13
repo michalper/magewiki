@@ -158,6 +158,18 @@ class WidgetEntry:
 
 
 @dataclass
+class MenuItemEntry:
+    menu_item_id: str
+    title: str | None
+
+
+@dataclass
+class CacheTypeEntry:
+    cache_type_id: str
+    instance: str | None
+
+
+@dataclass
 class ConfigFieldEntry:
     section_id: str
     group_id: str

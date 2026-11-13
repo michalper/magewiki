@@ -555,7 +555,7 @@ TOOL_SCHEMAS = [
                 "circular_dependency, license_risk, phpunit_failure, preference_conflict, cron_job_conflict, "
                 "graphql_field_conflict, acl_resource_conflict, missing_acl, indexer_id_conflict, "
                 "view_id_conflict, route_id_conflict, frontname_conflict, virtual_type_conflict, "
-                "widget_id_conflict. When check_type is set, each "
+                "widget_id_conflict, menu_item_id_conflict, cache_type_conflict. When check_type is set, each "
                 "returned module also has a finding_count for that specific check_type."
             ),
             "parameters": {

@@ -27,8 +27,10 @@ from app.models import (
     FileHash,
     GraphQlField,
     Module,
+    ModuleCacheType,
     ModuleDependency,
     ModuleIndexer,
+    ModuleMenuItem,
     ModuleMview,
     ModuleQualityFinding,
     ModuleRoute,
@@ -43,6 +45,8 @@ from app.scanner.acl_conflicts import AclResourceRow, detect_acl_resource_confli
 from app.scanner.acl_xml import parse_acl_xml
 from app.scanner.admin_acl import find_missing_acl
 from app.scanner.alerts import send_quality_alert
+from app.scanner.cache_type_conflicts import CacheTypeRow, detect_cache_type_conflicts
+from app.scanner.cache_xml import parse_cache_xml
 from app.scanner.circular_dependencies import ModuleDependencyRow, detect_circular_dependencies
 from app.scanner.composer_conflicts import ComposerRequirementRow, detect_composer_conflicts
 from app.scanner.composer_json import composer_completeness_findings, parse_composer_json
@@ -56,6 +60,7 @@ from app.scanner.di_xml import parse_di_xml
 from app.scanner.discovery import find_modules
 from app.scanner.dto import (
     AclResourceEntry,
+    CacheTypeEntry,
     ComposerResult,
     ConfigFieldEntry,
     CronJobEntry,
@@ -66,6 +71,7 @@ from app.scanner.dto import (
     EventObserverEntry,
     GraphQlFieldEntry,
     IndexerEntry,
+    MenuItemEntry,
     ModuleXmlResult,
     MviewEntry,
     PendingAnalysisJob,
@@ -84,6 +90,8 @@ from app.scanner.indexer_xml import parse_indexer_xml
 from app.scanner.installed_versions import parse_installed_versions
 from app.scanner.license_check import check_license_risk
 from app.scanner.magento_upgrade import check_magento_upgrade_readiness
+from app.scanner.menu_conflicts import MenuItemRow, detect_menu_item_id_conflicts
+from app.scanner.menu_xml import parse_menu_xml
 from app.scanner.module_xml import InvalidModuleXmlError, parse_module_xml
 from app.scanner.multi_store import find_store_roots
 from app.scanner.mview_conflicts import MviewRow, detect_mview_conflicts
@@ -200,6 +208,8 @@ class _ParsedModule:
     mviews: list[MviewEntry]
     routes: list[RouteEntry]
     widgets: list[WidgetEntry]
+    menu_items: list[MenuItemEntry]
+    cache_types: list[CacheTypeEntry]
 
 
 async def scan_repository(repo_root: str, session: AsyncSession) -> ScanResult:
@@ -405,6 +415,8 @@ async def _run_scan(root: Path, session: AsyncSession) -> AsyncIterator[dict]:
                 *parse_widget_xml(d.root / "view" / "frontend" / "widget.xml"),
                 *parse_widget_xml(d.root / "view" / "adminhtml" / "widget.xml"),
             ]
+            menu_items = parse_menu_xml(d.root / "etc" / "adminhtml" / "menu.xml")
+            cache_types = parse_cache_xml(d.root / "etc" / "cache.xml")
         except OSError as exc:
             # Each parser already checks .is_file() before reading, but a
             # permission error or a race (file removed/replaced between that
@@ -444,6 +456,8 @@ async def _run_scan(root: Path, session: AsyncSession) -> AsyncIterator[dict]:
                 mviews=mviews,
                 routes=routes,
                 widgets=widgets,
+                menu_items=menu_items,
+                cache_types=cache_types,
             )
         )
         all_plugin_classes.update(p.plugin_class for p in di.plugins)
@@ -616,6 +630,12 @@ async def _run_scan(root: Path, session: AsyncSession) -> AsyncIterator[dict]:
     # Same reasoning again: needs every scanned module's widgets already
     # committed, recomputes across the whole repo_root.
     await _detect_and_persist_widget_id_conflicts(session, root)
+    # Same reasoning again: needs every scanned module's menu_items already
+    # committed, recomputes across the whole repo_root.
+    await _detect_and_persist_menu_item_id_conflicts(session, root)
+    # Same reasoning again: needs every scanned module's cache_types already
+    # committed, recomputes across the whole repo_root.
+    await _detect_and_persist_cache_type_conflicts(session, root)
 
     # Phase 16: module history. Runs last, after every conflict check above,
     # since a module's finding_counts aren't complete until cross-module
@@ -874,6 +894,34 @@ async def _detect_and_persist_widget_id_conflicts(session: AsyncSession, root: P
     await _persist_conflict_findings(session, root, "widget_id_conflict", findings)
 
 
+async def _detect_and_persist_menu_item_id_conflicts(session: AsyncSession, root: Path) -> None:
+    menu_item_rows = (
+        await session.execute(
+            select(ModuleMenuItem.module_id, Module.name, ModuleMenuItem.menu_item_id)
+            .join(Module, Module.id == ModuleMenuItem.module_id)
+            .where(Module.repo_root == str(root))
+        )
+    ).all()
+    menu_items = [MenuItemRow(*row) for row in menu_item_rows]
+
+    findings = detect_menu_item_id_conflicts(menu_items)
+    await _persist_conflict_findings(session, root, "menu_item_id_conflict", findings)
+
+
+async def _detect_and_persist_cache_type_conflicts(session: AsyncSession, root: Path) -> None:
+    cache_type_rows = (
+        await session.execute(
+            select(ModuleCacheType.module_id, Module.name, ModuleCacheType.cache_type_id, ModuleCacheType.instance)
+            .join(Module, Module.id == ModuleCacheType.module_id)
+            .where(Module.repo_root == str(root))
+        )
+    ).all()
+    cache_types = [CacheTypeRow(*row) for row in cache_type_rows]
+
+    findings = detect_cache_type_conflicts(cache_types)
+    await _persist_conflict_findings(session, root, "cache_type_conflict", findings)
+
+
 async def _detect_and_persist_cron_job_conflicts(session: AsyncSession, root: Path) -> None:
     job_rows = (
         await session.execute(
@@ -926,6 +974,8 @@ _ModuleChildModel = (
     | type[ModuleMview]
     | type[ModuleRoute]
     | type[ModuleWidget]
+    | type[ModuleMenuItem]
+    | type[ModuleCacheType]
 )
 
 
@@ -1130,6 +1180,8 @@ async def _persist_module(
     await _sync_module_children(session, module.id, ModuleMview, pm.mviews)
     await _sync_module_children(session, module.id, ModuleRoute, pm.routes)
     await _sync_module_children(session, module.id, ModuleWidget, pm.widgets)
+    await _sync_module_children(session, module.id, ModuleMenuItem, pm.menu_items)
+    await _sync_module_children(session, module.id, ModuleCacheType, pm.cache_types)
 
     classes = catalog_module_classes(pm.discovered.root)
     outcome.classes = len(classes)

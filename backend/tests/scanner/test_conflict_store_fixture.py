@@ -4,8 +4,9 @@ pytest/real-DB layer -- before relying on it inside a full docker-compose +
 Playwright run. Four synthetic modules: Vendor_ConflictA/Vendor_ConflictB
 deliberately collide on every fleet-wide conflict check plus the Phase 19
 acl checks, the Phase 20 indexer/mview checks, the Phase 22 routes.xml
-checks, and feature-search round 4's virtualType/widget conflict checks
-(ConflictA alone carries the missing_acl controller and the
+checks, feature-search round 4's virtualType/widget conflict checks, and
+Phase 25's menu.xml/cache.xml conflict checks (ConflictA alone carries the
+missing_acl controller and the
 Packagist-cache-backed external checks); Vendor_QualityChecks carries every
 other single-module check (hardcoded_secret, deprecated_annotation,
 license_risk, magento_php_incompatible, and -- verified separately against
@@ -42,6 +43,8 @@ _FLEET_WIDE_CHECK_TYPES = {
     "frontname_conflict",
     "virtual_type_conflict",
     "widget_id_conflict",
+    "menu_item_id_conflict",
+    "cache_type_conflict",
 }
 
 

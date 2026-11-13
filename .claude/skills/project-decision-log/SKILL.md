@@ -3264,3 +3264,58 @@ not a fix for an active incident.
   phase's scan-trigger gate -- a reminder that a path-based absence check
   is only as good as the path being right, not a substitute for actually
   opening the file.
+
+**Phase 25: cross-module conflict detection round 7 -- menu.xml/cache.xml
+(recorded 2026-11-13):** candidate C from this session's "next phase"
+round, continuing the established family (Phases 15/19/20/22/23). Schema
+for both files confirmed via web research first, since no real example of
+either exists anywhere in this repo (same situation Phase 20's indexer.xml/
+mview.xml round was in) -- menu.xml's `id` attribute is a **confirmed hard
+Magento error** on duplicate ("Two 'add' commands cannot have equal id"),
+while cache.xml's `name` attribute follows the usual silent-override
+pattern (a module legitimately re-declaring a core cache type's cosmetic
+attributes is real and intentional).
+
+- **Severity decision, confirmed with the user before coding**: despite
+  menu.xml's duplicate-id conflict being a guaranteed install/compile
+  failure -- a different class of certainty than every other check in this
+  family, which are all ambiguous silent-override risks -- `menu_item_id_conflict`
+  was kept severity `warning`, not given a one-off `blocking` tier. Matches
+  the existing `circular_dependency` precedent (Phase 15): also a
+  guaranteed break, also deliberately kept `warning` for consistency with
+  the rest of the cross-module-conflict family, which has no `blocking`
+  gate concept of its own.
+- **`cache_type_conflict` only fires on a real `instance` disagreement**,
+  not a plain duplicate-name shape like every other check in this family
+  (`widget_id_conflict`/`indexer_id_conflict`/etc.) -- same "different value
+  for the same key" shape as `preference_conflict`. A module that
+  re-declares the same cache type name without setting `instance` at all
+  (only overriding `<label>`/`<description>`) is never itself a
+  disagreement; only distinct, non-null `instance` values across 2+
+  modules count. This is deliberately the second check in the family (after
+  `preference_conflict`) to need this shape rather than `widget_conflicts.py`'s
+  plain "any duplicate id" template.
+- Pure new-parser-plus-detection addition, same `_sync_module_children`/
+  Phase-C pattern as every prior round -- two new tables (`module_menu_items`,
+  `module_cache_types`), two new migrations (table creation, then check_type
+  constraint update, mirroring the Phase 20 indexer+mview precedent of
+  landing two tables in one migration and two check_types in the next,
+  rather than four separate migrations).
+- Verified with the full real-stack discipline this family's fixture-
+  touching rounds use (Phase 22/23's rigor, not Phase 20's lighter path):
+  a real `alembic downgrade -2`/`upgrade head` round-trip against a live
+  Postgres; the `.env`-swap-to-local-docker protocol (confirmed with the
+  user first, since this machine's real `.env` points at the live
+  production Neon demo database) -- backed up to the scratchpad, replaced
+  with a safe all-local version using the canonical, correctly-cased
+  `/Users/michalper/Projects/magewiki/...` fixture paths (not the
+  lowercase `/Users/michalper/projects/magewiki` alias also present on this
+  machine, which the Phase 21 case-sensitivity incident already showed
+  produces duplicate rows for what's semantically the same path); a real
+  `docker compose up -d --build` (only `migrate` structurally needed the
+  rebuild -- `api`/`worker`/`web` all bind-mount their source and hot-reload,
+  confirmed via `GET /health` reporting `schema: "ok"` at revision `0046`
+  before testing); full Playwright (33/33, up from 32) and full backend
+  pytest (823 passed, up from 799) green; then the real `.env` restored
+  from the scratchpad backup and diffed byte-for-byte (identical MD5)
+  before finishing.

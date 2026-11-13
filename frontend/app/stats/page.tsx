@@ -131,10 +131,12 @@ const KPI_TILES: {
       "frontname_conflict",
       "virtual_type_conflict",
       "widget_id_conflict",
+      "menu_item_id_conflict",
+      "cache_type_conflict",
     ],
     accent: "warning",
     description:
-      "Two modules silently fighting over the same plugin hook, Composer package version, REST route, database column, di.xml preference or virtualType, cron job code, GraphQL field, ACL resource id, indexer id, mview id, routes.xml route id/frontName, or widget id — a circular module.xml sequence that breaks setup:upgrade outright — or an admin controller declared with no ACL resource at all, reachable by any logged-in admin. Each shows up on every module involved.",
+      "Two modules silently fighting over the same plugin hook, Composer package version, REST route, database column, di.xml preference or virtualType, cron job code, GraphQL field, ACL resource id, indexer id, mview id, routes.xml route id/frontName, widget id, admin menu item id, or cache type id — a circular module.xml sequence that breaks setup:upgrade outright — or an admin controller declared with no ACL resource at all, reachable by any logged-in admin. Each shows up on every module involved.",
   },
   {
     label: "License risks",

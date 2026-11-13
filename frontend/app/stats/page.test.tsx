@@ -128,7 +128,7 @@ describe("StatsPage", () => {
     expect(conflictsTile).toHaveTextContent("9");
     expect(conflictsTile).toHaveAttribute(
       "href",
-      "/modules?finding=plugin_conflict,composer_conflict,webapi_route_conflict,db_schema_conflict,circular_dependency,preference_conflict,cron_job_conflict,graphql_field_conflict,acl_resource_conflict,indexer_id_conflict,view_id_conflict,missing_acl,route_id_conflict,frontname_conflict,virtual_type_conflict,widget_id_conflict",
+      "/modules?finding=plugin_conflict,composer_conflict,webapi_route_conflict,db_schema_conflict,circular_dependency,preference_conflict,cron_job_conflict,graphql_field_conflict,acl_resource_conflict,indexer_id_conflict,view_id_conflict,missing_acl,route_id_conflict,frontname_conflict,virtual_type_conflict,widget_id_conflict,menu_item_id_conflict,cache_type_conflict",
     );
 
     // License risks: 1

@@ -1,0 +1,4 @@
+<?xml version="1.0"?>
+<menu xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:noNamespaceSchemaLocation="urn:magento:module:Magento_Backend:etc/menu.xsd">
+    <add id="conflict_shared_menu_item" title="Conflict B Menu" module="Vendor_ConflictB" sortOrder="20" resource="Vendor_Conflict::shared"/>
+</menu>

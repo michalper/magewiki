@@ -46,6 +46,8 @@ export const CHECK_TYPES: { key: string; severity: Severity; label: (n: number) 
     label: (n) => `${n} virtualtype-conflict${n === 1 ? "" : "s"}`,
   },
   { key: "widget_id_conflict", severity: "warning", label: (n) => `${n} widget-conflict${n === 1 ? "" : "s"}` },
+  { key: "menu_item_id_conflict", severity: "warning", label: (n) => `${n} menu-conflict${n === 1 ? "" : "s"}` },
+  { key: "cache_type_conflict", severity: "warning", label: (n) => `${n} cache-conflict${n === 1 ? "" : "s"}` },
 ];
 
 export function sumFindingCounts(findingCounts: Record<string, number>): number {
