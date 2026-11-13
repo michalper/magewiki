@@ -12,6 +12,7 @@ from app.agent.tools import (
     find_similar_modules,
     get_dependencies,
     get_module,
+    get_module_findings,
     get_module_history,
     list_modules,
     read_file,
@@ -640,6 +641,105 @@ async def test_get_module_history_tool_empty_list_with_no_snapshots(db_session):
     result = await get_module_history(db_session, module_id=module.id)
 
     assert result == {"found": True, "module_name": module.name, "history": []}
+
+    await db_session.execute(delete(Module).where(Module.id == module.id))
+    await db_session.commit()
+
+
+@pytest.mark.asyncio
+async def test_get_module_findings_tool_returns_real_findings(db_session):
+    suffix = uuid.uuid4().hex[:8]
+    module = await _make_bare_module(db_session, suffix)
+    db_session.add_all(
+        [
+            ModuleQualityFinding(
+                module_id=module.id,
+                check_type="hardcoded_secret",
+                severity="blocking",
+                file_path="Helper/Config.php",
+                line=42,
+                message="a secret",
+            ),
+            ModuleQualityFinding(
+                module_id=module.id,
+                check_type="license_risk",
+                severity="warning",
+                file_path="composer.json",
+                line=None,
+                message="GPL-3.0",
+            ),
+        ]
+    )
+    await db_session.commit()
+
+    result = await get_module_findings(db_session, module_id=module.id)
+
+    assert result["found"] is True
+    assert result["module_name"] == module.name
+    check_types = {f["check_type"] for f in result["findings"]}
+    assert check_types == {"hardcoded_secret", "license_risk"}
+    secret_finding = next(f for f in result["findings"] if f["check_type"] == "hardcoded_secret")
+    assert secret_finding == {
+        "check_type": "hardcoded_secret",
+        "severity": "blocking",
+        "file_path": "Helper/Config.php",
+        "line": 42,
+        "message": "a secret",
+    }
+
+    await db_session.execute(delete(Module).where(Module.id == module.id))
+    await db_session.commit()
+
+
+@pytest.mark.asyncio
+async def test_get_module_findings_tool_filters_by_check_type(db_session):
+    suffix = uuid.uuid4().hex[:8]
+    module = await _make_bare_module(db_session, suffix)
+    db_session.add_all(
+        [
+            ModuleQualityFinding(
+                module_id=module.id,
+                check_type="hardcoded_secret",
+                severity="blocking",
+                file_path="Helper/Config.php",
+                line=42,
+                message="a secret",
+            ),
+            ModuleQualityFinding(
+                module_id=module.id,
+                check_type="license_risk",
+                severity="warning",
+                file_path="composer.json",
+                line=None,
+                message="GPL-3.0",
+            ),
+        ]
+    )
+    await db_session.commit()
+
+    result = await get_module_findings(db_session, module_id=module.id, check_type="license_risk")
+
+    assert [f["check_type"] for f in result["findings"]] == ["license_risk"]
+
+    await db_session.execute(delete(Module).where(Module.id == module.id))
+    await db_session.commit()
+
+
+@pytest.mark.asyncio
+async def test_get_module_findings_tool_not_found(db_session):
+    result = await get_module_findings(db_session, module_id=999999999)
+    assert result == {"found": False}
+
+
+@pytest.mark.asyncio
+async def test_get_module_findings_tool_empty_list_with_no_findings(db_session):
+    suffix = uuid.uuid4().hex[:8]
+    module = await _make_bare_module(db_session, suffix)
+    await db_session.commit()
+
+    result = await get_module_findings(db_session, module_id=module.id)
+
+    assert result == {"found": True, "module_name": module.name, "findings": []}
 
     await db_session.execute(delete(Module).where(Module.id == module.id))
     await db_session.commit()

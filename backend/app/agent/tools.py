@@ -119,6 +119,32 @@ async def get_dependencies(session: AsyncSession, module_id: int) -> dict:
     }
 
 
+async def get_module_findings(session: AsyncSession, module_id: int, check_type: str | None = None) -> dict:
+    module = await session.get(Module, module_id)
+    if module is None:
+        return {"found": False}
+
+    query = select(ModuleQualityFinding).where(ModuleQualityFinding.module_id == module_id)
+    if check_type:
+        query = query.where(ModuleQualityFinding.check_type == check_type)
+
+    findings = (await session.scalars(query.order_by(ModuleQualityFinding.check_type))).all()
+    return {
+        "found": True,
+        "module_name": module.name,
+        "findings": [
+            {
+                "check_type": f.check_type,
+                "severity": f.severity,
+                "file_path": f.file_path,
+                "line": f.line,
+                "message": f.message,
+            }
+            for f in findings
+        ],
+    }
+
+
 async def find_similar_modules(session: AsyncSession, module_id: int, limit: int = 5) -> dict:
     module = await session.get(Module, module_id)
     if module is None:
@@ -352,6 +378,7 @@ TOOL_FUNCTIONS: dict[str, Callable[..., Awaitable[dict]]] = {
     "search_modules": search_modules,
     "get_module": get_module,
     "get_dependencies": get_dependencies,
+    "get_module_findings": get_module_findings,
     "find_similar_modules": find_similar_modules,
     "get_module_history": get_module_history,
     "find_by_event": find_by_event,
@@ -402,6 +429,27 @@ TOOL_SCHEMAS = [
             "parameters": {
                 "type": "object",
                 "properties": {"module_id": {"type": "integer"}},
+                "required": ["module_id"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "get_module_findings",
+            "description": (
+                "Get a module's real quality-check findings (check_type, severity, file path, line, message) -- "
+                "use this to cite the specific file/line/reason behind a claim like 'why does this module have a "
+                "hardcoded_secret finding?' or 'what quality issues does this module have?'. Optionally filter to "
+                "one check_type. Returns found=false if the module doesn't exist, and an empty list if it has no "
+                "findings (or none of that check_type)."
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "module_id": {"type": "integer"},
+                    "check_type": {"type": "string", "description": "Optional, e.g. 'hardcoded_secret'"},
+                },
                 "required": ["module_id"],
             },
         },

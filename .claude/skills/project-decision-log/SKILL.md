@@ -3054,3 +3054,33 @@ conflict on it -- confirmed via grep of the `check_type` CHECK constraint.
   label" tests absorbed the new entry with no new test code needed, same
   as Phase 22's routes.xml badges). Real-stack/Playwright verification
   deferred to the end of this round (after part 3), per the approved plan.
+
+**Feature-search round 4, part 2: `get_module_findings` agent tool
+(recorded 2026-11-13):** part 2 of the same round. Confirmed via grep that
+`ModuleQualityFinding` was referenced only inside `list_modules`'s
+count-by-check_type query (a bare int), nowhere else in `app/agent/tools.py`
+-- the chat agent had no way to answer "why does module X have a
+hardcoded_secret finding?" with a real, citable file/line/message, directly
+against CLAUDE.md's "every claim cited" rule. Same gap shape as
+`find_similar_modules`/`get_module_history` earlier this session: real data
+sitting behind a parser-only table with no agent-facing path to it.
+
+- Same `found: False`/`found: True` dict shape every other tool in this
+  file already returns, with an optional `check_type` filter (mirrors
+  `list_modules`'s own optional filter) for a narrower "show me just the
+  CVEs" ask without the agent having to filter a big list itself.
+- Deliberately a new, separate tool rather than folding findings into
+  `get_module`'s own response -- `get_module`'s response is already large
+  (doc fields, dependencies, state) and a module can carry many findings;
+  keeping it a separate, optionally-filtered call matches how
+  `get_dependencies` is already split out from `get_module` for the same
+  reason.
+- Registered in `TOOL_FUNCTIONS`/`TOOL_SCHEMAS` and CLAUDE.md's own **Agent
+  tools** list and **Question routing** table, same "settled reference,
+  edited directly" treatment Phase 22c gave `get_module_history`.
+- Tests mirror `get_module_history`'s own tool-test structure (real
+  findings with exact field shape, check_type filter, not-found, empty),
+  same `_make_bare_module`/explicit `delete(Module)`-after-test cleanup
+  discipline.
+- Verified via the full backend pytest (778 passed, up from 774, 100%
+  coverage maintained) -- no frontend changes in this part.
