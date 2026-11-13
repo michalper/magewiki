@@ -133,6 +133,33 @@ services:
       - api
     command: ["npm", "run", "dev"]
 
+  # Optional, profile-gated: `docker compose --profile local-ai up -d` adds a
+  # bundled Ollama daemon so the AI features (per-module docs, chat agent)
+  # can run fully local with zero API key and zero host-level install --
+  # the simplest path for anyone who doesn't care about GPU speed. Not part
+  # of the default `up` -- bundling multi-GB model weights into every first
+  # `docker compose up` would make the normal, AI-less-by-default path slow
+  # and heavy for no reason. On Mac/Windows, Docker containers can't reach
+  # Apple Metal, so this runs Ollama CPU-only there; install Ollama natively
+  # on the host instead for GPU acceleration -- see README's "Running fully
+  # local" section for both paths.
+  ollama:
+    image: ollama/ollama:latest
+    profiles: ["local-ai"]
+    ports:
+      - "11434:11434"
+    volumes:
+      - ollama_data:/root/.ollama
+    # Uncomment on Linux with an NVIDIA GPU + the nvidia-container-toolkit
+    # installed, for real inference speed instead of CPU-only:
+    # deploy:
+    #   resources:
+    #     reservations:
+    #       devices:
+    #         - driver: nvidia
+    #           count: all
+    #           capabilities: [gpu]
+
 networks:
   # internal: true means Docker gives this network no route to the internet
   # at all, regardless of anything the containers on it do themselves.
@@ -141,3 +168,4 @@ networks:
 
 volumes:
   db_data:
+  ollama_data:

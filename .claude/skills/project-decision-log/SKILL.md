@@ -3127,3 +3127,35 @@ into one table by id the same way `indexer.xml`'s `<indexer id="...">` is
   coverage maintained) and frontend `tsc`/`eslint`/`vitest` (254 passed).
   Full real-stack `.env`-swap/Playwright verification for all three parts
   of this round runs once, after this part, per the approved plan.
+
+**Optional bundled Ollama service, profile-gated (recorded 2026-11-13):**
+raised by the user after the "running fully local" README section shipped
+-- "why does someone need to install Ollama on the host themselves, isn't
+the whole point of docker-compose that it's all one command?" Real
+tradeoff, not just friction: Ollama **inside a container loses GPU access
+on Mac/Windows** (Docker Desktop can't reach Apple Metal), so a plain
+always-on `ollama` service in the default `up` would silently make the
+free/local AI path painfully slow for most desktop users, while install-
+natively keeps GPU acceleration. Resolved as two explicit paths rather
+than picking one:
+
+- Path A: `ollama` added to `docker-compose.yml` under `profiles:
+  ["local-ai"]` (`docker compose --profile local-ai up -d`, or `make
+  up-local-ai`) -- zero host install, CPU-only on Mac/Windows, fine for
+  Linux-with-GPU-passthrough-already-set-up or just trying it out. Not
+  part of the default `up` -- bundling multi-GB model weights into every
+  first `docker compose up` would make the normal, AI-less-by-default path
+  slow and heavy for no reason.
+- Path B: native host install (the original README instructions), which
+  keeps GPU acceleration on Mac/Windows and whatever GPU passthrough
+  Linux users already have.
+- `OLLAMA_BASE_URL` differs by path (`http://ollama:11434` vs.
+  `http://host.docker.internal:11434`) -- both documented side by side in
+  `.env.example` and the README rather than silently picking one.
+- Verified for real: brought the bundled `ollama` container up with the
+  real `.env` safely swapped out first (same protocol as every real-stack
+  verification this session), confirmed `GET /api/tags` responds
+  (`{"models":[]}`, no models pulled -- didn't pull the real multi-GB
+  models just to prove the container starts and is reachable), then tore
+  it down and removed the now-unused `ollama_data` volume before restoring
+  the real `.env`.

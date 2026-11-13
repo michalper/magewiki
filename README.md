@@ -109,59 +109,87 @@ embeddings) has been run and verified end-to-end in this project, including a
 real tool-calling bug found and fixed against a local model (see
 `app/agent/loop.py`).
 
-1. **Install Ollama on the host** (not inside a container) and pull two
-   models — one for analysis/chat that supports tool calling, one for
-   embeddings:
+Two paths — pick one, both end up at the same four `.env`/Settings-page
+values, just with a different `OLLAMA_BASE_URL`:
 
-   ```bash
-   ollama pull llama3.1
-   ollama pull bge-m3
-   ```
+### Path A: bundled in Docker (simplest, no host install)
 
-2. **Point the LLM and embedding config at Ollama.** Either in `.env` before
-   `docker compose up` (server-wide default):
+```bash
+make up-local-ai
+# or: docker compose --profile local-ai up -d
+```
 
-   ```env
-   LLM_MODEL=ollama/llama3.1
-   ANTHROPIC_API_KEY=
-   OLLAMA_BASE_URL=http://host.docker.internal:11434
+This starts an extra `ollama` container alongside the usual stack — nothing
+to install on the host. Pull the two models into it once:
 
-   EMBEDDING_MODEL=ollama/bge-m3
-   EMBEDDING_DIMENSIONS=1024
-   OPENAI_API_KEY=
-   ```
+```bash
+docker compose exec ollama ollama pull llama3.1   # analysis + chat (tool calling)
+docker compose exec ollama ollama pull bge-m3      # embeddings
+```
 
-   or in the Settings page (`/settings`) in the running app — the same four
-   fields (LLM model / API base, embedding model / API base) as a per-
-   deployment override, no restart needed. The API-base field's placeholder
-   already hints at the Ollama URL.
+Not the default `up` target, since bundling multi-GB model weights into
+every first `docker compose up` would make the normal, AI-less-by-default
+path slow and heavy for no reason. On Mac/Windows this runs CPU-only (Docker
+containers can't reach Apple Metal) — fine for trying it out, but see Path B
+below if you want real speed.
 
-3. **Set `EMBEDDING_DIMENSIONS` before your first AI-analyzed scan, not
-   after.** The `chunks.embedding` pgvector column's width is fixed by the
-   migrations to whatever dimension was configured at the time — `bge-m3`
-   is 1024, OpenAI's `text-embedding-3-small` is 1536. Changing it later
-   means a full re-embed of everything already analyzed, not just new scans.
+### Path B: Ollama installed natively on the host (keeps GPU acceleration)
 
-4. **On native Linux Docker (not Docker Desktop), `host.docker.internal`
-   doesn't resolve by default.** `docker-compose.yml` has no `extra_hosts`
-   entry for it (works out of the box on Docker Desktop for Mac/Windows
-   only). If `docker compose logs api` shows connection errors to
-   `OLLAMA_BASE_URL`, either add this to the `api`/`worker` services in
-   `docker-compose.yml`:
+```bash
+ollama pull llama3.1
+ollama pull bge-m3
+```
 
-   ```yaml
-   extra_hosts:
-     - "host.docker.internal:host-gateway"
-   ```
+Run the daemon the normal way (`ollama serve`, or however your install
+starts it) — not inside a container, so Mac/Windows keeps GPU acceleration
+and Linux keeps whatever GPU passthrough you've already set up.
 
-   or set `OLLAMA_BASE_URL` to the host's real IP on the Docker bridge
-   network instead.
+### Either way: point the config at it
 
-5. **Scan a module and confirm it worked**: open `/modules`, scan something,
-   and check that a module's README tab fills in (AI analysis ran) and that
-   the chat agent answers a question with real citations (embeddings +
-   tool-calling both ran) — with no `ANTHROPIC_API_KEY`/`OPENAI_API_KEY`/
-   `DEEPSEEK_API_KEY` set anywhere, confirming zero calls left your machine.
+In `.env` before `docker compose up` (server-wide default):
+
+```env
+LLM_MODEL=ollama/llama3.1
+ANTHROPIC_API_KEY=
+OLLAMA_BASE_URL=http://ollama:11434        # Path A (bundled container)
+# OLLAMA_BASE_URL=http://host.docker.internal:11434  # Path B (native host)
+
+EMBEDDING_MODEL=ollama/bge-m3
+EMBEDDING_DIMENSIONS=1024
+OPENAI_API_KEY=
+```
+
+or in the Settings page (`/settings`) in the running app — the same four
+fields (LLM model / API base, embedding model / API base) as a per-
+deployment override, no restart needed. The API-base field's placeholder
+already hints at the Ollama URL.
+
+**Set `EMBEDDING_DIMENSIONS` before your first AI-analyzed scan, not
+after.** The `chunks.embedding` pgvector column's width is fixed by the
+migrations to whatever dimension was configured at the time — `bge-m3` is
+1024, OpenAI's `text-embedding-3-small` is 1536. Changing it later means a
+full re-embed of everything already analyzed, not just new scans.
+
+**Path B on native Linux Docker (not Docker Desktop):**
+`host.docker.internal` doesn't resolve by default — `docker-compose.yml` has
+no `extra_hosts` entry for it (works out of the box on Docker Desktop for
+Mac/Windows only). If `docker compose logs api` shows connection errors to
+`OLLAMA_BASE_URL`, either add this to the `api`/`worker` services in
+`docker-compose.yml`:
+
+```yaml
+extra_hosts:
+  - "host.docker.internal:host-gateway"
+```
+
+or set `OLLAMA_BASE_URL` to the host's real IP on the Docker bridge network
+instead.
+
+**Scan a module and confirm it worked**: open `/modules`, scan something,
+and check that a module's README tab fills in (AI analysis ran) and that
+the chat agent answers a question with real citations (embeddings +
+tool-calling both ran) — with no `ANTHROPIC_API_KEY`/`OPENAI_API_KEY`/
+`DEEPSEEK_API_KEY` set anywhere, confirming zero calls left your machine.
 
 ## Cross-module conflict detection
 
