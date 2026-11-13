@@ -1,0 +1,6 @@
+<?xml version="1.0"?>
+<widgets xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:noNamespaceSchemaLocation="urn:magento:framework:Data/etc/widget.xsd">
+    <widget id="conflict_shared_widget" class="Vendor\ConflictA\Block\Widget\Sample">
+        <label translate="true">Conflict A Widget</label>
+    </widget>
+</widgets>

@@ -32,6 +32,7 @@ from app.models import (
     ModuleMview,
     ModuleQualityFinding,
     ModuleRoute,
+    ModuleWidget,
     PhpClass,
     PhpClassMethod,
     QueueBinding,
@@ -71,6 +72,7 @@ from app.scanner.dto import (
     QueueBindingEntry,
     RouteEntry,
     WebapiRouteEntry,
+    WidgetEntry,
 )
 from app.scanner.events_xml import parse_events_xml
 from app.scanner.graphql_conflicts import GraphQlFieldRow, detect_graphql_field_conflicts
@@ -105,6 +107,8 @@ from app.scanner.test_presence import has_tests
 from app.scanner.virtual_type_conflicts import VirtualTypeRow, detect_virtual_type_conflicts
 from app.scanner.webapi_conflicts import WebapiRouteRow, detect_webapi_route_conflicts
 from app.scanner.webapi_xml import parse_webapi_xml
+from app.scanner.widget_conflicts import WidgetRow, detect_widget_id_conflicts
+from app.scanner.widget_xml import parse_widget_xml
 from app.tasks.queue import get_arq_pool
 
 logger = logging.getLogger(__name__)
@@ -195,6 +199,7 @@ class _ParsedModule:
     indexers: list[IndexerEntry]
     mviews: list[MviewEntry]
     routes: list[RouteEntry]
+    widgets: list[WidgetEntry]
 
 
 async def scan_repository(repo_root: str, session: AsyncSession) -> ScanResult:
@@ -395,6 +400,11 @@ async def _run_scan(root: Path, session: AsyncSession) -> AsyncIterator[dict]:
                 *parse_routes_xml(d.root / "etc" / "frontend" / "routes.xml", "frontend"),
                 *parse_routes_xml(d.root / "etc" / "adminhtml" / "routes.xml", "adminhtml"),
             ]
+            widgets = [
+                *parse_widget_xml(d.root / "view" / "base" / "widget.xml"),
+                *parse_widget_xml(d.root / "view" / "frontend" / "widget.xml"),
+                *parse_widget_xml(d.root / "view" / "adminhtml" / "widget.xml"),
+            ]
         except OSError as exc:
             # Each parser already checks .is_file() before reading, but a
             # permission error or a race (file removed/replaced between that
@@ -433,6 +443,7 @@ async def _run_scan(root: Path, session: AsyncSession) -> AsyncIterator[dict]:
                 indexers=indexers,
                 mviews=mviews,
                 routes=routes,
+                widgets=widgets,
             )
         )
         all_plugin_classes.update(p.plugin_class for p in di.plugins)
@@ -602,6 +613,9 @@ async def _run_scan(root: Path, session: AsyncSession) -> AsyncIterator[dict]:
     # Same reasoning again: needs every scanned module's di_virtual_types
     # already committed, recomputes across the whole repo_root.
     await _detect_and_persist_virtual_type_conflicts(session, root)
+    # Same reasoning again: needs every scanned module's widgets already
+    # committed, recomputes across the whole repo_root.
+    await _detect_and_persist_widget_id_conflicts(session, root)
 
     # Phase 16: module history. Runs last, after every conflict check above,
     # since a module's finding_counts aren't complete until cross-module
@@ -846,6 +860,20 @@ async def _detect_and_persist_virtual_type_conflicts(session: AsyncSession, root
     await _persist_conflict_findings(session, root, "virtual_type_conflict", findings)
 
 
+async def _detect_and_persist_widget_id_conflicts(session: AsyncSession, root: Path) -> None:
+    widget_rows = (
+        await session.execute(
+            select(ModuleWidget.module_id, Module.name, ModuleWidget.widget_id)
+            .join(Module, Module.id == ModuleWidget.module_id)
+            .where(Module.repo_root == str(root))
+        )
+    ).all()
+    widgets = [WidgetRow(*row) for row in widget_rows]
+
+    findings = detect_widget_id_conflicts(widgets)
+    await _persist_conflict_findings(session, root, "widget_id_conflict", findings)
+
+
 async def _detect_and_persist_cron_job_conflicts(session: AsyncSession, root: Path) -> None:
     job_rows = (
         await session.execute(
@@ -897,6 +925,7 @@ _ModuleChildModel = (
     | type[ModuleIndexer]
     | type[ModuleMview]
     | type[ModuleRoute]
+    | type[ModuleWidget]
 )
 
 
@@ -1100,6 +1129,7 @@ async def _persist_module(
     await _sync_module_children(session, module.id, ModuleIndexer, pm.indexers)
     await _sync_module_children(session, module.id, ModuleMview, pm.mviews)
     await _sync_module_children(session, module.id, ModuleRoute, pm.routes)
+    await _sync_module_children(session, module.id, ModuleWidget, pm.widgets)
 
     classes = catalog_module_classes(pm.discovered.root)
     outcome.classes = len(classes)

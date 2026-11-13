@@ -152,6 +152,12 @@ class RouteEntry:
 
 
 @dataclass
+class WidgetEntry:
+    widget_id: str
+    class_name: str
+
+
+@dataclass
 class ConfigFieldEntry:
     section_id: str
     group_id: str

@@ -3084,3 +3084,46 @@ sitting behind a parser-only table with no agent-facing path to it.
   discipline.
 - Verified via the full backend pytest (778 passed, up from 774, 100%
   coverage maintained) -- no frontend changes in this part.
+
+**Phase 23: cross-module conflict detection round 6 -- widget.xml (recorded
+2026-11-13):** part 3, closing out feature-search round 4. Confirmed zero
+hits for `widget.xml`/`widget_xml`/`WidgetEntry` anywhere in
+`app/scanner/` -- a genuinely unparsed Magento declarative-config file,
+unlike parts 1-2 of this round which were detection-only additions on data
+already scanned. `<widget id="...">` declarations are merged by Magento
+into one table by id the same way `indexer.xml`'s `<indexer id="...">` is
+-- same "plain duplicate-id" shape as `indexer_conflicts.py`, not the
+"different value" shape part 1's virtualType check needed.
+
+- No `area` column on `module_widgets`, deliberately contrasted with
+  `module_routes` from the prior round: `routes.xml`'s route id/frontName
+  uniqueness is genuinely scoped per area (frontend vs. adminhtml) by
+  Magento's own routing design, but widget ids are a single global
+  namespace regardless of which `view/{base,frontend,adminhtml}/widget.xml`
+  file declared them -- so area isn't part of the conflict key here, and
+  isn't stored at all (nothing would ever read it).
+- Parses all three known view-dir locations
+  (`view/base/widget.xml`/`view/frontend/widget.xml`/`view/adminhtml/widget.xml`)
+  and flattens them into one list -- `view/base` is the common real-world
+  location, the other two are rarer but valid per Magento's own merge rules,
+  and since there's no area-scoping here, there's no reason to keep them
+  separate the way `routes.xml` needed to.
+- This is the first file this codebase reads from a module's `view/`
+  directory at all (confirmed via grep: no `"view/base"`, `"view/frontend"`,
+  or `"view/adminhtml"` path construction anywhere in `app/scanner/` before
+  this) -- `view/` otherwise holds layout XML, templates, and UI component
+  config this project has no reason to parse structurally.
+- Because this is genuinely new scanning surface -- not just new detection
+  logic on already-scanned data, unlike parts 1-2 -- it gets its own
+  roadmap row (Phase 23 in CLAUDE.md's Phase plan table) and a README
+  mention, matching every prior new-parser round; parts 1-2 stayed
+  decision-log-only, same precedent as `find_similar_modules`/
+  `get_module_history`/`get_module_findings` earlier this session.
+- Test fixture: extended the existing `conflict-store` `Vendor_ConflictA`/
+  `Vendor_ConflictB` with one `view/base/widget.xml` each, declaring the
+  same `<widget id="conflict_shared_widget">` -- same "extend, don't
+  rebuild" pattern every prior conflict-detection round used.
+- Verified via the full backend pytest (788 passed, up from 778, 100%
+  coverage maintained) and frontend `tsc`/`eslint`/`vitest` (254 passed).
+  Full real-stack `.env`-swap/Playwright verification for all three parts
+  of this round runs once, after this part, per the approved plan.
