@@ -126,6 +126,9 @@ class Module(Base):
     mviews: Mapped[list["ModuleMview"]] = relationship(
         back_populates="module", cascade="all, delete-orphan"
     )
+    routes: Mapped[list["ModuleRoute"]] = relationship(
+        back_populates="module", cascade="all, delete-orphan"
+    )
     queue_bindings: Mapped[list["QueueBinding"]] = relationship(
         back_populates="module", cascade="all, delete-orphan"
     )
@@ -344,6 +347,21 @@ class ModuleMview(Base):
     module: Mapped[Module] = relationship(back_populates="mviews")
 
 
+class ModuleRoute(Base):
+    __tablename__ = "module_routes"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    module_id: Mapped[int] = mapped_column(ForeignKey("modules.id", ondelete="CASCADE"))
+    # "frontend" or "adminhtml" -- Magento's own route id/frontName
+    # uniqueness is scoped per area, not global, so area is part of every
+    # conflict-detection key, not just stored for display.
+    area: Mapped[str] = mapped_column(Text)
+    route_id: Mapped[str] = mapped_column(Text, index=True)
+    front_name: Mapped[str] = mapped_column(Text, index=True)
+
+    module: Mapped[Module] = relationship(back_populates="routes")
+
+
 class DbColumn(Base):
     __tablename__ = "db_columns"
 
@@ -407,7 +425,7 @@ class ModuleQualityFinding(Base):
             "'composer_conflict','webapi_route_conflict','db_schema_conflict','circular_dependency',"
             "'license_risk','phpunit_failure','preference_conflict','cron_job_conflict',"
             "'graphql_field_conflict','acl_resource_conflict','missing_acl',"
-            "'indexer_id_conflict','view_id_conflict')",
+            "'indexer_id_conflict','view_id_conflict','route_id_conflict','frontname_conflict')",
             name="ck_module_quality_findings_check_type",
         ),
         CheckConstraint(

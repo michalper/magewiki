@@ -31,6 +31,7 @@ from app.models import (
     ModuleIndexer,
     ModuleMview,
     ModuleQualityFinding,
+    ModuleRoute,
     PhpClass,
     PhpClassMethod,
     QueueBinding,
@@ -68,6 +69,7 @@ from app.scanner.dto import (
     MviewEntry,
     PendingAnalysisJob,
     QueueBindingEntry,
+    RouteEntry,
     WebapiRouteEntry,
 )
 from app.scanner.events_xml import parse_events_xml
@@ -90,6 +92,12 @@ from app.scanner.plugin_conflicts import PluginRow, detect_plugin_conflicts
 from app.scanner.preference_conflicts import PreferenceRow, detect_preference_conflicts
 from app.scanner.queue_config import parse_queue_config
 from app.scanner.readme_check import has_readme
+from app.scanner.route_conflicts import (
+    RouteRow,
+    detect_frontname_conflicts,
+    detect_route_id_conflicts,
+)
+from app.scanner.routes_xml import parse_routes_xml
 from app.scanner.secrets_scanner import scan_hardcoded_secrets
 from app.scanner.security_advisories import check_security_advisories
 from app.scanner.system_xml import parse_system_xml
@@ -185,6 +193,7 @@ class _ParsedModule:
     acl_resources: list[AclResourceEntry]
     indexers: list[IndexerEntry]
     mviews: list[MviewEntry]
+    routes: list[RouteEntry]
 
 
 async def scan_repository(repo_root: str, session: AsyncSession) -> ScanResult:
@@ -381,6 +390,10 @@ async def _run_scan(root: Path, session: AsyncSession) -> AsyncIterator[dict]:
             acl_resources = parse_acl_xml(d.root / "etc" / "acl.xml")
             indexers = parse_indexer_xml(d.root / "etc" / "indexer.xml")
             mviews = parse_mview_xml(d.root / "etc" / "mview.xml")
+            routes = [
+                *parse_routes_xml(d.root / "etc" / "frontend" / "routes.xml", "frontend"),
+                *parse_routes_xml(d.root / "etc" / "adminhtml" / "routes.xml", "adminhtml"),
+            ]
         except OSError as exc:
             # Each parser already checks .is_file() before reading, but a
             # permission error or a race (file removed/replaced between that
@@ -418,6 +431,7 @@ async def _run_scan(root: Path, session: AsyncSession) -> AsyncIterator[dict]:
                 acl_resources=acl_resources,
                 indexers=indexers,
                 mviews=mviews,
+                routes=routes,
             )
         )
         all_plugin_classes.update(p.plugin_class for p in di.plugins)
@@ -580,6 +594,10 @@ async def _run_scan(root: Path, session: AsyncSession) -> AsyncIterator[dict]:
     # Same reasoning again: needs every scanned module's mviews already
     # committed, recomputes across the whole repo_root.
     await _detect_and_persist_mview_conflicts(session, root)
+    # Same reasoning again: needs every scanned module's routes already
+    # committed, recomputes across the whole repo_root.
+    await _detect_and_persist_route_id_conflicts(session, root)
+    await _detect_and_persist_frontname_conflicts(session, root)
 
     # Phase 16: module history. Runs last, after every conflict check above,
     # since a module's finding_counts aren't complete until cross-module
@@ -736,6 +754,31 @@ async def _detect_and_persist_mview_conflicts(session: AsyncSession, root: Path)
     await _persist_conflict_findings(session, root, "view_id_conflict", findings)
 
 
+async def _fetch_route_rows(session: AsyncSession, root: Path) -> list[RouteRow]:
+    route_rows = (
+        await session.execute(
+            select(
+                ModuleRoute.module_id, Module.name, ModuleRoute.area, ModuleRoute.route_id, ModuleRoute.front_name
+            )
+            .join(Module, Module.id == ModuleRoute.module_id)
+            .where(Module.repo_root == str(root))
+        )
+    ).all()
+    return [RouteRow(*row) for row in route_rows]
+
+
+async def _detect_and_persist_route_id_conflicts(session: AsyncSession, root: Path) -> None:
+    routes = await _fetch_route_rows(session, root)
+    findings = detect_route_id_conflicts(routes)
+    await _persist_conflict_findings(session, root, "route_id_conflict", findings)
+
+
+async def _detect_and_persist_frontname_conflicts(session: AsyncSession, root: Path) -> None:
+    routes = await _fetch_route_rows(session, root)
+    findings = detect_frontname_conflicts(routes)
+    await _persist_conflict_findings(session, root, "frontname_conflict", findings)
+
+
 async def _detect_and_persist_db_schema_conflicts(session: AsyncSession, root: Path) -> None:
     column_rows = (
         await session.execute(
@@ -835,6 +878,7 @@ _ModuleChildModel = (
     | type[AclResource]
     | type[ModuleIndexer]
     | type[ModuleMview]
+    | type[ModuleRoute]
 )
 
 
@@ -1037,6 +1081,7 @@ async def _persist_module(
     await _sync_module_children(session, module.id, AclResource, pm.acl_resources)
     await _sync_module_children(session, module.id, ModuleIndexer, pm.indexers)
     await _sync_module_children(session, module.id, ModuleMview, pm.mviews)
+    await _sync_module_children(session, module.id, ModuleRoute, pm.routes)
 
     classes = catalog_module_classes(pm.discovered.root)
     outcome.classes = len(classes)

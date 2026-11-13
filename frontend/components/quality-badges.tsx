@@ -32,6 +32,11 @@ export const CHECK_TYPES: { key: string; severity: Severity; label: (n: number) 
   { key: "missing_acl", severity: "warning", label: (n) => `${n} missing-acl` },
   { key: "indexer_id_conflict", severity: "warning", label: (n) => `${n} indexer-conflict${n === 1 ? "" : "s"}` },
   { key: "view_id_conflict", severity: "warning", label: (n) => `${n} view-conflict${n === 1 ? "" : "s"}` },
+  // "route-id-conflict"/"frontname-conflict", not "route-conflict" --
+  // webapi_route_conflict (REST routes) already uses that label, and these
+  // are a genuinely different file (routes.xml, not webapi.xml).
+  { key: "route_id_conflict", severity: "warning", label: (n) => `${n} route-id-conflict${n === 1 ? "" : "s"}` },
+  { key: "frontname_conflict", severity: "warning", label: (n) => `${n} frontname-conflict${n === 1 ? "" : "s"}` },
 ];
 
 export function sumFindingCounts(findingCounts: Record<string, number>): number {

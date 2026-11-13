@@ -145,6 +145,13 @@ class MviewEntry:
 
 
 @dataclass
+class RouteEntry:
+    area: str
+    route_id: str
+    front_name: str
+
+
+@dataclass
 class ConfigFieldEntry:
     section_id: str
     group_id: str
