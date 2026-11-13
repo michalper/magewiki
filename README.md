@@ -15,7 +15,7 @@
 
 An AI-powered catalog and chat agent for Magento 2 codebases. MageWiki-AI scans Magento modules (`module.xml`, `composer.json`, `di.xml`, `events.xml`, `Plugin/` classes), builds a knowledge base in PostgreSQL, and lets developers and PMs ask natural-language questions about the architecture — with every answer citing the module and file it came from. It also runs a battery of quality, security, and Magento-upgrade-readiness checks on every scanned module and surfaces the results as badges, a stats dashboard, and a multi-repo fleet view — including **cross-module conflict detection**: two modules fighting over the same plugin hook, a Composer package version range, or a REST route don't fail quietly until someone hits the bug in production; MageWiki flags the exact pair and why.
 
-Project status: **all 22 planned phases done** (0–12b, 13–21) — the MVP (v1.0, Phases 0–5) plus cron/webhook automation, BYOK in the UI, Ollama support, a per-module dependency graph, an evaluation suite, CI/CD, a local Kubernetes deployment, parser-only quality checks, CVE/dependency intelligence, a multi-repo fleet view, a real PHP static-analysis toolchain (PHPStan/PHPMD/phpcs/Rector), Magento-upgrade-readiness checking, deeper structural facts (webapi/crontab/db_schema/system.xml), a second round of cross-module conflict detection (`di.xml` preferences, `crontab.xml` jobs, GraphQL fields), per-module change history, opt-in RAG query rewriting, webhook alerting on new secrets/CVEs, a third round of conflict detection on `acl.xml` admin-ACL resources plus an unprotected-admin-controller check, a fourth round on `indexer.xml`/`mview.xml` ids, and semantic duplicate-module detection plus a side-by-side module comparison page. See [Roadmap](#roadmap) below and `CLAUDE.md` for the full design, including the recorded decision behind each phase.
+Project status: **all 23 planned phases done** (0–12b, 13–22) — the MVP (v1.0, Phases 0–5) plus cron/webhook automation, BYOK in the UI, Ollama support, a per-module dependency graph, an evaluation suite, CI/CD, a local Kubernetes deployment, parser-only quality checks, CVE/dependency intelligence, a multi-repo fleet view, a real PHP static-analysis toolchain (PHPStan/PHPMD/phpcs/Rector), Magento-upgrade-readiness checking, deeper structural facts (webapi/crontab/db_schema/system.xml), a second round of cross-module conflict detection (`di.xml` preferences, `crontab.xml` jobs, GraphQL fields), per-module change history, opt-in RAG query rewriting, webhook alerting on new secrets/CVEs, a third round of conflict detection on `acl.xml` admin-ACL resources plus an unprotected-admin-controller check, a fourth round on `indexer.xml`/`mview.xml` ids, semantic duplicate-module detection plus a side-by-side module comparison page, and a fifth conflict-detection round on `routes.xml` route ids/frontNames. See [Roadmap](#roadmap) below and `CLAUDE.md` for the full design, including the recorded decision behind each phase.
 
 **[Live demo](https://magewiki-web.fly.dev/modules?has_doc=true)** — seeded with a real scan (Magento core + a real third-party module), not synthetic data. The link leads with the modules that already have a full AI-generated analysis; clear the filter to see the whole fleet. The deployment has no scan root or LLM key configured, so Scan and Chat are effectively read-only there — it's meant as a look at already-collected data, not a sandbox to scan your own code or run live chat against.
 
@@ -97,7 +97,7 @@ it's enforced and how to resume paused modules once you raise it.
 
 ## Cross-module conflict detection
 
-Every quality check above looks at one module at a time. These eleven look
+Every quality check above looks at one module at a time. These thirteen look
 across the whole scanned fleet for a pair of modules that silently fight over
 the same thing — all free, parser-derived, zero AI involved:
 
@@ -133,6 +133,14 @@ the same thing — all free, parser-derived, zero AI involved:
   silently wins.
 - **mview.xml conflicts** — two modules declaring a materialized view with
   the same id, the same silent-override risk as the indexer case above.
+- **routes.xml route id conflicts** — two modules declaring the same URL
+  route id in the same area (frontend or adminhtml); Magento resolves a
+  route id to a URL by reverse lookup (`getUrl()`), so a duplicate is
+  ambiguous.
+- **routes.xml frontName conflicts** — two modules declaring the same
+  frontName (the literal URL segment Magento dispatches on) in the same
+  area, a genuine URL-routing ambiguity distinct from the route id case
+  above.
 
 A separate, per-module **missing ACL** check flags a `Controller/Adminhtml/*`
 class with no resolvable `ADMIN_RESOURCE` constant — that admin action is
@@ -210,6 +218,7 @@ network-isolated container.
 - [x] **Phase 19** — Cross-module conflict detection, round 3: `acl.xml` admin-ACL resource facts, a duplicate-ACL-resource-id conflict check, and a new unprotected-admin-controller check (`Controller/Adminhtml/*` with no resolvable `ADMIN_RESOURCE`)
 - [x] **Phase 20** — Cross-module conflict detection, round 4: `indexer.xml`/`mview.xml` facts, a duplicate-indexer-id check, and a duplicate-mview-id check
 - [x] **Phase 21** — Semantic duplicate/overlap detection (reusing Phase 4's existing module-level embeddings, no new scan or API call) plus a side-by-side module comparison page
+- [x] **Phase 22** — Cross-module conflict detection, round 5: `routes.xml` facts, a route-id conflict check, and a frontName conflict check, both scoped per area
 
 Full detail (done-criteria, data model, RAG design, and the decision recorded behind each phase) per phase: see `CLAUDE.md`.
 

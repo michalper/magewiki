@@ -2883,3 +2883,56 @@ above was still open). Three independent, small changes, three commits:
   round this session: full Playwright (32/32, up from 31) and full
   backend pytest (740 passed, up from 733) green, `.env` restored from
   backup and diffed byte-for-byte before finishing.
+
+**Phase 22: cross-module conflict detection round 5 -- routes.xml
+(recorded 2026-11-13):** a fresh, separate session's "po kolei" round,
+started after the previous session's CI/coverage-cleanup PR (#22) was
+reviewed and merged to main. Research grepped the actual codebase for
+`routes.xml`/`frontName` (zero hits) rather than re-mining already-
+exhausted sources, confirming it as the last common Magento declarative-
+config file nothing here parsed yet.
+
+- `parse_routes_xml(path, area)` takes `area` as an explicit parameter
+  rather than guessing it from the path -- the file itself (`<config>
+  <router id="standard"><route id="..." frontName="..."><module
+  name="..." /></route></router></config>`) carries no area information;
+  only the CALLER (which of the two fixed paths,
+  `etc/frontend/routes.xml` or `etc/adminhtml/routes.xml`, it read) knows
+  it. This also turned out to be required, not just a style choice:
+  `_sync_module_children`'s generic `model_cls(module_id=module_id,
+  **asdict(entry))` path (the same helper every other 1:N parsed-fact
+  table already uses) needs the DTO's own fields to exactly match the
+  model's columns, so `RouteEntry` needed an `area` field either way --
+  simplest to have the parser set it directly from an argument rather
+  than inventing a second wrapper dataclass just to attach `area` after
+  the fact.
+- Two check_types from one file (`route_id_conflict`/`frontname_conflict`),
+  not one combined -- same acl_resource_conflict/missing_acl precedent:
+  a duplicate route id (breaks `getUrl()` reverse-route resolution) and a
+  duplicate frontName (breaks URL dispatch) are different real-world
+  symptoms, and a module can collide on one without the other (covered by
+  its own dedicated "only route ids collide, frontNames differ" test).
+  Both group by `(area, key)`, not just `key` -- Magento's own uniqueness
+  constraint for both route id and frontName is scoped per area, so the
+  same value reused across frontend and adminhtml is not a conflict,
+  verified both at the pure detect-function layer and end-to-end through
+  a real `scan_repository_events()` run writing two real module
+  directories to a tmp_path repo.
+- `quality-badges.tsx` labels are `route-id-conflict`/`frontname-conflict`,
+  not the more natural-sounding `route-conflict` -- `webapi_route_conflict`
+  (a completely different file, REST API routes from webapi.xml) already
+  owns that exact label; reusing it would make two different check_types
+  render identical badge text.
+- Conflict-store's fixture reused the existing `Vendor_ConflictA`/
+  `Vendor_ConflictB` pair again (same `conflict_shared_*` naming
+  convention already established for acl.xml/indexer.xml/mview.xml),
+  adding one `etc/adminhtml/routes.xml` each with the same colliding
+  route id AND frontName in one declaration -- deliberately triggers both
+  new check_types from the same two files rather than needing four new
+  fixture files to cover both independently.
+- Verified like the php-analyzer/Phase-21 rounds, not the lighter Phase 20
+  path -- this one touches real frontend badge text and a new area-scoped
+  fixture, so the full `.env`-swap/real-docker-stack dance ran again: full
+  Playwright (32/32) and full backend pytest (762 passed, up from 747)
+  green, 100% backend line coverage maintained throughout, before
+  committing.
