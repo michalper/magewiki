@@ -3020,3 +3020,37 @@ only ever got generic hybrid-search text with no real answer.
 - Verified via the full backend pytest (767 passed, up from 764, 100%
   coverage maintained) -- no frontend or real-stack changes in this part,
   so no Playwright/`.env`-swap pass was needed.
+
+**Feature-search round 4, part 1: di.xml virtualType conflict detection
+(recorded 2026-11-13):** a fresh round, started from a research fork
+grepping the actual codebase (check_type CHECK constraint, `app/agent/tools.py`,
+`app/scanner/`) rather than re-mining `docs/v1-port-roadmap.md`. The user
+approved all three of the fork's candidates via AskUserQuestion. This part:
+`app/scanner/di_xml.py` already parsed `<virtualType name="X" type="Y">`
+into `DiVirtualType` (wired through `_sync_module_children` since an
+earlier round added the parser for completeness), but nothing detected a
+conflict on it -- confirmed via grep of the `check_type` CHECK constraint.
+
+- `detect_virtual_type_conflicts()` deliberately follows
+  `preference_conflicts.py`'s "different value for the same key" shape, not
+  `indexer_conflicts.py`'s "any duplicate key at all" shape: a virtualType
+  `name` is routinely reused by its OWN author across several of its own
+  di.xml declarations (composing a virtual class from multiple angles is a
+  normal, intentional pattern), so only a genuine disagreement across ≥2
+  modules -- a different backing `type` for the identical name -- is a real
+  conflict, exactly the same reasoning `preference_conflict` already
+  established for `<preference>`.
+- Pure detection-only addition: no new parser, no new table, no new
+  scanning risk -- `di_virtual_types` was already being populated every
+  scan. Only a `check_type` CHECK-constraint migration was needed (no data
+  migration).
+- Extended the existing `conflict-store` fixture's `Vendor_ConflictA`/
+  `Vendor_ConflictB` `etc/di.xml` files with one more colliding
+  `<virtualType>` declaration each, same "extend, don't rebuild" pattern
+  every prior conflict-detection round used.
+- Verified via the full backend pytest (774 passed, up from 767, 100%
+  coverage maintained) and frontend `tsc`/`eslint`/`vitest` (254 passed,
+  `quality-badges.test.tsx`'s own generic "every declared check type gets a
+  label" tests absorbed the new entry with no new test code needed, same
+  as Phase 22's routes.xml badges). Real-stack/Playwright verification
+  deferred to the end of this round (after part 3), per the approved plan.

@@ -4,4 +4,5 @@
     <type name="Vendor\ConflictShared\Model\Sample">
         <plugin name="conflict_a_save_plugin" type="Vendor\ConflictA\Plugin\SavePlugin" sortOrder="10"/>
     </type>
+    <virtualType name="Vendor\ConflictShared\VirtualFoo" type="Vendor\ConflictA\Model\VirtualFoo"/>
 </config>

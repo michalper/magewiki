@@ -102,6 +102,7 @@ from app.scanner.secrets_scanner import scan_hardcoded_secrets
 from app.scanner.security_advisories import check_security_advisories
 from app.scanner.system_xml import parse_system_xml
 from app.scanner.test_presence import has_tests
+from app.scanner.virtual_type_conflicts import VirtualTypeRow, detect_virtual_type_conflicts
 from app.scanner.webapi_conflicts import WebapiRouteRow, detect_webapi_route_conflicts
 from app.scanner.webapi_xml import parse_webapi_xml
 from app.tasks.queue import get_arq_pool
@@ -598,6 +599,9 @@ async def _run_scan(root: Path, session: AsyncSession) -> AsyncIterator[dict]:
     # committed, recomputes across the whole repo_root.
     await _detect_and_persist_route_id_conflicts(session, root)
     await _detect_and_persist_frontname_conflicts(session, root)
+    # Same reasoning again: needs every scanned module's di_virtual_types
+    # already committed, recomputes across the whole repo_root.
+    await _detect_and_persist_virtual_type_conflicts(session, root)
 
     # Phase 16: module history. Runs last, after every conflict check above,
     # since a module's finding_counts aren't complete until cross-module
@@ -826,6 +830,20 @@ async def _detect_and_persist_preference_conflicts(session: AsyncSession, root: 
 
     findings = detect_preference_conflicts(preferences)
     await _persist_conflict_findings(session, root, "preference_conflict", findings)
+
+
+async def _detect_and_persist_virtual_type_conflicts(session: AsyncSession, root: Path) -> None:
+    virtual_type_rows = (
+        await session.execute(
+            select(DiVirtualType.module_id, Module.name, DiVirtualType.name, DiVirtualType.virtual_type)
+            .join(Module, Module.id == DiVirtualType.module_id)
+            .where(Module.repo_root == str(root))
+        )
+    ).all()
+    virtual_types = [VirtualTypeRow(*row) for row in virtual_type_rows]
+
+    findings = detect_virtual_type_conflicts(virtual_types)
+    await _persist_conflict_findings(session, root, "virtual_type_conflict", findings)
 
 
 async def _detect_and_persist_cron_job_conflicts(session: AsyncSession, root: Path) -> None:

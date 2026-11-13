@@ -37,6 +37,14 @@ export const CHECK_TYPES: { key: string; severity: Severity; label: (n: number) 
   // are a genuinely different file (routes.xml, not webapi.xml).
   { key: "route_id_conflict", severity: "warning", label: (n) => `${n} route-id-conflict${n === 1 ? "" : "s"}` },
   { key: "frontname_conflict", severity: "warning", label: (n) => `${n} frontname-conflict${n === 1 ? "" : "s"}` },
+  // "virtualtype-conflict", not "virtual-type-conflict" or "preference-
+  // conflict" -- a different di.xml element than <preference>, so it needs
+  // its own distinct label even though both live in the same file.
+  {
+    key: "virtual_type_conflict",
+    severity: "warning",
+    label: (n) => `${n} virtualtype-conflict${n === 1 ? "" : "s"}`,
+  },
 ];
 
 export function sumFindingCounts(findingCounts: Record<string, number>): number {
