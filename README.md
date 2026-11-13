@@ -95,6 +95,74 @@ to a `paused_budget` state (visible on the Modules page) instead of silently
 continuing to spend — see `CLAUDE.md`'s "Scan, cron, and cost control" for how
 it's enforced and how to resume paused modules once you raise it.
 
+## Running fully local — $0, no subscription, no Claude
+
+The scanner (module discovery, every XML/composer/PHP parser, the dependency
+graph, the whole PHPStan/PHPMD/phpcs/Rector + CVE/abandoned-dependency/
+Magento-upgrade-readiness toolchain) is **always** free and local — no AI, no
+API key, nothing in this section needed. This section is only for the two AI
+features (per-module documentation, the chat agent) if you want those without
+paying anyone: point both the LLM and the embedding model at a local
+[Ollama](https://ollama.com) instance instead of Anthropic/OpenAI/DeepSeek.
+This exact path (`ollama/llama3.1` for analysis+chat, `ollama/bge-m3` for
+embeddings) has been run and verified end-to-end in this project, including a
+real tool-calling bug found and fixed against a local model (see
+`app/agent/loop.py`).
+
+1. **Install Ollama on the host** (not inside a container) and pull two
+   models — one for analysis/chat that supports tool calling, one for
+   embeddings:
+
+   ```bash
+   ollama pull llama3.1
+   ollama pull bge-m3
+   ```
+
+2. **Point the LLM and embedding config at Ollama.** Either in `.env` before
+   `docker compose up` (server-wide default):
+
+   ```env
+   LLM_MODEL=ollama/llama3.1
+   ANTHROPIC_API_KEY=
+   OLLAMA_BASE_URL=http://host.docker.internal:11434
+
+   EMBEDDING_MODEL=ollama/bge-m3
+   EMBEDDING_DIMENSIONS=1024
+   OPENAI_API_KEY=
+   ```
+
+   or in the Settings page (`/settings`) in the running app — the same four
+   fields (LLM model / API base, embedding model / API base) as a per-
+   deployment override, no restart needed. The API-base field's placeholder
+   already hints at the Ollama URL.
+
+3. **Set `EMBEDDING_DIMENSIONS` before your first AI-analyzed scan, not
+   after.** The `chunks.embedding` pgvector column's width is fixed by the
+   migrations to whatever dimension was configured at the time — `bge-m3`
+   is 1024, OpenAI's `text-embedding-3-small` is 1536. Changing it later
+   means a full re-embed of everything already analyzed, not just new scans.
+
+4. **On native Linux Docker (not Docker Desktop), `host.docker.internal`
+   doesn't resolve by default.** `docker-compose.yml` has no `extra_hosts`
+   entry for it (works out of the box on Docker Desktop for Mac/Windows
+   only). If `docker compose logs api` shows connection errors to
+   `OLLAMA_BASE_URL`, either add this to the `api`/`worker` services in
+   `docker-compose.yml`:
+
+   ```yaml
+   extra_hosts:
+     - "host.docker.internal:host-gateway"
+   ```
+
+   or set `OLLAMA_BASE_URL` to the host's real IP on the Docker bridge
+   network instead.
+
+5. **Scan a module and confirm it worked**: open `/modules`, scan something,
+   and check that a module's README tab fills in (AI analysis ran) and that
+   the chat agent answers a question with real citations (embeddings +
+   tool-calling both ran) — with no `ANTHROPIC_API_KEY`/`OPENAI_API_KEY`/
+   `DEEPSEEK_API_KEY` set anywhere, confirming zero calls left your machine.
+
 ## Cross-module conflict detection
 
 Every quality check above looks at one module at a time. These fifteen look
