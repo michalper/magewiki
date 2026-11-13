@@ -124,6 +124,27 @@ class WebapiRouteEntry:
 
 
 @dataclass
+class AclResourceEntry:
+    resource_id: str
+    title: str | None
+    parent_id: str | None
+
+
+@dataclass
+class IndexerEntry:
+    indexer_id: str
+    view_id: str | None
+    class_name: str | None
+
+
+@dataclass
+class MviewEntry:
+    view_id: str
+    class_name: str | None
+    group_name: str | None
+
+
+@dataclass
 class ConfigFieldEntry:
     section_id: str
     group_id: str
@@ -199,6 +220,13 @@ class PhpClassEntry:
     start_line: int | None
     end_line: int | None
     methods: list[PhpMethodEntry] = field(default_factory=list)
+    is_abstract: bool = False
+    # Constant name -> literal string value, simple-string-literal constants only
+    # (e.g. `const ADMIN_RESOURCE = 'Vendor_Module::foo';`) -- anything else
+    # (concatenation, another constant reference, a non-string literal) is
+    # unresolvable without evaluating an expression, so it's left out rather
+    # than guessed.
+    consts: dict[str, str] = field(default_factory=dict)
 
 
 @dataclass

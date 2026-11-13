@@ -1,0 +1,15 @@
+title = "magewiki gitleaks config"
+
+[extend]
+useDefault = true
+
+# The singular [allowlist] table name matches the gitleaks version the
+# gitleaks-action@v3 CI job actually resolves today (8.24.3, confirmed from
+# a real run's log) -- v8.25.0 added [[allowlists]] (plural) as the new
+# preferred form, but [allowlist] still works there too (verified locally
+# against 8.30.1: "no leaks found" with this exact config).
+[allowlist]
+description = "Known-fake secrets used only as scanner test fixtures (hardcoded_secret check), never real credentials"
+regexes = [
+  '''AKIAABCDEFGHIJKLMNOP''',
+]

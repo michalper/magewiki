@@ -127,17 +127,53 @@ describe("ModulesPage", () => {
     await waitFor(() => expect(screen.getAllByText("—").length).toBeGreaterThan(0));
   });
 
+  it("shows the absent-state for README/Tests/composer/setup_version when all four are missing", async () => {
+    mockApi({
+      modules: [mod({ has_readme: false, has_tests: false, composer_name: null, setup_version: null })],
+    });
+    renderWithQueryClient(<ModulesPage />);
+
+    await waitFor(() => expect(screen.getAllByText("no readme").length).toBeGreaterThan(0));
+    expect(screen.getAllByText("no tests").length).toBeGreaterThan(0);
+    // composer_name and setup_version both render as the same "—" dash as
+    // the empty-tags case above, so this just confirms there are now more
+    // of them (module_name/composer-name column + version column).
+    expect(screen.getAllByText("—").length).toBeGreaterThan(0);
+  });
+
   describe("filters", () => {
     it("filters by name or composer name", async () => {
-      mockApi({ modules: [mod({ id: 1, name: "Vendor_Alpha" }), mod({ id: 2, name: "Vendor_Beta", composer_name: "other/pkg" })] });
+      mockApi({
+        modules: [
+          mod({ id: 1, name: "Vendor_Alpha" }),
+          mod({ id: 2, name: "Vendor_Beta", composer_name: "other/pkg" }),
+          // A null composer_name, searched for something its own name
+          // doesn't match either -- exercises (m.composer_name ?? "")'s
+          // own null fallback, not just the overall name-or-composer check.
+          mod({ id: 3, name: "Vendor_Gamma", composer_name: null }),
+        ],
+      });
       const user = userEvent.setup();
       renderWithQueryClient(<ModulesPage />);
 
-      await waitFor(() => expect(screen.getByText("2 of 2 modules")).toBeInTheDocument());
+      await waitFor(() => expect(screen.getByText("3 of 3 modules")).toBeInTheDocument());
       await user.type(screen.getByLabelText("Search modules"), "alpha");
 
       // The search filter is debounced -- it doesn't take effect until typing pauses.
-      await waitFor(() => expect(screen.getByText("1 of 2 modules")).toBeInTheDocument());
+      await waitFor(() => expect(screen.getByText("1 of 3 modules")).toBeInTheDocument());
+
+      // "other/pkg" matches module 2's composer_name but none of the three
+      // modules' own names -- the name check alone (which "alpha" above
+      // already satisfied without ever needing the composer_name fallback)
+      // isn't enough on its own to find this match.
+      await user.clear(screen.getByLabelText("Search modules"));
+      await user.type(screen.getByLabelText("Search modules"), "other/pkg");
+      await waitFor(() => expect(screen.getByText("1 of 3 modules")).toBeInTheDocument());
+
+      // Matches none of the three modules' names or composer_names at all.
+      await user.clear(screen.getByLabelText("Search modules"));
+      await user.type(screen.getByLabelText("Search modules"), "nonexistent");
+      await waitFor(() => expect(screen.getByText("No modules")).toBeInTheDocument());
     });
 
     it("filters by source type", async () => {
@@ -187,18 +223,30 @@ describe("ModulesPage", () => {
     });
 
     it("filters by repo via the ?repo= query param, with a Clear button", async () => {
-      setSearch("?repo=%2Fsites%2Fstore-a");
-      mockApi({ modules: [mod({ id: 1, repo_root: "/sites/store-a" }), mod({ id: 2, repo_root: "/sites/store-b" })] });
+      // A second filter (?finding=) stays active alongside ?repo= -- clearing
+      // just the repo one must leave the URL's own other query param alone
+      // (clearQueryParam's "any params left?" branch), not reset to a bare
+      // "/modules" the way clearing the *only* active filter would.
+      setSearch("?repo=%2Fsites%2Fstore-a&finding=hardcoded_secret");
+      mockApi({
+        modules: [
+          mod({ id: 1, repo_root: "/sites/store-a", finding_counts: { hardcoded_secret: 1 } }),
+          mod({ id: 2, repo_root: "/sites/store-b", finding_counts: { hardcoded_secret: 1 } }),
+        ],
+      });
       const user = userEvent.setup();
       renderWithQueryClient(<ModulesPage />);
 
       await waitFor(() => expect(screen.getByText("Filtering by repo:")).toBeInTheDocument());
       await waitFor(() => expect(screen.getByText("1 of 2 modules")).toBeInTheDocument());
 
-      await user.click(screen.getByRole("button", { name: "Clear" }));
+      const repoBanner = screen.getByText("Filtering by repo:").closest("div")!;
+      await user.click(within(repoBanner).getByRole("button", { name: "Clear" }));
 
       await waitFor(() => expect(screen.queryByText("Filtering by repo:")).not.toBeInTheDocument());
+      // finding=hardcoded_secret is still active -- both modules qualify.
       await waitFor(() => expect(screen.getByText("2 of 2 modules")).toBeInTheDocument());
+      expect(window.location.search).toBe("?finding=hardcoded_secret");
     });
 
     it("filters by finding via the ?finding= query param (comma-separated), with a Clear button", async () => {

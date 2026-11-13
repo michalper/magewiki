@@ -1,17 +1,7 @@
 from pathlib import Path
 
-from lxml import etree
-
 from app.scanner.dto import QueueBindingEntry
-
-
-def _parse_xml(path: Path) -> etree._Element | None:
-    if not path.is_file():
-        return None
-    try:
-        return etree.parse(str(path)).getroot()
-    except etree.XMLSyntaxError:
-        return None
+from app.scanner.xml_parse_utils import parse_xml_root
 
 
 def parse_queue_config(
@@ -27,7 +17,7 @@ def parse_queue_config(
     entry of its own).
     """
     handlers: dict[str, tuple[str, str]] = {}
-    if (comm_root := _parse_xml(communication_path)) is not None:
+    if (comm_root := parse_xml_root(communication_path)) is not None:
         for topic_el in comm_root.findall("topic"):
             topic = topic_el.get("name")
             handler_el = topic_el.find("handler")
@@ -39,7 +29,7 @@ def parse_queue_config(
                 handlers[topic] = (handler_type, handler_method)
 
     destinations: dict[str, str] = {}
-    if (topology_root := _parse_xml(topology_path)) is not None:
+    if (topology_root := parse_xml_root(topology_path)) is not None:
         for binding_el in topology_root.findall(".//binding"):
             topic = binding_el.get("topic")
             destination = binding_el.get("destination")
@@ -47,7 +37,7 @@ def parse_queue_config(
                 destinations[topic] = destination
 
     consumers: dict[str, tuple[str, str | None, str | None]] = {}
-    if (consumer_root := _parse_xml(consumer_path)) is not None:
+    if (consumer_root := parse_xml_root(consumer_path)) is not None:
         for consumer_el in consumer_root.findall("consumer"):
             consumer_name = consumer_el.get("name")
             queue = consumer_el.get("queue")

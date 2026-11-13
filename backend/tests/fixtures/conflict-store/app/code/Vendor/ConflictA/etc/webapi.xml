@@ -1,0 +1,9 @@
+<?xml version="1.0"?>
+<routes xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:noNamespaceSchemaLocation="urn:magento:module:Magento_Webapi:etc/webapi.xsd">
+    <route url="/V1/conflict-sample" method="POST">
+        <service class="Vendor\ConflictA\Api\FooInterface" method="save"/>
+        <resources>
+            <resource ref="Vendor_ConflictA::foo"/>
+        </resources>
+    </route>
+</routes>

@@ -925,6 +925,12 @@ change was made to auto-regenerate this file going forward — flagging here as 
 known gap rather than building out a regeneration-drift-detection step this session
 didn't ask for.
 
+**Closed 2026-11-12** — see the "CI check for stale api-types.ts" part of that
+day's feature-search round entry near the end of this file: `ci.yml`'s `e2e-smoke`
+job now runs `npm run gen:types && git diff --exit-code lib/api-types.ts` against
+its own already-live `api` container, so this exact class of silent breakage can't
+recur unnoticed.
+
 **Regression found while reading this same hash-skip code for the next roadmap item
 (recorded 2026-11-08):** `_FILE_HASH_DEPENDENT_CHECK_TYPES` (see "Hash-skip for
 file-hash-dependent quality checks" above) listed `phpstan_error`/`phpmd_issue`/
@@ -2339,3 +2345,541 @@ compromising appears, instead of requiring someone to check the UI.
   confirms a scan with nothing alertable invokes it with an empty list
   (always called, no-ops internally) rather than skipping the call
   entirely.
+
+**Phase 19: cross-module conflict detection round 3 -- acl.xml, plus a new
+unprotected-admin-controller check (recorded 2026-11-12):** another "po
+kolei" roadmap round, this time started from a fresh research pass over the
+actual codebase (grepped check_type/parser/embedding/chat-history/compare-UI
+state) rather than re-mining `docs/v1-port-roadmap.md`, which was already
+fully exhausted. Full scope requested explicitly after a scoping question --
+the duplicate-ACL-resource-id conflict is the same `webapi_conflicts.py`-
+style pattern already used four times; the unprotected-admin-controller
+check is genuinely new ground, the first check in this codebase needing PHP
+class *constant* extraction (`catalog_module_classes` previously only
+captured class/interface/trait + methods + extends/implements, no consts).
+
+- **`acl_resource_conflict`**: `app/scanner/acl_xml.py` parses `etc/acl.xml`
+  (found via a `.//resources` descendant search, same defensiveness as
+  `system_xml.py`'s `.//section`, rather than a fixed path assumption about
+  the `<config><acl>` wrapper depth) into one `AclResource` row per
+  `<resource>`, recursively flattened with `parent_id` kept for a future
+  citation use even though the conflict check itself only needs
+  `(resource_id, module_id)`. `acl_conflicts.py` groups by `resource_id`
+  alone (no secondary attribute to compare, unlike `db_schema_conflicts.py`)
+  -- same "flag a concrete, certain conflict" pragmatism as
+  `webapi_conflicts.py`. New table `acl_resources` (migration 0036), new
+  check_type `acl_resource_conflict` (migration 0037, combined with
+  `missing_acl` below in one migration, mirroring how 0033 added three
+  conflict check_types together).
+- **`missing_acl`**: a `Controller/Adminhtml/*` class with no resolvable
+  `ADMIN_RESOURCE` constant -- a real Magento security footgun (the admin
+  action becomes reachable by any logged-in admin, not just one with a
+  specific permission). The real design problem: `ADMIN_RESOURCE` is a PHP
+  constant and PHP constants are inherited, but resolving a `use`-aliased
+  parent class name to its real FQCN is infrastructure this project doesn't
+  have anywhere, and building it was ruled out of scope for this phase
+  during planning. `admin_acl.py`'s `find_missing_acl()` resolves
+  `extends`/`implements` chains **only within the same module's own class
+  catalog** (by unqualified name, the only resolution available without
+  `use`-alias support): the chain reaching a class name the module doesn't
+  define itself (e.g. the real `\Magento\Backend\App\Action`) stops
+  resolution and does **not** flag -- ambiguous, can't be sure either way --
+  while a chain that's fully resolvable in-module (including "no parent at
+  all") and never finds `ADMIN_RESOURCE` is a certain, flaggable gap.
+  Severity `warning`, not `blocking`, reflecting that real uncertainty.
+  Abstract classes are excluded outright (not in the original plan -- added
+  during implementation once `abstract_modifier` turned out to be trivially
+  readable from tree-sitter-php's own grammar): Magento's own base
+  admin-controller classes are routinely abstract with no `ADMIN_RESOURCE`
+  of their own by design, since only a concrete subclass is ever dispatched.
+- **New tree-sitter-php capability**: `PhpClassEntry` gained `consts: dict[str,
+  str]` and `is_abstract: bool`. Constant *values* are captured only for a
+  simple, non-interpolated string literal (`node.type in ("string",
+  "encapsed_string")` with exactly zero or one `string_content` child,
+  verified empirically against the real grammar shape before writing the
+  extraction code, same discipline this project already applies elsewhere)
+  -- a concatenation, a `self::OTHER`-style constant reference, or any
+  non-string literal is left out rather than guessed, since those are
+  unresolvable without evaluating an expression. Neither field is persisted
+  to the `php_classes` table -- `find_missing_acl` consumes the in-memory
+  `catalog_module_classes()` result already computed once per module in
+  `_persist_module`, not a second parse pass or a DB round-trip.
+- Both new check_types are correctly categorized in
+  `_FILE_HASH_DEPENDENT_CHECK_TYPES`: `missing_acl` belongs there (purely a
+  function of this module's own PHP files, same as `deprecated_annotation`),
+  `acl_resource_conflict` does not (fleet-wide, like every other `_conflict`
+  type already in the family) -- confirmed by checking that no existing
+  `_conflict` check_type is in that tuple before adding the new one.
+- Drive-by fix, flagged during research and folded into the same edit:
+  `agent/tools.py`'s `list_modules` tool description had drifted out of sync
+  with the real check_type list since migration 0033 (missing
+  `preference_conflict`/`cron_job_conflict`/`graphql_field_conflict`) --
+  resynced in full while adding the two Phase 19 types to the same string,
+  rather than compounding the drift with a fourth untracked gap.
+- Verified end-to-end: full backend suite (701 passed, 2 skipped -- the
+  Ordo-fixture-gated tests, unrelated), full frontend suite (229 passed,
+  one pre-existing stats-page test updated for the new tile member), a real
+  `alembic downgrade`/`upgrade head` round-trip against a live Postgres
+  (not assumed from the migration file alone), and `ruff check`/`tsc
+  --noEmit`/`eslint` all clean. `ruff format --check` was deliberately not
+  used as a gate -- it would reformat most of this project's own pre-existing,
+  intentionally-long-line code too, confirming it isn't part of this
+  project's actual enforced style despite `pyproject.toml`'s `line-length =
+  100`.
+- **Not done this round**: the README's existing "Cross-module conflict
+  detection" section only ever documented the original five checks (plugin/
+  composer/webapi/db_schema/circular) and was already stale before this
+  phase -- it never got the three Phase 15 additions
+  (preference/cron/graphql) either. Left alone deliberately rather than
+  folding an unrelated pre-existing docs gap into this phase's diff; flagged
+  to the user as a separate docs-sync candidate.
+
+**e2e coverage for every fleet-wide conflict check + security_advisory/
+abandoned_dependency (recorded 2026-11-12):** asked directly after Phase 19
+("czy mamy wszystkie niezbedne testy... e2e playwright?"). Audit: of 24
+check_types, only 2 (`composer_completeness`, `magento_version_blocker`) had
+any Playwright assertion at all, and even those were generic "tile is
+nonzero" checks -- every cross-module conflict check and both externally-
+backed checks had zero e2e representation. Asked how far to close this; the
+user chose the broadest option (every fleet-wide conflict + the new acl
+checks + security_advisory/abandoned_dependency, explicitly not
+license_risk/phpunit_failure/the PHP-toolchain findings).
+
+- **Why a brand-new fixture, not a sibling added to `demo-store`**: confirmed
+  by reading `orchestrator.py` that all 10 cross-module conflict queries
+  filter `Module.repo_root == str(root)` -- a module only ever gets compared
+  against siblings under its *own* scan root, never against a different
+  repo. A colliding sibling would therefore need to live in `demo-store`
+  itself, which would break ~8 existing exact-count assertions
+  (`repos.spec.ts`'s "1 module"/"1/1 enabled", `test_scanner_integration.py`'s
+  `tasks_enqueued == 7`, `test_scan_api.py`, `test_cli_internals.py`).
+  Instead: `backend/tests/fixtures/conflict-store/`, two synthetic modules
+  (`Vendor_ConflictA`/`Vendor_ConflictB`) that conflict with *each other*
+  under their own new scan root (`MAGEWIKI_SCAN_ROOT_2`) -- zero risk to any
+  existing fixture-dependent assertion. Each minimal shape (plugin/
+  composer/webapi/db_schema/circular/preference/cron/graphql/acl conflict,
+  plus a `Controller/Adminhtml` class with no `ADMIN_RESOURCE` on ConflictA
+  only) copied from this project's own `test_orchestrator_*_conflicts.py`
+  fixtures, not invented from scratch -- verified first at the much faster
+  pytest layer (`test_conflict_store_fixture.py`, asserting every expected
+  check_type lands on the right module) before ever touching Playwright.
+- **A real bug this surfaced, not a flaky test**: the first version of the
+  fixture used `guzzlehttp/guzzle` (`^6.0` on ConflictA, `^7.0` on B) for
+  `composer_conflict`, seeded nothing for it, and assumed no network call
+  would matter. The real docker-compose `api` container *does* have outbound
+  internet, and guzzlehttp/guzzle has real historical Packagist security
+  advisories overlapping one of those ranges -- `security_advisory`'s count
+  came back non-deterministic (passed locally with no internet, failed in
+  the real stack with internet), exactly the live-dependency flakiness this
+  project's own `packagist_cache` design exists to avoid everywhere else.
+  Fixed by renaming the `composer_conflict` package to a fully fake
+  `vendor/conflict-version-probe` and seeding its cache "clean" (empty
+  advisories, a version satisfying ConflictA's `^6.0` so it doesn't also
+  read as outdated there) -- now provably network-independent regardless of
+  what real-world Packagist data does in the future.
+- **Seeding `security_advisory`/`abandoned_dependency` deterministically**:
+  confirmed directly (`app/scanner/packagist_cache.py`) that both checks read
+  the cache *before* ever reaching `httpx` -- pre-seeding a `packagist_cache`
+  row makes the real scan use it with zero network traffic, the same
+  mechanism this project's own `test_abandoned_dependencies.py` cache-hit
+  test already proves. New `app/cli.py` subcommand,
+  `seed-packagist-cache <cache_key> <json>` (plain `argparse`, same shape as
+  `scan`/`resume-*`), calls `set_cached()` directly -- not a new HTTP route,
+  since `docker compose exec api python -m app.<module>` is already this
+  project's own documented pattern (README.md) for one-off operational
+  commands, and a CLI command reachable only via `docker compose exec`
+  carries zero new attack surface, unlike a web route would.
+- **`frontend/tests/e2e/global-setup.ts`** now loops to a second scan root
+  when configured: seeds three `packagist_cache` rows via
+  `execFileSync("docker", ["compose", "exec", "-T", "api", ...])` (array
+  args, not a shell string, so the JSON payload's own quotes never need
+  escaping), then `POST /scan`s `conflict-store` the same way `demo-store`
+  already was. `docker-compose.yml` needed zero changes (`MAGEWIKI_SCAN_ROOT_
+  1/2/3` were already generically bind-mounted into api/worker/php-analyzer);
+  `.github/workflows/ci.yml`'s `e2e-smoke` job needed exactly one new line
+  setting `MAGEWIKI_SCAN_ROOT_2`.
+- **Two pre-existing `repos.spec.ts` tests broke, for real reasons, once a
+  second repo actually existed**: "Download SBOM" became a strict-mode
+  ambiguous match (one button per repo card, now two cards), and
+  `"1 of 1 modules"` stopped being true (the denominator is the *unfiltered*
+  total across every repo, confirmed by reading `app/modules/page.tsx`, not
+  per-repo) once conflict-store's two modules joined demo-store's one. Fixed
+  by scoping the first test to the demo-store repo card specifically (same
+  `a[href="/modules?repo=..."]` locator the second test already used) and
+  loosening the second to `/^1 of \d+ modules$/` -- the same fix this
+  session's own `conflicts.spec.ts` already needed for the identical reason.
+- **Local verification required a real safety detour**: this machine's own
+  root `.env` has `DATABASE_URL` pointed at the real production Neon
+  instance (the public demo's database) -- `docker-compose.yml`'s
+  `env_file: .env` directive reads that literal file regardless of `docker
+  compose --env-file`, which only affects `${VAR}` substitution inside the
+  compose YAML, not `env_file:`-loaded variables. Asked the user before
+  touching it; backed up the real `.env` to the scratchpad directory first,
+  overwrote it with a safe all-local-docker version (local `db`/`redis`,
+  no LLM/embedding keys, both scan roots), ran the full real
+  `docker compose up -d --build` + `npx playwright test` (27/27 passed) +
+  full backend pytest (704 passed) against that, then restored the original
+  `.env` from the backup and diffed it byte-for-byte to confirm an exact
+  restore before doing anything else.
+
+**e2e coverage round 2: the last 10 check_types, two real bugs found along
+the way (recorded 2026-11-12):** asked directly again, after round 1's
+conflict-store work, what was still missing. Remaining: `hardcoded_secret`,
+`deprecated_annotation`, `license_risk`, the five php-analyzer static-
+analysis checks, `magento_php_incompatible`, `phpunit_failure`. User's
+instruction: close every one. Added two more modules inside the same
+`conflict-store` fixture: `Acme_QualityChecks` (every single-module
+parser/cache-backed check plus the five static-analysis checks) and
+`Vendor_PhpunitSample` (a real, deliberately failing PHPUnit run).
+
+- **Bug 1 (real, significant, previously invisible): `MAGEWIKI_MAGENTO_
+  FIXTURE_PATH`'s `docker-compose.yml` fallback was `/tmp`, not `/dev/null`
+  like every other optional scan-root/fixture variable.** Left unset (its
+  default, both locally and in `.github/workflows/ci.yml`'s `e2e-smoke` job
+  — confirmed by reading the workflow directly, it's never set there), this
+  bind-mounts the *host's* `/tmp` read-only onto the *container's* `/tmp`
+  for `api`/`worker`/`php-analyzer` alike. Found because `phpstan`/`phpmd`/
+  `phpcs`/`rector`/`phpmetrics` all silently returned zero findings against
+  a fixture deliberately written to trigger each one — traced to a real
+  `mkdir(): Read-only file system` (phpstan's own cache dir) and a `PHP
+  Fatal error: Uncaught ValueError: Path must not be empty` inside PDepend's
+  Symfony-DI container compilation (phpmd/phpmetrics), both from having
+  nowhere to write a temp file. **This means every one of these five
+  check_types has effectively never produced a real finding in CI**,
+  against any fixture, for as long as this variable has existed unset there
+  — not because the scanned code was clean, but because the tools couldn't
+  write anywhere. Fixed with a one-line `docker-compose.yml` change (the
+  fallback for all three services, matching the `/dev/null` convention
+  every other optional path variable already uses) — this is an app/infra
+  fix, not test-only, so it benefits every real user's own local
+  `docker compose up` too, not just this fixture.
+- **Bug 2 (real, narrower, also previously invisible): `php-analyzer`'s
+  `run_phpmd()`/`run_phpcs()` exclude/ignore flags (`--exclude vendor/*`,
+  `--ignore=*/vendor/*,*/Test/*`) match case-insensitively against a literal
+  "Vendor" path *segment*, not just an actual nested `vendor/` directory.**
+  Found after fixing Bug 1 still left phpmd/phpcs at zero findings while
+  phpstan/rector/phpmetrics (which configure their excludes via a neon/php
+  config file, not a CLI flag) worked correctly on the exact same fixture.
+  Isolated with a clean-room reproduction via `proc_open()` directly inside
+  the real `php-analyzer` container (bypassing any shell-quoting doubt):
+  copying the identical fixture content to `/tmp/probe/Acme/Test1` (no
+  "Vendor" anywhere in the path) made both tools work immediately with the
+  *exact same* exclude/ignore flags unchanged. **Every module this project
+  has ever scanned under `app/code/Vendor/...` — meaning literally every
+  committed test/demo fixture (`demo-store`, `conflict-store`'s own
+  `ConflictA`/`ConflictB`) — has had `phpmd_issue`/`phpcs_violation`
+  silently return zero findings this whole time**, regardless of what the
+  code actually contains. Real customer stores are unaffected in practice
+  (a real company's Composer vendor namespace is essentially never
+  literally the word "Vendor"), which is exactly why this stayed invisible
+  through real-world use against Ordo_Automation (vendor namespace `Ordo`)
+  while still being latently broken for this project's own fixtures.
+  **Deliberately not fixed in `php-analyzer` this session** — the right fix
+  needs to decide how to make the exclude pattern not collide with a
+  legitimate company-namespace segment in general (not just rename this
+  one fixture), which is a real behavior change to production scanning
+  logic deserving its own dedicated look, not a same-session patch bundled
+  into test-fixture work. Worked around for *this* fixture by giving the
+  one new module that needs `phpmd_issue`/`phpcs_violation` coverage an
+  `Acme_` namespace instead of `Vendor_` — zero risk (a brand-new,
+  never-committed module), and it's the only one of the four `conflict-
+  store` modules that needs those two checks to fire at all.
+- **`phpunit_failure` needed its own, fourth module, split out from
+  `Acme_QualityChecks`**: a committed `vendor/bin/phpunit` (the official
+  PHPUnit 11.5.47 `.phar`, ~5.7MB, downloaded from `phar.phpunit.de` and
+  committed as-is — approved explicitly after flagging the binary-blob
+  tradeoff and that it reverses this project's earlier choice to only ever
+  verify this check against an uncommitted real-world fixture) at a
+  module's root was *also* initially suspected to be part of Bug 2, since
+  removing it was the first thing tried — turned out unrelated (Bug 2 fired
+  regardless, confirmed by testing with the phar already removed), but
+  splitting it out stood anyway: a `vendor/` directory containing a ~5.7MB
+  binary at a module's root is a plausible separate risk for any directory-
+  walking tool's performance/behavior, and `phpunit_failure` doesn't need
+  to coexist with the static-analysis triggers in the same module at all.
+  `php-analyzer` has no internet route at all (`docker-compose.yml`'s
+  `php_analyzer_net` is `internal: true`) and mounts are read-only, so a
+  real `composer install` is categorically impossible there — the `.phar`
+  bundles every PHPUnit dependency itself, and the one test extends
+  `PHPUnit\Framework\TestCase` directly with no need for the module's own
+  autoloading, so no `vendor/autoload.php`/bootstrap was needed either.
+- **`magento_php_incompatible` reuses the exact same seeding mechanism as
+  round 1's Packagist checks, no new code**: `app/scanner/magento_github.py`
+  turned out to already share the one `packagist_cache` table/API with
+  `security_advisory`/`abandoned_dependency` (cache keys `"magento-github:
+  latest-release"` and `"magento-github:<tag>:composer.json"`) — the
+  existing `app.cli seed-packagist-cache` subcommand needed zero changes to
+  seed these too.
+- A real, pre-existing `stats.spec.ts` assertion broke for a genuine reason
+  once `Vendor_PhpunitSample`'s real `Test/Unit/` directory joined the
+  fleet: "Have tests" stopped being a guaranteed 0% across every scanned
+  module. Loosened to assert a real percentage renders (matching how the
+  rest of that test already treats non-deterministic-count fields) rather
+  than hardcoding the now-false "still always zero" assumption.
+- Verified exactly like round 1: a quick pytest check of the parser/cache-
+  backed checks first, then the full real stack (`.env` swap/restore
+  protocol, approved again for this round) — full Playwright suite (29/29
+  passed, up from 27) and full backend pytest (704 passed) green before
+  committing.
+
+**php-analyzer's phpcs ancestor-"Vendor" exclusion bug: the real fix
+(recorded 2026-11-12):** the round above worked around this by naming one
+module `Acme_QualityChecks` instead of `Vendor_QualityChecks`. User asked
+for the real fix in a follow-up round. A focused Explore pass read the
+actual *installed* tool source (not docs or assumption) to settle the exact
+mechanism before touching anything, since the previous round's own
+empirical tests left it ambiguous whether phpmd was also affected:
+
+- **`squizlabs/php_codesniffer` 3.13.6 is the entire, confirmed root
+  cause.** `Config.php:1207-1230`: every CLI `--ignore=` pattern is
+  hard-coded to `type='absolute'` — there's no CLI way to request
+  `'relative'` matching at all (only a ruleset XML `<exclude-pattern
+  type="relative">` element can, and `--basepath=` only changes how paths
+  are *displayed in reports*, confirmed by its own doc-comment, never
+  ignore-matching). `Filters/Filter.php`'s `shouldIgnorePath()`: for an
+  `'absolute'` pattern, the string tested is the file's *raw, full
+  absolute path* — `$this->basedir` (set to the real scan argument) is
+  computed but never consulted for this type. A bare `*/vendor/*` becomes
+  the regex (case-insensitive, zero anchors) via a plain `strtr(['*' =>
+  '.*'])` — a pure, unconstrained substring search over the entire path.
+  Any ancestor directory merely *named* "Vendor" (case-folded) anywhere
+  above the scan root matches it, excluding every file.
+- **`phpmd/phpmd` 2.15.0 + `pdepend/pdepend` 2.16.2 turned out NOT actually
+  vulnerable, as `index.php` invokes it today** — contradicting what the
+  previous round's own empirical tests seemed to show. `Engine::
+  addDirectory()` realpath()s the given directory and that becomes
+  `$rootPath`; `Input/Iterator::getLocalPath()` strips that exact root
+  prefix from each file's path *before* `ExcludePathFilter` ever sees the
+  string, so a `Vendor` ancestor segment sits outside the stripped string
+  entirely and can never match. (The previous round's phpmd failures were
+  most likely cross-attributed from phpcs's output in the same combined
+  test pass, or a transient side effect of chasing the `/tmp` bug fixed in
+  the same session — not re-litigated further since the fix below is
+  applied to both tools anyway, for defense-in-depth and to keep their
+  exclude logic parallel/auditable.)
+- **Fix** (`php-analyzer/public/index.php`, both `run_phpmd()` and
+  `run_phpcs()`): anchor the exclude pattern to the real, already-
+  `realpath()`'d `$modulePath` the function already has, instead of a bare
+  wildcard -- `'vendor/*'` → `$modulePath . '/vendor/*'` for phpmd;
+  `'--ignore=*/vendor/*,*/Test/*'` → `'--ignore=' . $modulePath .
+  '/vendor/*,' . $modulePath . '/Test/*'` for phpcs (dropped the extra
+  leading wildcard for `Test/` too — Magento's own convention always puts
+  a module's `Test/` directory directly at its root, the same assumption
+  `php_analyzer_client.py`'s own phpstan `excludePaths` already makes).
+  A match can now only ever occur for a genuine `vendor/`/`Test/`
+  directory physically inside the scanned module, never an ancestor
+  segment above it -- zero behavior change for any real, legitimate
+  exclusion case.
+- **`Vendor_QualityChecks` renamed back from `Acme_QualityChecks`** now
+  that the real bug is fixed -- restores naming consistency with its
+  siblings and turns into a better regression test than the `Acme_`
+  version ever was (a future regression in this exact anchoring would make
+  it go quiet again, which is exactly the scenario being guarded against).
+- **Verified against the real container, not assumed**: deleted the
+  fixture's module rows from a stale local DB first (left over from this
+  same session's earlier `Acme_`/`Vendor_` rename, which was silently
+  masking the real fix behind the orchestrator's own "unchanged file hash,
+  skip recompute" logic -- a real, if self-inflicted, local-verification
+  trap, not a production concern since a real CI run always starts from a
+  fresh database), then a clean rescan: `Vendor_QualityChecks` now shows
+  all 10 of its designed check_types with exact counts matching
+  `quality-checks.spec.ts`'s own assertions (`phpcs_violation` 7,
+  `phpmd_issue` 4, etc.), `demo-store`'s `Vendor_Module` still shows zero
+  phpmd/phpcs findings (genuinely clean code, not a new false positive),
+  and `conflict-store`'s `ConflictA`/`ConflictB` picked up real,
+  previously-invisible `phpmd_issue`/`phpcs_violation` findings of their
+  own now that the tools actually run on them too. Full Playwright (29/29)
+  and full backend pytest (704) green afterward; `.env` restored and
+  diffed byte-for-byte again before anything else.
+
+**Phase 20: cross-module conflict detection round 4 -- indexer.xml/mview.xml
+(recorded 2026-11-12):** next item in the CLAUDE.md roadmap after Phase 19,
+done "po kolei" the same session. Same exact pattern as every prior round
+in this family (`webapi_conflicts.py`'s exact-duplicate-key shape): two
+modules declaring the same `indexer.xml` `<indexer id="...">` or the same
+`mview.xml` `<view id="...">` hit the identical declarative-merge silent-
+override risk already covered for `di.xml` preferences/`db_schema.xml`
+columns/`acl.xml` resources.
+
+- Neither `indexer.xml` nor `mview.xml` has a real example anywhere in this
+  repo to verify against (unlike acl.xml/webapi.xml, which this project's
+  own fixtures already exercised) -- schema confirmed via web search
+  against real Magento core documentation/examples instead, then verified
+  working end-to-end against synthetic fixture XML in the orchestrator
+  integration tests (the same "verify directly" discipline this project
+  applies everywhere, just via a different source since no local Magento
+  checkout exists here).
+- **Two separate tables (`module_indexers`, `module_mviews`), not CLAUDE.md's
+  own roadmap-note shorthand of a single "module_indexers" table for
+  both** -- `indexer.xml` and `mview.xml` facts have different attribute
+  shapes (`indexer_id`/`view_id`/`class` vs `view_id`/`class`/`group`), and
+  this codebase's own convention is one table per distinct fact shape
+  (`DbTable`/`DbColumn`, `CronJob`, `GraphQlField`, `AclResource` are all
+  separate too) -- the roadmap note was shorthand written before scoping
+  this phase properly, not a binding design decision.
+- `mview.xml`'s `group` attribute is stored as `group_name` on
+  `ModuleMview`, not `group` -- a reserved SQL word, same reason other
+  columns in this schema avoid bare reserved words.
+- Extended the existing `conflict-store` fixture (`Vendor_ConflictA`/
+  `Vendor_ConflictB`) with colliding `indexer.xml`/`mview.xml` declarations
+  rather than building a new fixture -- purely additive new files on
+  already-proven, already-committed modules, zero risk to anything
+  already passing. The `mview.xml` subscribes to `conflict_sample_table`,
+  the same table each module already declares in its own `db_schema.xml`
+  from Phase 19's round, for a touch of realism.
+- Lighter verification than the last two rounds: this phase is pure
+  lxml/SQL with no php-analyzer/static-analysis involvement, so the full
+  `.env`-swap/real-docker-stack dance wasn't needed -- local `db`/`redis`
+  plus the full backend pytest suite (724 passed, up from 704) and
+  frontend vitest (229 passed) were sufficient, the same lighter path
+  Phase 19 itself originally used before the two e2e-coverage rounds
+  introduced the heavier real-stack discipline for php-analyzer-dependent
+  checks specifically.
+
+**Phase 21: semantic duplicate detection + a module comparison page
+(recorded 2026-11-12):** last item in the roadmap, done "po kolei" the
+same session as every phase before it. Two research passes (Explore
+agents, one per side) before writing anything, since this touches both a
+new backend query shape (pgvector cosine similarity over an *existing*
+table, not a new scan) and new frontend pages — confirmed two real
+simplifications this session's earlier assumption didn't anticipate:
+
+- **No new "compare" backend endpoint at all.** `GET /modules/{id}`
+  (`ModuleDetail`) already returns every field the compare page needs
+  (tags, `finding_counts`, `dependencies`) — the compare page just fetches
+  it twice (`useQuery(["module", a], ...)` / `useQuery(["module", b],
+  ...)`), the *same* queryKey `ModuleDetailClient.tsx`'s own `moduleQuery`
+  already uses, so arriving at compare from a module page (or from the new
+  "Similar modules" card) that's already cached is an instant hit, no
+  extra network round trip. Only one genuinely new endpoint was needed:
+  `GET /modules/{id}/similar`.
+- **The one new query** (`app/search/similar_modules.py`): a self-join CTE
+  against `chunks` using the exact same `<=>` pgvector cosine-distance
+  operator `hybrid.py`'s own semantic signal already uses (raw SQL via
+  `text()`, not the SQLAlchemy `.cosine_distance()` comparator — this
+  codebase doesn't use that API anywhere) — but simpler than
+  `hybrid_search`, since both vectors being compared are *already stored*
+  columns, so no query-embedding computation/string-formatting step is
+  needed at all. `chunk_type = 'module'` (confirmed exactly one such row
+  per module, written once per `embed_chunks` regeneration) is the stable
+  "module embedding" to compare. Deliberately fleet-wide, not scoped to
+  one `repo_root` -- unlike cross-module conflict detection, which must
+  stay per-store to match Magento's own per-store declarative-merge
+  semantics, "do we have two modules doing the same third-party
+  integration" is a genuinely cross-repo question (Phase 11's own
+  framing). `min_similarity=0.5` is an explicit, documented judgment-call
+  default (same epistemic honesty as `LICENSE_RISK_PREFIXES`'s own "this
+  project's own opinion" comment), not fetched from settings.
+- **A real test-isolation trap found and fixed while writing
+  `test_similar_modules.py`**: this project's own `db_session` fixture
+  (`tests/conftest.py`) never rolls back between tests -- every committed
+  row from every earlier test in the same pytest run is still real,
+  queryable data. Existing tests get away with this via unique
+  names/repo_roots per test (`uuid.uuid4().hex[:8]` suffixes), but nothing
+  before this needed per-test-*unique embedding vectors* too — a fleet-
+  wide, non-repo-scoped query is exactly the first case where that matters:
+  the first draft's tests all used the literal same one-hot vector
+  (dimension 0) as "the identical/close vector," and once more than one
+  test ran in the same session, each test's own "exact duplicate" started
+  colliding with every other test's "exact duplicate" too, polluting
+  results both ways (confirmed directly -- two tests failed with the
+  *other* test's own leftover modules showing up as false matches). Fixed
+  by deriving each test's own cluster of vectors from its own
+  `uuid.uuid4()` suffix (`_base_dim()`), making different tests'
+  vector clusters orthogonal to each other by construction.
+- **No structured "integrations" field exists yet** (per the roadmap's own
+  "tags, integrations, findings, dependencies" framing) — it's still only
+  free text inside the AI-written README's own `## Integrations` section.
+  Rather than scrape that out of markdown a second time just to populate
+  one compare-page column, the compare page covers the three fields that
+  *are* structured (tags/findings/dependencies) and links each column to
+  its own full module page ("View full module →") for anything not shown
+  side by side — an honest scope trim, not a silent gap.
+- **"Similar modules" needed no embeddings in e2e, by design, and that's
+  fine** — no e2e fixture has an LLM/embedding key configured (same
+  constraint `module-detail.spec.ts` already documents for the AI-doc
+  pending state), so nothing in the whole e2e fleet is ever embedded.
+  Rather than invent a synthetic-vector seeding mechanism with no
+  production equivalent (considered and rejected -- unlike
+  `packagist_cache` seeding, which mirrors a real production code path, a
+  hand-rolled pseudo-embedding generator would be pure test-infra
+  invented from whole cloth), the empty state is asserted for real
+  instead — the similarity *ranking logic itself* is already fully
+  verified for real at the pytest layer (`test_similar_modules.py`,
+  inserting real `Chunk` rows with controlled vectors, no AI call needed
+  there, same as every other backend test). The **compare page**, by
+  contrast, needs no embeddings at all and got full, real e2e coverage
+  (`module-compare.spec.ts`) against `conflict-store`'s already-rich
+  `Vendor_ConflictA`/`Vendor_ConflictB` fixtures.
+- Verified like the php-analyzer rounds, not the lighter Phase 20 path —
+  this one touches real frontend pages and a new route, so the full
+  `.env`-swap/real-docker-stack dance ran again: full Playwright (31/31,
+  up from 29) and full backend pytest (733 passed, up from 724) green
+  before committing.
+
+**Second feature-search round this session (recorded 2026-11-12):** with
+the roadmap itself fully closed after Phase 21, this round found three
+grounded gaps by auditing what the *last* round's own work hadn't fully
+wired up, rather than inventing new scope — grepping for whether
+`find_similar_modules` had ever reached the agent (it hadn't), checking
+whether Phase 21's "Similar modules" had a fleet-wide equivalent to
+`GET /modules/overlap` (it didn't), and re-reading this log's own
+"known gap" notes for anything still genuinely open (the stale-types gap
+above was still open). Three independent, small changes, three commits:
+
+- **`find_similar_modules` agent tool** (`backend/app/agent/tools.py`):
+  a thin dict-returning wrapper around the existing
+  `app.search.similar_modules.find_similar_modules` — imported under a
+  `_find_similar_modules` alias specifically to avoid shadowing the new
+  tool function's own name, since every other tool function in this file
+  already shares its exact name with its `TOOL_SCHEMAS` entry and this
+  one needed to follow suit. No new query, no new scanning risk — purely
+  wiring already-built logic into `TOOL_FUNCTIONS`/`TOOL_SCHEMAS`, plus a
+  CLAUDE.md update to both the **Agent tools** list and the **Question
+  routing** table (both "settled, always-relevant" per CLAUDE.md's own
+  working-method rule, so they needed updating in the same commit, not
+  left for the decision log alone).
+- **Fleet-wide "possible duplicate modules" view**
+  (`backend/app/search/similar_modules.py`'s new
+  `find_duplicate_module_pairs`, `GET /modules/duplicate-pairs`,
+  `frontend/app/repos/page.tsx`): the self-join query is almost identical
+  to `find_similar_modules`'s own CTE, just without the `target` CTE
+  anchoring it to one `module_id` — `c2.module_id > c1.module_id` in the
+  join condition does the same job the original's `c.module_id !=
+  target.module_id` did, while also ruling out mirrored (B,A) duplicates
+  of the same pair a strict inequality alone wouldn't. Deliberately
+  placed as a **third section on the Repos page**, not a Stats-page KPI
+  tile — the Stats page's whole `KPI_TILES` structure
+  (`frontend/app/stats/page.tsx`) is keyed by `ModuleQualityFinding.check_type`
+  counts, and a cross-module pairwise relationship from embeddings simply
+  isn't that shape. The Repos page already had the right sibling slot:
+  `GET /modules/overlap`'s "Shared across stores" table solves a
+  different-looking but conceptually adjacent problem (the exact same
+  module name reused across `repo_root`s) in the exact same table-plus-
+  empty-state layout this new section copies. Route had to be declared
+  before `GET /modules/{module_id}` in `modules.py`, same ordering
+  constraint `GET /modules/overlap` itself already required (FastAPI
+  matches a static two-segment path against a dynamic one in declaration
+  order). e2e coverage inherits the same honest split Phase 21 already
+  established for "Similar modules": no e2e fixture ever gets a real
+  LLM/embedding key, so `frontend/tests/e2e/repos.spec.ts` can only prove
+  the graceful empty state for real; the actual threshold/exclusion logic
+  is fully covered at the pytest layer (`test_similar_modules.py`,
+  extended rather than given its own file, since both functions are
+  pairwise-similarity queries over the same table).
+- **CI check for stale `frontend/lib/api-types.ts`**: closes the "known
+  gap" flagged in this same log on 2026-11-08 (see above). Placed inside
+  the existing `e2e-smoke` job in `.github/workflows/ci.yml`, immediately
+  after its "Wait for api and web to be ready" step — that job already
+  brings up a live `api` container on `localhost:8000`, the exact
+  host:port `npm run gen:types` (`frontend/package.json`) already
+  targets, so the fix is two lines (`npm run gen:types` then `git diff
+  --exit-code lib/api-types.ts`) with no new job, service, or secret.
+  Verified for real, not just by reading the YAML: regenerated the types
+  file against the actual locally-running stack, confirmed `git diff`
+  came back clean once the regenerated file was committed, confirming
+  the step as written would genuinely pass.
+- Same `.env`-swap/real-docker-stack verification discipline as every
+  round this session: full Playwright (32/32, up from 31) and full
+  backend pytest (740 passed, up from 733) green, `.env` restored from
+  backup and diffed byte-for-byte before finishing.

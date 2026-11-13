@@ -5,6 +5,7 @@ from collections.abc import AsyncIterator
 from dataclasses import asdict, dataclass, field
 from datetime import UTC, datetime
 from pathlib import Path
+from typing import Any
 
 from sqlalchemy import delete, select, text
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -12,6 +13,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.config import settings
 from app.db import engine
 from app.models import (
+    AclResource,
     ComposerPackageRequirement,
     ConfigField,
     CronJob,
@@ -26,6 +28,8 @@ from app.models import (
     GraphQlField,
     Module,
     ModuleDependency,
+    ModuleIndexer,
+    ModuleMview,
     ModuleQualityFinding,
     PhpClass,
     PhpClassMethod,
@@ -33,6 +37,9 @@ from app.models import (
     WebapiRoute,
 )
 from app.scanner.abandoned_dependencies import check_abandoned_outdated
+from app.scanner.acl_conflicts import AclResourceRow, detect_acl_resource_conflicts
+from app.scanner.acl_xml import parse_acl_xml
+from app.scanner.admin_acl import find_missing_acl
 from app.scanner.alerts import send_quality_alert
 from app.scanner.circular_dependencies import ModuleDependencyRow, detect_circular_dependencies
 from app.scanner.composer_conflicts import ComposerRequirementRow, detect_composer_conflicts
@@ -46,6 +53,7 @@ from app.scanner.deprecated_scanner import scan_deprecated_annotations
 from app.scanner.di_xml import parse_di_xml
 from app.scanner.discovery import find_modules
 from app.scanner.dto import (
+    AclResourceEntry,
     ComposerResult,
     ConfigFieldEntry,
     CronJobEntry,
@@ -55,7 +63,9 @@ from app.scanner.dto import (
     DiXmlResult,
     EventObserverEntry,
     GraphQlFieldEntry,
+    IndexerEntry,
     ModuleXmlResult,
+    MviewEntry,
     PendingAnalysisJob,
     QueueBindingEntry,
     WebapiRouteEntry,
@@ -65,11 +75,15 @@ from app.scanner.graphql_conflicts import GraphQlFieldRow, detect_graphql_field_
 from app.scanner.graphql_schema import parse_graphql_schema
 from app.scanner.hashing import aggregate_hash, compute_module_file_hashes, diff_file_hashes
 from app.scanner.history import write_history_snapshots
+from app.scanner.indexer_conflicts import IndexerRow, detect_indexer_conflicts
+from app.scanner.indexer_xml import parse_indexer_xml
 from app.scanner.installed_versions import parse_installed_versions
 from app.scanner.license_check import check_license_risk
 from app.scanner.magento_upgrade import check_magento_upgrade_readiness
 from app.scanner.module_xml import InvalidModuleXmlError, parse_module_xml
 from app.scanner.multi_store import find_store_roots
+from app.scanner.mview_conflicts import MviewRow, detect_mview_conflicts
+from app.scanner.mview_xml import parse_mview_xml
 from app.scanner.php_analyzer_client import check_php_static_analysis, check_php_unit_tests
 from app.scanner.php_classes import catalog_module_classes
 from app.scanner.plugin_conflicts import PluginRow, detect_plugin_conflicts
@@ -115,6 +129,10 @@ _FILE_HASH_DEPENDENT_CHECK_TYPES = (
     # A module's own Test/Unit/ result is purely a function of its own code,
     # same as every check_php_static_analysis finding above -- same reason.
     "phpunit_failure",
+    # A module's own Controller/Adminhtml classes and their extends/implements/
+    # consts are purely a function of its own PHP files, same reason as
+    # deprecated_annotation/hardcoded_secret above.
+    "missing_acl",
 )
 
 
@@ -164,6 +182,9 @@ class _ParsedModule:
     db_tables: list[DbTableEntry]
     db_columns: list[DbColumnEntry]
     queue_bindings: list[QueueBindingEntry]
+    acl_resources: list[AclResourceEntry]
+    indexers: list[IndexerEntry]
+    mviews: list[MviewEntry]
 
 
 async def scan_repository(repo_root: str, session: AsyncSession) -> ScanResult:
@@ -357,6 +378,9 @@ async def _run_scan(root: Path, session: AsyncSession) -> AsyncIterator[dict]:
                 d.root / "etc" / "queue_topology.xml",
                 d.root / "etc" / "queue_consumer.xml",
             )
+            acl_resources = parse_acl_xml(d.root / "etc" / "acl.xml")
+            indexers = parse_indexer_xml(d.root / "etc" / "indexer.xml")
+            mviews = parse_mview_xml(d.root / "etc" / "mview.xml")
         except OSError as exc:
             # Each parser already checks .is_file() before reading, but a
             # permission error or a race (file removed/replaced between that
@@ -391,6 +415,9 @@ async def _run_scan(root: Path, session: AsyncSession) -> AsyncIterator[dict]:
                 db_tables=db_tables,
                 db_columns=db_columns,
                 queue_bindings=queue_bindings,
+                acl_resources=acl_resources,
+                indexers=indexers,
+                mviews=mviews,
             )
         )
         all_plugin_classes.update(p.plugin_class for p in di.plugins)
@@ -544,6 +571,15 @@ async def _run_scan(root: Path, session: AsyncSession) -> AsyncIterator[dict]:
     # Same reasoning again: needs every scanned module's graphql_fields
     # already committed, recomputes across the whole repo_root.
     await _detect_and_persist_graphql_field_conflicts(session, root)
+    # Same reasoning again: needs every scanned module's acl_resources
+    # already committed, recomputes across the whole repo_root.
+    await _detect_and_persist_acl_resource_conflicts(session, root)
+    # Same reasoning again: needs every scanned module's indexers already
+    # committed, recomputes across the whole repo_root.
+    await _detect_and_persist_indexer_conflicts(session, root)
+    # Same reasoning again: needs every scanned module's mviews already
+    # committed, recomputes across the whole repo_root.
+    await _detect_and_persist_mview_conflicts(session, root)
 
     # Phase 16: module history. Runs last, after every conflict check above,
     # since a module's finding_counts aren't complete until cross-module
@@ -589,25 +625,7 @@ async def _detect_and_persist_plugin_conflicts(session: AsyncSession, root: Path
         class_methods[fqcn].add(method_name)
 
     findings = detect_plugin_conflicts(plugins, class_methods)
-
-    await session.execute(
-        delete(ModuleQualityFinding).where(
-            ModuleQualityFinding.check_type == "plugin_conflict",
-            ModuleQualityFinding.module_id.in_(select(Module.id).where(Module.repo_root == str(root))),
-        )
-    )
-    for module_id, finding in findings:
-        session.add(
-            ModuleQualityFinding(
-                module_id=module_id,
-                check_type=finding.check_type,
-                severity=finding.severity,
-                file_path=finding.file_path,
-                line=finding.line,
-                message=finding.message,
-            )
-        )
-    await session.commit()
+    await _persist_conflict_findings(session, root, "plugin_conflict", findings)
 
 
 async def _detect_and_persist_composer_conflicts(session: AsyncSession, root: Path) -> None:
@@ -626,25 +644,7 @@ async def _detect_and_persist_composer_conflicts(session: AsyncSession, root: Pa
     requirements = [ComposerRequirementRow(*row) for row in requirement_rows]
 
     findings = detect_composer_conflicts(requirements)
-
-    await session.execute(
-        delete(ModuleQualityFinding).where(
-            ModuleQualityFinding.check_type == "composer_conflict",
-            ModuleQualityFinding.module_id.in_(select(Module.id).where(Module.repo_root == str(root))),
-        )
-    )
-    for module_id, finding in findings:
-        session.add(
-            ModuleQualityFinding(
-                module_id=module_id,
-                check_type=finding.check_type,
-                severity=finding.severity,
-                file_path=finding.file_path,
-                line=finding.line,
-                message=finding.message,
-            )
-        )
-    await session.commit()
+    await _persist_conflict_findings(session, root, "composer_conflict", findings)
 
 
 async def _detect_and_persist_webapi_route_conflicts(session: AsyncSession, root: Path) -> None:
@@ -665,10 +665,21 @@ async def _detect_and_persist_webapi_route_conflicts(session: AsyncSession, root
     routes = [WebapiRouteRow(*row) for row in route_rows]
 
     findings = detect_webapi_route_conflicts(routes)
+    await _persist_conflict_findings(session, root, "webapi_route_conflict", findings)
 
+
+async def _persist_conflict_findings(
+    session: AsyncSession, root: Path, check_type: str, findings: list[tuple[int, Any]]
+) -> None:
+    """The persistence tail every cross-module conflict check shares: wipe
+    this check_type's existing findings for `root`, then insert whatever
+    (module_id, QualityFinding) pairs the check's own pure detect function
+    returned. Every _detect_and_persist_* function's own fetch query/row
+    dataclass/detect function differ; this part never does.
+    """
     await session.execute(
         delete(ModuleQualityFinding).where(
-            ModuleQualityFinding.check_type == "webapi_route_conflict",
+            ModuleQualityFinding.check_type == check_type,
             ModuleQualityFinding.module_id.in_(select(Module.id).where(Module.repo_root == str(root))),
         )
     )
@@ -684,6 +695,45 @@ async def _detect_and_persist_webapi_route_conflicts(session: AsyncSession, root
             )
         )
     await session.commit()
+
+
+async def _detect_and_persist_acl_resource_conflicts(session: AsyncSession, root: Path) -> None:
+    resource_rows = (
+        await session.execute(
+            select(AclResource.module_id, Module.name, AclResource.resource_id)
+            .join(Module, Module.id == AclResource.module_id)
+            .where(Module.repo_root == str(root))
+        )
+    ).all()
+    resources = [AclResourceRow(*row) for row in resource_rows]
+    findings = detect_acl_resource_conflicts(resources)
+    await _persist_conflict_findings(session, root, "acl_resource_conflict", findings)
+
+
+async def _detect_and_persist_indexer_conflicts(session: AsyncSession, root: Path) -> None:
+    indexer_rows = (
+        await session.execute(
+            select(ModuleIndexer.module_id, Module.name, ModuleIndexer.indexer_id)
+            .join(Module, Module.id == ModuleIndexer.module_id)
+            .where(Module.repo_root == str(root))
+        )
+    ).all()
+    indexers = [IndexerRow(*row) for row in indexer_rows]
+    findings = detect_indexer_conflicts(indexers)
+    await _persist_conflict_findings(session, root, "indexer_id_conflict", findings)
+
+
+async def _detect_and_persist_mview_conflicts(session: AsyncSession, root: Path) -> None:
+    mview_rows = (
+        await session.execute(
+            select(ModuleMview.module_id, Module.name, ModuleMview.view_id)
+            .join(Module, Module.id == ModuleMview.module_id)
+            .where(Module.repo_root == str(root))
+        )
+    ).all()
+    mviews = [MviewRow(*row) for row in mview_rows]
+    findings = detect_mview_conflicts(mviews)
+    await _persist_conflict_findings(session, root, "view_id_conflict", findings)
 
 
 async def _detect_and_persist_db_schema_conflicts(session: AsyncSession, root: Path) -> None:
@@ -704,25 +754,7 @@ async def _detect_and_persist_db_schema_conflicts(session: AsyncSession, root: P
     columns = [DbColumnRow(*row) for row in column_rows]
 
     findings = detect_db_schema_conflicts(columns)
-
-    await session.execute(
-        delete(ModuleQualityFinding).where(
-            ModuleQualityFinding.check_type == "db_schema_conflict",
-            ModuleQualityFinding.module_id.in_(select(Module.id).where(Module.repo_root == str(root))),
-        )
-    )
-    for module_id, finding in findings:
-        session.add(
-            ModuleQualityFinding(
-                module_id=module_id,
-                check_type=finding.check_type,
-                severity=finding.severity,
-                file_path=finding.file_path,
-                line=finding.line,
-                message=finding.message,
-            )
-        )
-    await session.commit()
+    await _persist_conflict_findings(session, root, "db_schema_conflict", findings)
 
 
 async def _detect_and_persist_circular_dependencies(session: AsyncSession, root: Path) -> None:
@@ -736,25 +768,7 @@ async def _detect_and_persist_circular_dependencies(session: AsyncSession, root:
     deps = [ModuleDependencyRow(*row) for row in dependency_rows]
 
     findings = detect_circular_dependencies(deps)
-
-    await session.execute(
-        delete(ModuleQualityFinding).where(
-            ModuleQualityFinding.check_type == "circular_dependency",
-            ModuleQualityFinding.module_id.in_(select(Module.id).where(Module.repo_root == str(root))),
-        )
-    )
-    for module_id, finding in findings:
-        session.add(
-            ModuleQualityFinding(
-                module_id=module_id,
-                check_type=finding.check_type,
-                severity=finding.severity,
-                file_path=finding.file_path,
-                line=finding.line,
-                message=finding.message,
-            )
-        )
-    await session.commit()
+    await _persist_conflict_findings(session, root, "circular_dependency", findings)
 
 
 async def _detect_and_persist_preference_conflicts(session: AsyncSession, root: Path) -> None:
@@ -768,25 +782,7 @@ async def _detect_and_persist_preference_conflicts(session: AsyncSession, root: 
     preferences = [PreferenceRow(*row) for row in preference_rows]
 
     findings = detect_preference_conflicts(preferences)
-
-    await session.execute(
-        delete(ModuleQualityFinding).where(
-            ModuleQualityFinding.check_type == "preference_conflict",
-            ModuleQualityFinding.module_id.in_(select(Module.id).where(Module.repo_root == str(root))),
-        )
-    )
-    for module_id, finding in findings:
-        session.add(
-            ModuleQualityFinding(
-                module_id=module_id,
-                check_type=finding.check_type,
-                severity=finding.severity,
-                file_path=finding.file_path,
-                line=finding.line,
-                message=finding.message,
-            )
-        )
-    await session.commit()
+    await _persist_conflict_findings(session, root, "preference_conflict", findings)
 
 
 async def _detect_and_persist_cron_job_conflicts(session: AsyncSession, root: Path) -> None:
@@ -800,25 +796,7 @@ async def _detect_and_persist_cron_job_conflicts(session: AsyncSession, root: Pa
     jobs = [CronJobRow(*row) for row in job_rows]
 
     findings = detect_cron_job_conflicts(jobs)
-
-    await session.execute(
-        delete(ModuleQualityFinding).where(
-            ModuleQualityFinding.check_type == "cron_job_conflict",
-            ModuleQualityFinding.module_id.in_(select(Module.id).where(Module.repo_root == str(root))),
-        )
-    )
-    for module_id, finding in findings:
-        session.add(
-            ModuleQualityFinding(
-                module_id=module_id,
-                check_type=finding.check_type,
-                severity=finding.severity,
-                file_path=finding.file_path,
-                line=finding.line,
-                message=finding.message,
-            )
-        )
-    await session.commit()
+    await _persist_conflict_findings(session, root, "cron_job_conflict", findings)
 
 
 async def _detect_and_persist_graphql_field_conflicts(session: AsyncSession, root: Path) -> None:
@@ -839,25 +817,7 @@ async def _detect_and_persist_graphql_field_conflicts(session: AsyncSession, roo
     fields = [GraphQlFieldRow(*row) for row in field_rows]
 
     findings = detect_graphql_field_conflicts(fields)
-
-    await session.execute(
-        delete(ModuleQualityFinding).where(
-            ModuleQualityFinding.check_type == "graphql_field_conflict",
-            ModuleQualityFinding.module_id.in_(select(Module.id).where(Module.repo_root == str(root))),
-        )
-    )
-    for module_id, finding in findings:
-        session.add(
-            ModuleQualityFinding(
-                module_id=module_id,
-                check_type=finding.check_type,
-                severity=finding.severity,
-                file_path=finding.file_path,
-                line=finding.line,
-                message=finding.message,
-            )
-        )
-    await session.commit()
+    await _persist_conflict_findings(session, root, "graphql_field_conflict", findings)
 
 
 _ModuleChildModel = (
@@ -872,6 +832,9 @@ _ModuleChildModel = (
     | type[DbTable]
     | type[DbColumn]
     | type[QueueBinding]
+    | type[AclResource]
+    | type[ModuleIndexer]
+    | type[ModuleMview]
 )
 
 
@@ -1071,6 +1034,9 @@ async def _persist_module(
     await _sync_module_children(session, module.id, DbTable, pm.db_tables)
     await _sync_module_children(session, module.id, DbColumn, pm.db_columns)
     await _sync_module_children(session, module.id, QueueBinding, pm.queue_bindings)
+    await _sync_module_children(session, module.id, AclResource, pm.acl_resources)
+    await _sync_module_children(session, module.id, ModuleIndexer, pm.indexers)
+    await _sync_module_children(session, module.id, ModuleMview, pm.mviews)
 
     classes = catalog_module_classes(pm.discovered.root)
     outcome.classes = len(classes)
@@ -1186,6 +1152,7 @@ async def _persist_module(
             ),
             *scan_deprecated_annotations(pm.discovered.root),
             *scan_hardcoded_secrets(pm.discovered.root),
+            *find_missing_acl(classes),
             *session_findings,
             *php_static_findings,
             *phpunit_findings,

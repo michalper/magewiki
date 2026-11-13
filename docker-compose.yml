@@ -51,7 +51,7 @@ services:
     volumes:
       - ./backend:/app
       - ${MAGEWIKI_ORDO_FIXTURE_PATH:-/dev/null}:${MAGEWIKI_ORDO_FIXTURE_PATH:-/dev/null}:ro
-      - ${MAGEWIKI_MAGENTO_FIXTURE_PATH:-/tmp}:${MAGEWIKI_MAGENTO_FIXTURE_PATH:-/tmp}:ro
+      - ${MAGEWIKI_MAGENTO_FIXTURE_PATH:-/dev/null}:${MAGEWIKI_MAGENTO_FIXTURE_PATH:-/dev/null}:ro
       - ${MAGEWIKI_SCAN_ROOT_1:-/dev/null}:${MAGEWIKI_SCAN_ROOT_1:-/dev/null}:ro
       - ${MAGEWIKI_SCAN_ROOT_2:-/dev/null}:${MAGEWIKI_SCAN_ROOT_2:-/dev/null}:ro
       - ${MAGEWIKI_SCAN_ROOT_3:-/dev/null}:${MAGEWIKI_SCAN_ROOT_3:-/dev/null}:ro
@@ -78,7 +78,7 @@ services:
     volumes:
       - ./backend:/app
       - ${MAGEWIKI_ORDO_FIXTURE_PATH:-/dev/null}:${MAGEWIKI_ORDO_FIXTURE_PATH:-/dev/null}:ro
-      - ${MAGEWIKI_MAGENTO_FIXTURE_PATH:-/tmp}:${MAGEWIKI_MAGENTO_FIXTURE_PATH:-/tmp}:ro
+      - ${MAGEWIKI_MAGENTO_FIXTURE_PATH:-/dev/null}:${MAGEWIKI_MAGENTO_FIXTURE_PATH:-/dev/null}:ro
       - ${MAGEWIKI_SCAN_ROOT_1:-/dev/null}:${MAGEWIKI_SCAN_ROOT_1:-/dev/null}:ro
       - ${MAGEWIKI_SCAN_ROOT_2:-/dev/null}:${MAGEWIKI_SCAN_ROOT_2:-/dev/null}:ro
       - ${MAGEWIKI_SCAN_ROOT_3:-/dev/null}:${MAGEWIKI_SCAN_ROOT_3:-/dev/null}:ro
@@ -101,7 +101,7 @@ services:
     volumes:
       - ./backend:/app:ro
       - ${MAGEWIKI_ORDO_FIXTURE_PATH:-/dev/null}:${MAGEWIKI_ORDO_FIXTURE_PATH:-/dev/null}:ro
-      - ${MAGEWIKI_MAGENTO_FIXTURE_PATH:-/tmp}:${MAGEWIKI_MAGENTO_FIXTURE_PATH:-/tmp}:ro
+      - ${MAGEWIKI_MAGENTO_FIXTURE_PATH:-/dev/null}:${MAGEWIKI_MAGENTO_FIXTURE_PATH:-/dev/null}:ro
       - ${MAGEWIKI_SCAN_ROOT_1:-/dev/null}:${MAGEWIKI_SCAN_ROOT_1:-/dev/null}:ro
       - ${MAGEWIKI_SCAN_ROOT_2:-/dev/null}:${MAGEWIKI_SCAN_ROOT_2:-/dev/null}:ro
       - ${MAGEWIKI_SCAN_ROOT_3:-/dev/null}:${MAGEWIKI_SCAN_ROOT_3:-/dev/null}:ro

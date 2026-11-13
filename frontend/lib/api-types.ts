@@ -197,6 +197,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/modules/duplicate-pairs": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List Duplicate Module Pairs */
+        get: operations["list_duplicate_module_pairs_modules_duplicate_pairs_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/modules/{module_id}": {
         parameters: {
             query?: never;
@@ -255,6 +272,32 @@ export interface paths {
          *     worth the complexity of a single batched multi-module query.
          */
         get: operations["get_module_dependency_graph_modules__module_id__graph_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/modules/{module_id}/similar": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Similar Modules
+         * @description The most semantically similar other modules, fleet-wide (not scoped
+         *     to this module's own repo_root — see find_similar_modules). Returns an
+         *     empty list, not a 404, when the module exists but hasn't been
+         *     analyzed/embedded yet — "no similar modules found" and "not analyzed
+         *     yet" are both legitimately "nothing to show" from this endpoint's
+         *     perspective; the module detail page's own "not enough analyzed modules
+         *     yet" empty state covers either case identically.
+         */
+        get: operations["get_similar_modules_modules__module_id__similar_get"];
         put?: never;
         post?: never;
         delete?: never;
@@ -450,6 +493,29 @@ export interface components {
             name: string;
             /** Virtual Type */
             virtual_type: string;
+        };
+        /**
+         * DuplicateModulePairEntry
+         * @description Phase 22: a fleet-wide pair of modules whose module-level embeddings
+         *     are close but aren't the same vendor/package -- the same relationship
+         *     GET /modules/{id}/similar surfaces one module at a time, computed for
+         *     the whole fleet at once. See app/search/similar_modules.py.
+         */
+        DuplicateModulePairEntry: {
+            /** Module A Id */
+            module_a_id: number;
+            /** Module A Name */
+            module_a_name: string;
+            /** Module A Composer Name */
+            module_a_composer_name: string | null;
+            /** Module B Id */
+            module_b_id: number;
+            /** Module B Name */
+            module_b_name: string;
+            /** Module B Composer Name */
+            module_b_composer_name: string | null;
+            /** Similarity */
+            similarity: number;
         };
         /** EventObserverSummary */
         EventObserverSummary: {
@@ -963,6 +1029,23 @@ export interface components {
             /** Identifier Rank */
             identifier_rank: number | null;
         };
+        /**
+         * SimilarModuleEntry
+         * @description Phase 21: a module whose own 'module'-level embedding is close to the
+         *     requested module's, surfaced as a likely-redundant integration — see
+         *     app/search/similar_modules.py for the cosine-similarity query and the
+         *     same-vendor/package exclusion.
+         */
+        SimilarModuleEntry: {
+            /** Module Id */
+            module_id: number;
+            /** Name */
+            name: string;
+            /** Composer Name */
+            composer_name: string | null;
+            /** Similarity */
+            similarity: number;
+        };
         /** ValidationError */
         ValidationError: {
             /** Location */
@@ -1222,6 +1305,37 @@ export interface operations {
             };
         };
     };
+    list_duplicate_module_pairs_modules_duplicate_pairs_get: {
+        parameters: {
+            query?: {
+                limit?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DuplicateModulePairEntry"][];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     get_module_modules__module_id__get: {
         parameters: {
             query?: never;
@@ -1304,6 +1418,39 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["DependencyGraphResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_similar_modules_modules__module_id__similar_get: {
+        parameters: {
+            query?: {
+                limit?: number;
+            };
+            header?: never;
+            path: {
+                module_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SimilarModuleEntry"][];
                 };
             };
             /** @description Validation Error */

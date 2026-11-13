@@ -21,7 +21,7 @@ from app.models import (
     QueueBinding,
     WebapiRoute,
 )
-from app.scanner.dto import QualityFinding
+from app.scanner.dto import QualityFinding, TestExecutionResult
 from app.scanner.orchestrator import scan_repository
 from tests.conftest import delete_module_if_present
 
@@ -315,6 +315,35 @@ async def test_scan_repository_preserves_phpmetrics_findings_on_a_no_op_rescan(
         )
     ).all()
     assert len(findings_after_rescan) == 1
+
+
+@pytest.mark.asyncio
+async def test_scan_repository_records_real_phpunit_results_when_executed(
+    demo_store_path: Path, db_session, monkeypatch
+):
+    """Every other test here only ever sees check_php_unit_tests' own
+    executed=False case (no real vendor/bin/phpunit in these fixtures) --
+    this covers the executed=True branch that actually copies tests_run/
+    tests_failed/coverage_percent onto the module, normally only exercised
+    end-to-end via the real php-analyzer sidecar (Vendor_PhpunitSample, see
+    quality-checks.spec.ts).
+    """
+    repo_root = str(demo_store_path.resolve())
+    await delete_module_if_present(db_session, repo_root, "Vendor_Module")
+
+    async def fake_php_unit(*args, **kwargs):
+        return TestExecutionResult(executed=True, tests_run=5, tests_failed=1, coverage_percent=80.0), []
+
+    monkeypatch.setattr("app.scanner.orchestrator.check_php_unit_tests", fake_php_unit)
+
+    await scan_repository(repo_root, db_session)
+
+    module = await db_session.scalar(
+        select(Module).where(Module.repo_root == repo_root, Module.name == "Vendor_Module")
+    )
+    assert module.phpunit_tests_run == 5
+    assert module.phpunit_tests_failed == 1
+    assert module.phpunit_coverage_percent == 80.0
 
 
 @pytest.mark.asyncio

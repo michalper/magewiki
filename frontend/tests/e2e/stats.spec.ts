@@ -23,15 +23,18 @@ test("KPI tiles show real, non-zero counts from the seeded scan", async ({ page 
   await expect(page.getByText("Top modules by quality findings")).toBeVisible();
   await expect(page.getByText("Vendor_Module").first()).toBeVisible();
 
-  // The fixture module genuinely has no README/tests/AI doc -- real,
-  // deterministic 0% on all three, proving the percentage math itself runs
-  // (not just that the tile renders).
+  // No fixture module ships a README or an AI-generated doc -- real,
+  // deterministic 0% on both, proving the percentage math itself runs (not
+  // just that the tile renders).
   const readmeTile = page.locator(".rounded-2xl.bg-card", { hasText: "Have a README" });
   await expect(readmeTile.getByText("0%")).toBeVisible();
-  const testsTile = page.locator(".rounded-2xl.bg-card", { hasText: "Have tests" });
-  await expect(testsTile.getByText("0%")).toBeVisible();
   const aiDocTile = page.locator(".rounded-2xl.bg-card", { hasText: "Have an AI-generated doc" });
   await expect(aiDocTile.getByText("0%")).toBeVisible();
+  // "Have tests" is no longer 0% once conflict-store's Vendor_PhpunitSample
+  // (a real Test/Unit dir, for phpunit_failure e2e coverage) joins the
+  // fleet -- a real, nonzero percentage now, not a permanent zero-state.
+  const testsTile = page.locator(".rounded-2xl.bg-card", { hasText: "Have tests" });
+  await expect(testsTile.getByText(/\d+%/)).toBeVisible();
 });
 
 test("a KPI tile's info tooltip reveals its real description on hover", async ({ page }) => {

@@ -1,0 +1,15 @@
+{
+    "name": "vendor/phpunit-sample",
+    "description": "e2e fixture module -- a real, deliberately failing PHPUnit test run by the real php-analyzer sandbox. Split out from Vendor_QualityChecks because a committed vendor/bin/phpunit at a module's root breaks phpmd/phpcs's own directory-level file discovery for every other file in the same module, even with their vendor/ exclude patterns -- see the decision log.",
+    "type": "magento2-module",
+    "license": ["MIT"],
+    "require": {
+        "php": ">=8.2"
+    },
+    "autoload": {
+        "files": ["registration.php"],
+        "psr-4": {
+            "Vendor\\PhpunitSample\\": ""
+        }
+    }
+}

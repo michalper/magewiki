@@ -4,9 +4,17 @@ import pytest
 from sqlalchemy import select, update
 
 from app import cli
-from app.cli import _run_resume_budget, _run_resume_failed, _run_resume_stuck, _run_scan, main
+from app.cli import (
+    _run_resume_budget,
+    _run_resume_failed,
+    _run_resume_stuck,
+    _run_scan,
+    _run_seed_packagist_cache,
+    main,
+)
 from app.models import FileHash, Module
 from app.scanner.orchestrator import ScanAlreadyInProgressError, scan_repository
+from app.scanner.packagist_cache import get_cached
 from app.tasks.queue import get_arq_pool
 from tests.conftest import delete_module_if_present
 
@@ -186,6 +194,18 @@ async def test_run_resume_stuck_filters_by_repo_root(demo_store_path: Path, db_s
     assert f"synthesize:{module.id}:{module.current_hash}" in queued_ids
 
 
+@pytest.mark.asyncio
+async def test_run_seed_packagist_cache_writes_a_real_row(db_session, capsys):
+    exit_code = await _run_seed_packagist_cache(
+        "advisories:vendor/fake-pkg", '{"advisories": {"vendor/fake-pkg": []}}'
+    )
+
+    assert exit_code == 0
+    assert "Seeded packagist_cache[advisories:vendor/fake-pkg]" in capsys.readouterr().out
+    cached = await get_cached(db_session, "advisories:vendor/fake-pkg")
+    assert cached == {"advisories": {"vendor/fake-pkg": []}}
+
+
 def test_main_dispatches_scan(monkeypatch):
     seen = {}
 
@@ -249,6 +269,21 @@ def test_main_dispatches_resume_stuck(monkeypatch):
 
     assert main(["resume-stuck"]) == 0
     assert seen["called"] is True
+
+
+def test_main_dispatches_seed_packagist_cache(monkeypatch):
+    seen = {}
+
+    async def _fake(cache_key, response_json):
+        seen["cache_key"] = cache_key
+        seen["response_json"] = response_json
+        return 0
+
+    monkeypatch.setattr(cli, "_run_seed_packagist_cache", _fake)
+
+    assert main(["seed-packagist-cache", "advisories:vendor/pkg", '{"advisories": {}}']) == 0
+    assert seen["cache_key"] == "advisories:vendor/pkg"
+    assert seen["response_json"] == '{"advisories": {}}'
 
 
 def test_main_requires_a_subcommand():

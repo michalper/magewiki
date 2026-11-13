@@ -1,6 +1,7 @@
 from pathlib import Path
 
-from app.scanner.php_classes import catalog_module_classes, parse_php_file
+from app.scanner.php_classes import _string_literal_value, catalog_module_classes, parse_php_file
+from app.scanner.php_parser import find_all, parse_php
 
 
 def test_catalog_module_classes(demo_module_path: Path):
@@ -78,3 +79,57 @@ def test_parse_php_file_captures_a_class_extends_clause(tmp_path: Path):
 
     assert len(entries) == 1
     assert entries[0].extends == ["ParentClass"]
+
+
+def test_parse_php_file_captures_simple_string_const_declarations(tmp_path: Path):
+    path = tmp_path / "Foo.php"
+    path.write_text(
+        "<?php\n"
+        "class Foo {\n"
+        "    const ADMIN_RESOURCE = 'Vendor_Module::foo';\n"
+        "    const EMPTY = '';\n"
+        "    const NOT_A_STRING = 1;\n"
+        "    const NOT_RESOLVABLE = self::ADMIN_RESOURCE;\n"
+        "}\n"
+    )
+
+    entries = parse_php_file(path, "Foo.php")
+
+    assert len(entries) == 1
+    assert entries[0].consts == {"ADMIN_RESOURCE": "Vendor_Module::foo", "EMPTY": ""}
+
+
+def test_string_literal_value_returns_none_for_a_non_string_node():
+    # _extract_consts's own value_node search already filters for
+    # type in ("string", "encapsed_string") before ever calling this, so a
+    # non-string node never reaches _string_literal_value through that path
+    # -- this exercises its own documented contract directly, as the
+    # general-purpose helper its docstring describes it as.
+    source = b"<?php\nconst FOO = 1;\n"
+    tree = parse_php(source)
+    (integer_node,) = find_all(tree.root_node, {"integer"})
+
+    assert _string_literal_value(integer_node, source) is None
+
+
+def test_string_literal_value_returns_none_for_a_string_with_an_escape_sequence():
+    # An escape sequence inside an encapsed_string splits it into more than
+    # one string_content child (confirmed empirically: `"Hello\n World"`
+    # parses as ['"', 'string_content', 'escape_sequence', 'string_content',
+    # '"']) -- not a plain literal this function can resolve, same
+    # "unresolvable without evaluating an expression" case as interpolation.
+    source = b'<?php\nconst FOO = "Hello\\n World";\n'
+    tree = parse_php(source)
+    (string_node,) = find_all(tree.root_node, {"encapsed_string"})
+
+    assert _string_literal_value(string_node, source) is None
+
+
+def test_parse_php_file_captures_abstract_modifier(tmp_path: Path):
+    path = tmp_path / "Foo.php"
+    path.write_text("<?php\nabstract class Foo {}\nclass Bar {}\n")
+
+    entries = {e.class_name: e for e in parse_php_file(path, "Foo.php")}
+
+    assert entries["Foo"].is_abstract is True
+    assert entries["Bar"].is_abstract is False

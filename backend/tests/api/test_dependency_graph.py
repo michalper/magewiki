@@ -238,6 +238,48 @@ async def test_graph_depth_does_not_loop_forever_on_a_cycle(db_session):
 
 
 @pytest.mark.asyncio
+async def test_graph_truncates_a_pathologically_wide_dependency_tree(db_session):
+    """_MAX_GRAPH_NODES (120) caps a graph that would otherwise render a
+    real fleet's full transitive tree -- this is checked in two places: at
+    the top of each new BFS round (frontier already over the cap) and
+    mid-round, partway through expanding the current round's own frontier
+    members. center -> 5 mids -> 30 leaves each (150 leaves total) is wide
+    enough to cross the cap partway through round 2's 5 mids (nodes: 6,
+    36, 66, 96, 126 -- crossing 120 before the 5th mid is ever expanded,
+    deterministically regardless of iteration order since every mid
+    contributes the same 30), and again at the very start of round 3 with
+    nodes already over the cap.
+    """
+    suffix = uuid.uuid4().hex[:8]
+    center = await _make_module(db_session, suffix, f"Center_{suffix}")
+    mids = [await _make_module(db_session, f"{suffix}-m{i}", f"Mid_{i}_{suffix}") for i in range(5)]
+    db_session.add_all([ModuleDependency(module_id=center.id, depends_on_name=mid.name) for mid in mids])
+
+    leaves = []
+    leaf_deps = []
+    for i, mid in enumerate(mids):
+        for j in range(30):
+            leaf = await _make_module(db_session, f"{suffix}-m{i}-l{j}", f"Leaf_{i}_{j}_{suffix}")
+            leaves.append(leaf)
+            leaf_deps.append(ModuleDependency(module_id=mid.id, depends_on_name=leaf.name))
+    db_session.add_all(leaf_deps)
+    await db_session.commit()
+
+    transport = ASGITransport(app=app)
+    async with AsyncClient(transport=transport, base_url="http://test") as client:
+        response = await client.get(f"/modules/{center.id}/graph", params={"depth": 3})
+
+    body = response.json()
+    assert response.status_code == 200
+    assert body["truncated"] is True
+    assert len(body["nodes"]) < 1 + len(mids) + len(leaves)  # fewer than the full, untruncated tree
+
+    all_ids = [center.id, *[m.id for m in mids], *[leaf.id for leaf in leaves]]
+    await db_session.execute(delete(Module).where(Module.id.in_(all_ids)))
+    await db_session.commit()
+
+
+@pytest.mark.asyncio
 async def test_graph_rejects_an_out_of_range_depth(graph_fixture):
     modules, _ = graph_fixture
     center = modules["center"]

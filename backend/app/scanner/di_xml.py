@@ -1,17 +1,12 @@
 from pathlib import Path
 
-from lxml import etree
-
 from app.scanner.dto import DiPluginEntry, DiPreferenceEntry, DiVirtualTypeEntry, DiXmlResult
+from app.scanner.xml_parse_utils import parse_xml_root
 
 
 def parse_di_xml(path: Path) -> DiXmlResult:
-    if not path.is_file():
-        return DiXmlResult()
-
-    try:
-        root = etree.parse(str(path)).getroot()
-    except etree.XMLSyntaxError:
+    root = parse_xml_root(path)
+    if root is None:
         return DiXmlResult()
 
     preferences = [

@@ -9,6 +9,7 @@ from sqlalchemy import delete, update
 from app.agent.tools import (
     find_by_class,
     find_by_event,
+    find_similar_modules,
     get_dependencies,
     get_module,
     list_modules,
@@ -317,6 +318,72 @@ async def test_get_dependencies_used_by(db_session):
 async def test_get_dependencies_not_found(db_session):
     result = await get_dependencies(db_session, module_id=999999999)
     assert result == {"found": False}
+
+
+def _base_dim(suffix: str) -> int:
+    # Same per-test-unique-dimension reasoning as
+    # tests/search/test_similar_modules.py's own helper: find_similar_modules
+    # is fleet-wide and db_session never rolls back between tests, so a
+    # fixed dimension would make this test's vectors collide with every
+    # other similarity test's in the same pytest run.
+    return int(suffix, 16) % 1500
+
+
+@pytest.mark.asyncio
+async def test_find_similar_modules_tool_returns_a_real_match(db_session):
+    suffix = uuid.uuid4().hex[:8]
+    base = _base_dim(suffix)
+    target = await _make_bare_module(db_session, f"{suffix}-target", name=f"Target_{suffix}")
+    close = await _make_bare_module(db_session, f"{suffix}-close", name=f"Close_{suffix}")
+
+    db_session.add(
+        Chunk(
+            module_id=target.id,
+            chunk_type="module",
+            content_hash=f"module-chunk-{target.id}",
+            text="module summary",
+            embedding=_vector({base: 1.0}),
+        )
+    )
+    db_session.add(
+        Chunk(
+            module_id=close.id,
+            chunk_type="module",
+            content_hash=f"module-chunk-{close.id}",
+            text="module summary",
+            embedding=_vector({base: 0.99, base + 1: 0.01}),
+        )
+    )
+    await db_session.commit()
+
+    result = await find_similar_modules(db_session, module_id=target.id)
+
+    assert result["found"] is True
+    assert result["module_name"] == target.name
+    assert [s["module_id"] for s in result["similar"]] == [close.id]
+    assert result["similar"][0]["similarity"] > 0.9
+
+    await db_session.execute(delete(Module).where(Module.id.in_([target.id, close.id])))
+    await db_session.commit()
+
+
+@pytest.mark.asyncio
+async def test_find_similar_modules_tool_not_found(db_session):
+    result = await find_similar_modules(db_session, module_id=999999999)
+    assert result == {"found": False}
+
+
+@pytest.mark.asyncio
+async def test_find_similar_modules_tool_empty_when_nothing_close_enough(db_session):
+    suffix = uuid.uuid4().hex[:8]
+    target = await _make_bare_module(db_session, f"{suffix}-target", name=f"Target_{suffix}")
+
+    result = await find_similar_modules(db_session, module_id=target.id)
+
+    assert result == {"found": True, "module_name": target.name, "similar": []}
+
+    await db_session.execute(delete(Module).where(Module.id == target.id))
+    await db_session.commit()
 
 
 @pytest.mark.asyncio

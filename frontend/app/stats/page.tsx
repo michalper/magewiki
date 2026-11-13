@@ -119,10 +119,14 @@ const KPI_TILES: {
       "preference_conflict",
       "cron_job_conflict",
       "graphql_field_conflict",
+      "acl_resource_conflict",
+      "indexer_id_conflict",
+      "view_id_conflict",
+      "missing_acl",
     ],
     accent: "warning",
     description:
-      "Two modules silently fighting over the same plugin hook, Composer package version, REST route, database column, di.xml preference, cron job code, or GraphQL field — or a circular module.xml sequence that breaks setup:upgrade outright. Each shows up on every module involved.",
+      "Two modules silently fighting over the same plugin hook, Composer package version, REST route, database column, di.xml preference, cron job code, GraphQL field, ACL resource id, indexer id, or mview id — a circular module.xml sequence that breaks setup:upgrade outright — or an admin controller declared with no ACL resource at all, reachable by any logged-in admin. Each shows up on every module involved.",
   },
   {
     label: "License risks",
@@ -287,7 +291,7 @@ const MOBILE_LABEL_CHARS = 11;
 // names collapse to the same "Magento_…" (same lesson already learned on the
 // module list and the dependency graph) -- keep the tail, where Magento
 // module names actually differ, instead.
-function truncateLabelTail(label: string, maxChars: number): string {
+export function truncateLabelTail(label: string, maxChars: number): string {
   if (label.length <= maxChars) return label;
   return `…${label.slice(-(maxChars - 1))}`;
 }

@@ -38,4 +38,16 @@ describe("QualityBadges", () => {
       expect(screen.getByText(label(1))).toBeInTheDocument();
     }
   });
+
+  it("covers every declared check type's plural label", () => {
+    // The "covers every... label" test above only ever calls label(1) --
+    // every check type whose label pluralizes with a `n === 1 ? "" : "s"`
+    // ternary never had its plural branch exercised. label(2) for every
+    // check type closes that, regardless of which ones actually pluralize.
+    const allTwos = Object.fromEntries(CHECK_TYPES.map((c) => [c.key, 2]));
+    render(<QualityBadges findingCounts={allTwos} />);
+    for (const { label } of CHECK_TYPES) {
+      expect(screen.getByText(label(2))).toBeInTheDocument();
+    }
+  });
 });

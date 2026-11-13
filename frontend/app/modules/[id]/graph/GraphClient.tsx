@@ -119,9 +119,11 @@ function computeCanvas(nodes: GraphNode[], positions: Map<string, { x: number; y
   let minY = Infinity;
   let maxX = -Infinity;
   let maxY = -Infinity;
+  // positions is always built from this exact `nodes` array one entry at a
+  // time (layoutNodes' own simNodes = nodes.map(...)), so every node here
+  // always has a position -- no "missing position" guard needed.
   for (const n of nodes) {
-    const p = positions.get(n.id);
-    if (!p) continue;
+    const p = positions.get(n.id) as { x: number; y: number };
     const r = estimateNodeRadius(n.label);
     minX = Math.min(minX, p.x - r);
     maxX = Math.max(maxX, p.x + r);
@@ -273,8 +275,9 @@ export default function GraphClient({ id }: { id: string }) {
               </svg>
 
               {graphQuery.data.nodes.map((node) => {
-                const pos = positions.get(node.id);
-                if (!pos) return null;
+                // Same guaranteed 1:1 correspondence as computeCanvas's own
+                // positions lookup above -- every node here always has one.
+                const pos = positions.get(node.id) as { x: number; y: number };
                 const left = pos.x + canvas.offsetX;
                 const top = pos.y + canvas.offsetY;
                 const isCenter = node.id === centerId;

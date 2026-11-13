@@ -1,0 +1,16 @@
+{
+    "name": "vendor/conflict-b",
+    "description": "e2e fixture module -- deliberately conflicts with Vendor_ConflictA on every cross-module check",
+    "type": "magento2-module",
+    "license": ["MIT"],
+    "require": {
+        "php": ">=8.1",
+        "vendor/conflict-version-probe": "^7.0"
+    },
+    "autoload": {
+        "files": ["registration.php"],
+        "psr-4": {
+            "Vendor\\ConflictB\\": ""
+        }
+    }
+}

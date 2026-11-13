@@ -47,6 +47,7 @@ from app.scanner.orchestrator import (
     scan_paths,
     scan_paths_events,
 )
+from app.search.similar_modules import find_duplicate_module_pairs, find_similar_modules
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
@@ -617,6 +618,42 @@ async def list_module_overlap(session: AsyncSession = Depends(get_session)) -> l
     return entries
 
 
+class DuplicateModulePairEntry(BaseModel):
+    """Phase 22: a fleet-wide pair of modules whose module-level embeddings
+    are close but aren't the same vendor/package -- the same relationship
+    GET /modules/{id}/similar surfaces one module at a time, computed for
+    the whole fleet at once. See app/search/similar_modules.py.
+    """
+
+    module_a_id: int
+    module_a_name: str
+    module_a_composer_name: str | None
+    module_b_id: int
+    module_b_name: str
+    module_b_composer_name: str | None
+    similarity: float
+
+
+@router.get("/modules/duplicate-pairs", response_model=list[DuplicateModulePairEntry])
+async def list_duplicate_module_pairs(
+    limit: int = Query(50, ge=1, le=200),
+    session: AsyncSession = Depends(get_session),
+) -> list[DuplicateModulePairEntry]:
+    pairs = await find_duplicate_module_pairs(session, limit=limit)
+    return [
+        DuplicateModulePairEntry(
+            module_a_id=p.module_a_id,
+            module_a_name=p.module_a_name,
+            module_a_composer_name=p.module_a_composer_name,
+            module_b_id=p.module_b_id,
+            module_b_name=p.module_b_name,
+            module_b_composer_name=p.module_b_composer_name,
+            similarity=p.similarity,
+        )
+        for p in pairs
+    ]
+
+
 @router.get("/modules/{module_id}", response_model=ModuleDetail)
 async def get_module(module_id: int, session: AsyncSession = Depends(get_session)) -> ModuleDetail:
     module = await session.get(Module, module_id)
@@ -977,6 +1014,46 @@ async def get_module_dependency_graph(
         edges=edges,
         truncated=truncated,
     )
+
+
+class SimilarModuleEntry(BaseModel):
+    """Phase 21: a module whose own 'module'-level embedding is close to the
+    requested module's, surfaced as a likely-redundant integration — see
+    app/search/similar_modules.py for the cosine-similarity query and the
+    same-vendor/package exclusion.
+    """
+
+    module_id: int
+    name: str
+    composer_name: str | None
+    similarity: float
+
+
+@router.get("/modules/{module_id}/similar", response_model=list[SimilarModuleEntry])
+async def get_similar_modules(
+    module_id: int,
+    limit: int = Query(10, ge=1, le=50),
+    session: AsyncSession = Depends(get_session),
+) -> list[SimilarModuleEntry]:
+    """The most semantically similar other modules, fleet-wide (not scoped
+    to this module's own repo_root — see find_similar_modules). Returns an
+    empty list, not a 404, when the module exists but hasn't been
+    analyzed/embedded yet — "no similar modules found" and "not analyzed
+    yet" are both legitimately "nothing to show" from this endpoint's
+    perspective; the module detail page's own "not enough analyzed modules
+    yet" empty state covers either case identically.
+    """
+    module = await session.get(Module, module_id)
+    if module is None:
+        raise HTTPException(status_code=404, detail="module not found")
+
+    similar = await find_similar_modules(session, module_id, limit=limit)
+    return [
+        SimilarModuleEntry(
+            module_id=s.module_id, name=s.name, composer_name=s.composer_name, similarity=s.similarity
+        )
+        for s in similar
+    ]
 
 
 class ModuleHistoryEntry(BaseModel):

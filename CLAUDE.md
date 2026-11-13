@@ -87,7 +87,7 @@ Agentic RAG over hybrid search in Postgres: an agent with tools (tool calling vi
 
 **Multi-level index**: module README (top level) → per-file summaries → code fragments (methods, XML blocks) for citation only. Chunking follows code structure, not character count. Source code for citations lives in the database; `read_file` reads from the database, not disk.
 
-**Agent tools**: `search_modules`, `get_module`, `get_dependencies`, `find_by_event`, `find_by_class`, `read_file(path, lines)`, `list_modules`.
+**Agent tools**: `search_modules`, `get_module`, `get_dependencies`, `find_similar_modules`, `find_by_event`, `find_by_class`, `read_file(path, lines)`, `list_modules`.
 
 **Question routing**:
 
@@ -96,6 +96,7 @@ Agentic RAG over hybrid search in Postgres: an agent with tools (tool calling vi
 | "Do we have a Klaviyo integration?", "how does the module send data?" | Hybrid search + module card + `read_file` |
 | "Show all payment modules", "how many…" | `list_modules` (SQL over tags/integrations/status) with total count and pagination |
 | "Who listens to this event?", "who overrides this class?" | `find_by_event`, `find_by_class` (SQL) |
+| "Do we have two modules doing the same integration?" | `find_similar_modules` (embedding cosine similarity) |
 
 Enumeration questions go through SQL, because top-k retrieval doesn't guarantee completeness by nature.
 
@@ -138,6 +139,9 @@ MVP = Phases 0–5. Each phase is done separately: first a plan for approval, th
 | 16 | Module history: a lightweight per-scan history table + a "what changed" view (new CVEs, upgrade-readiness regressions, finding-count deltas since the last scan or over a chosen window) | A module/repo page can answer "what got better or worse since last month," not just "what's true right now" |
 | 17 | RAG query rewriting, opt-in (mirrors how reranking shipped: a second LLM call, `QUERY_REWRITE_ENABLED` default `false`, budget-gated via the same `analysis_cache`/Prometheus ledger) — the one item CLAUDE.md's own RAG section already named as deferred pending this exact cost decision | Vague/colloquial chat questions retrieve noticeably better without changing the underlying hybrid retriever |
 | 18 | Alerting: a plain webhook POST (`ALERT_WEBHOOK_URL`, empty disables it) fired once per `scan_repository` run when an alert-worthy check_type's finding count (`ALERT_CHECK_TYPES`, default `hardcoded_secret,security_advisory`) goes up for any module since its last scan — reuses Phase 16's `write_history_snapshots()` before/after `finding_counts` comparison, no new query; one summary call per scan, not per module, to avoid spamming whatever it's pointed at. Zero new infrastructure (no SMTP, no Slack SDK) — the payload's top-level `text` field works directly with a bare Slack Incoming Webhook or Google Chat webhook URL | A new secret or CVE on any scanned module fires exactly one webhook POST; a routine rescan with nothing alert-worthy fires none |
+| 19 | Cross-module conflict detection, round 3: `acl.xml` admin-ACL facts — a new `acl_resources` table via a new parser, same pattern as Phase 14's structural-fact tables — feeding two checks: a missing-ACL check (an admin route/menu item declared without a bound ACL resource, so any logged-in admin can reach it) and a duplicate-ACL-resource-id conflict (two modules declaring the same resource id; Magento's declarative-config merge lets one silently win, same risk class as the existing `preference_conflict`/`db_schema_conflict` family) | A module with an unprotected admin route or a clashing ACL resource id shows a badge citing the exact file, folded into the "Cross-module conflicts" Stats tile |
+| 20 | Cross-module conflict detection, round 4: `indexer.xml`/`mview.xml` facts (new `module_indexers` table, same parser pattern) and an indexer/mview-id conflict check — two modules declaring the same `indexer_id` or `view_id` hit the same declarative-merge silent-override risk as `di.xml` preferences and `db_schema.xml` columns | Each new check_type shows up as a badge the same way `preference_conflict`/`db_schema_conflict` already do, folded into the same Stats tile |
+| 21 | Semantic duplicate/overlap detection + a module comparison page: reuses Phase 4's existing module-level embeddings (no new scan, no new external call) to surface pairs of modules above a cosine-similarity threshold that aren't the same vendor/package as likely redundant integrations, plus a side-by-side A/B compare view (tags, integrations, findings, dependencies) over data already in the DB | A module page shows its most-similar other modules, and picking two opens a compare view with no new scan or LLM call |
 
 Version 1.0 ships before Phases 7b–9: a finished project with six technologies beats an unfinished one with ten.
 

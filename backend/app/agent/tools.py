@@ -19,6 +19,7 @@ from app.models import (
 from app.search.hybrid import hybrid_search
 from app.search.query_rewrite import rewrite_query
 from app.search.rerank import rerank_results
+from app.search.similar_modules import find_similar_modules as _find_similar_modules
 
 # Reranking needs more raw candidates than the final answer to actually have
 # something to reorder -- asking a hybrid search for exactly `limit` results
@@ -114,6 +115,22 @@ async def get_dependencies(session: AsyncSession, module_id: int) -> dict:
         "module_name": module.name,
         "depends_on": list(depends_on),
         "used_by": list(used_by),
+    }
+
+
+async def find_similar_modules(session: AsyncSession, module_id: int, limit: int = 5) -> dict:
+    module = await session.get(Module, module_id)
+    if module is None:
+        return {"found": False}
+
+    similar = await _find_similar_modules(session, module_id, limit=limit)
+    return {
+        "found": True,
+        "module_name": module.name,
+        "similar": [
+            {"module_id": s.module_id, "name": s.name, "composer_name": s.composer_name, "similarity": s.similarity}
+            for s in similar
+        ],
     }
 
 
@@ -305,6 +322,7 @@ TOOL_FUNCTIONS: dict[str, Callable[..., Awaitable[dict]]] = {
     "search_modules": search_modules,
     "get_module": get_module,
     "get_dependencies": get_dependencies,
+    "find_similar_modules": find_similar_modules,
     "find_by_event": find_by_event,
     "find_by_class": find_by_class,
     "read_file": read_file,
@@ -353,6 +371,27 @@ TOOL_SCHEMAS = [
             "parameters": {
                 "type": "object",
                 "properties": {"module_id": {"type": "integer"}},
+                "required": ["module_id"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "find_similar_modules",
+            "description": (
+                "Find other modules whose stored content is semantically similar to this one -- likely "
+                "redundant/duplicate integrations (e.g. two modules both doing Klaviyo). Fleet-wide, not limited "
+                "to this module's own store; excludes modules from the same vendor/package. Returns found=false "
+                "if the module doesn't exist, and an empty list if it hasn't been analyzed/embedded yet or "
+                "nothing is similar enough."
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "module_id": {"type": "integer"},
+                    "limit": {"type": "integer", "description": "Max results, default 5"},
+                },
                 "required": ["module_id"],
             },
         },
@@ -414,8 +453,10 @@ TOOL_SCHEMAS = [
                 "security_advisory (known CVEs), abandoned_dependency, outdated_dependency, phpstan_error, "
                 "phpmd_issue, phpcs_violation, php_compat_issue, magento_php_incompatible, magento_version_blocker, "
                 "plugin_conflict, phpmetrics_issue, composer_conflict, webapi_route_conflict, db_schema_conflict, "
-                "circular_dependency, license_risk, phpunit_failure. When check_type is set, each returned module "
-                "also has a finding_count for that specific check_type."
+                "circular_dependency, license_risk, phpunit_failure, preference_conflict, cron_job_conflict, "
+                "graphql_field_conflict, acl_resource_conflict, missing_acl, indexer_id_conflict, "
+                "view_id_conflict. When check_type is set, each "
+                "returned module also has a finding_count for that specific check_type."
             ),
             "parameters": {
                 "type": "object",
