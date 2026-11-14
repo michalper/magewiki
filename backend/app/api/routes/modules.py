@@ -21,6 +21,7 @@ from app.api.sse import format_sse
 from app.config import settings
 from app.db import get_session
 from app.models import (
+    AclResource,
     ComposerPackageRequirement,
     ConfigField,
     CronJob,
@@ -31,10 +32,16 @@ from app.models import (
     EventObserver,
     GraphQlField,
     Module,
+    ModuleCacheType,
     ModuleDependency,
     ModuleDocument,
     ModuleHistorySnapshot,
+    ModuleIndexer,
+    ModuleMenuItem,
+    ModuleMview,
     ModuleQualityFinding,
+    ModuleRoute,
+    ModuleWidget,
     PhpClass,
     PhpClassMethod,
     QueueBinding,
@@ -211,6 +218,45 @@ class QueueBindingSummary(BaseModel):
     handler_method: str | None
 
 
+class AclResourceSummary(BaseModel):
+    resource_id: str
+    title: str | None
+    parent_id: str | None
+
+
+class ModuleIndexerSummary(BaseModel):
+    indexer_id: str
+    view_id: str | None
+    class_name: str | None
+
+
+class ModuleMviewSummary(BaseModel):
+    view_id: str
+    class_name: str | None
+    group_name: str | None
+
+
+class ModuleRouteSummary(BaseModel):
+    area: str
+    route_id: str
+    front_name: str
+
+
+class ModuleWidgetSummary(BaseModel):
+    widget_id: str
+    class_name: str
+
+
+class ModuleMenuItemSummary(BaseModel):
+    menu_item_id: str
+    title: str | None
+
+
+class ModuleCacheTypeSummary(BaseModel):
+    cache_type_id: str
+    instance: str | None
+
+
 class QualityFindingResponse(BaseModel):
     check_type: str
     severity: str
@@ -239,6 +285,13 @@ class ModuleDetail(ModuleSummary):
     config_fields: list[ConfigFieldSummary] = []
     db_tables: list[DbTableSummary] = []
     queue_bindings: list[QueueBindingSummary] = []
+    acl_resources: list[AclResourceSummary] = []
+    indexers: list[ModuleIndexerSummary] = []
+    mviews: list[ModuleMviewSummary] = []
+    routes: list[ModuleRouteSummary] = []
+    widgets: list[ModuleWidgetSummary] = []
+    menu_items: list[ModuleMenuItemSummary] = []
+    cache_types: list[ModuleCacheTypeSummary] = []
     quality_findings: list[QualityFindingResponse] = []
 
 
@@ -694,6 +747,21 @@ async def get_module(module_id: int, session: AsyncSession = Depends(get_session
     queue_bindings = (
         await session.scalars(select(QueueBinding).where(QueueBinding.module_id == module_id))
     ).all()
+    acl_resources = (
+        await session.scalars(select(AclResource).where(AclResource.module_id == module_id))
+    ).all()
+    indexers = (
+        await session.scalars(select(ModuleIndexer).where(ModuleIndexer.module_id == module_id))
+    ).all()
+    mviews = (await session.scalars(select(ModuleMview).where(ModuleMview.module_id == module_id))).all()
+    routes = (await session.scalars(select(ModuleRoute).where(ModuleRoute.module_id == module_id))).all()
+    widgets = (await session.scalars(select(ModuleWidget).where(ModuleWidget.module_id == module_id))).all()
+    menu_items = (
+        await session.scalars(select(ModuleMenuItem).where(ModuleMenuItem.module_id == module_id))
+    ).all()
+    cache_types = (
+        await session.scalars(select(ModuleCacheType).where(ModuleCacheType.module_id == module_id))
+    ).all()
     quality_findings = (
         await session.scalars(select(ModuleQualityFinding).where(ModuleQualityFinding.module_id == module_id))
     ).all()
@@ -765,6 +833,13 @@ async def get_module(module_id: int, session: AsyncSession = Depends(get_session
         config_fields=[ConfigFieldSummary.model_validate(cf, from_attributes=True) for cf in config_fields],
         db_tables=[DbTableSummary.model_validate(t, from_attributes=True) for t in db_tables],
         queue_bindings=[QueueBindingSummary.model_validate(qb, from_attributes=True) for qb in queue_bindings],
+        acl_resources=[AclResourceSummary.model_validate(r, from_attributes=True) for r in acl_resources],
+        indexers=[ModuleIndexerSummary.model_validate(i, from_attributes=True) for i in indexers],
+        mviews=[ModuleMviewSummary.model_validate(m, from_attributes=True) for m in mviews],
+        routes=[ModuleRouteSummary.model_validate(r, from_attributes=True) for r in routes],
+        widgets=[ModuleWidgetSummary.model_validate(w, from_attributes=True) for w in widgets],
+        menu_items=[ModuleMenuItemSummary.model_validate(mi, from_attributes=True) for mi in menu_items],
+        cache_types=[ModuleCacheTypeSummary.model_validate(ct, from_attributes=True) for ct in cache_types],
         quality_findings=[
             QualityFindingResponse(
                 check_type=f.check_type, severity=f.severity, file_path=f.file_path, line=f.line, message=f.message

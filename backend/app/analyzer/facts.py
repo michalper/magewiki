@@ -4,6 +4,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models import (
+    AclResource,
     AnalysisCache,
     ConfigField,
     CronJob,
@@ -15,7 +16,13 @@ from app.models import (
     FileAnalysis,
     GraphQlField,
     Module,
+    ModuleCacheType,
     ModuleDependency,
+    ModuleIndexer,
+    ModuleMenuItem,
+    ModuleMview,
+    ModuleRoute,
+    ModuleWidget,
     PhpClass,
     PhpClassMethod,
     QueueBinding,
@@ -66,6 +73,13 @@ class ModuleFacts:
     db_tables: list[tuple[str, str | None, int]] = field(default_factory=list)  # name, comment, column_count
     # topic, destination, consumer_name, handler_class, handler_method
     queue_bindings: list[tuple[str, str | None, str | None, str | None, str | None]] = field(default_factory=list)
+    acl_resources: list[tuple[str, str | None, str | None]] = field(default_factory=list)  # resource_id, title, parent_id
+    indexers: list[tuple[str, str | None, str | None]] = field(default_factory=list)  # indexer_id, view_id, class_name
+    mviews: list[tuple[str, str | None, str | None]] = field(default_factory=list)  # view_id, class_name, group_name
+    routes: list[tuple[str, str, str]] = field(default_factory=list)  # area, route_id, front_name
+    widgets: list[tuple[str, str]] = field(default_factory=list)  # widget_id, class_name
+    menu_items: list[tuple[str, str | None]] = field(default_factory=list)  # menu_item_id, title
+    cache_types: list[tuple[str, str | None]] = field(default_factory=list)  # cache_type_id, instance
     file_analyses: list[FileAnalysisFact] = field(default_factory=list)
 
 
@@ -122,6 +136,21 @@ async def gather_module_facts(session: AsyncSession, module_id: int) -> ModuleFa
     queue_bindings = (
         await session.scalars(select(QueueBinding).where(QueueBinding.module_id == module_id))
     ).all()
+    acl_resources = (
+        await session.scalars(select(AclResource).where(AclResource.module_id == module_id))
+    ).all()
+    indexers = (
+        await session.scalars(select(ModuleIndexer).where(ModuleIndexer.module_id == module_id))
+    ).all()
+    mviews = (await session.scalars(select(ModuleMview).where(ModuleMview.module_id == module_id))).all()
+    routes = (await session.scalars(select(ModuleRoute).where(ModuleRoute.module_id == module_id))).all()
+    widgets = (await session.scalars(select(ModuleWidget).where(ModuleWidget.module_id == module_id))).all()
+    menu_items = (
+        await session.scalars(select(ModuleMenuItem).where(ModuleMenuItem.module_id == module_id))
+    ).all()
+    cache_types = (
+        await session.scalars(select(ModuleCacheType).where(ModuleCacheType.module_id == module_id))
+    ).all()
 
     file_analysis_rows = (
         await session.execute(
@@ -166,6 +195,13 @@ async def gather_module_facts(session: AsyncSession, module_id: int) -> ModuleFa
             (qb.topic, qb.destination, qb.consumer_name, qb.handler_class, qb.handler_method)
             for qb in queue_bindings
         ],
+        acl_resources=[(r.resource_id, r.title, r.parent_id) for r in acl_resources],
+        indexers=[(i.indexer_id, i.view_id, i.class_name) for i in indexers],
+        mviews=[(m.view_id, m.class_name, m.group_name) for m in mviews],
+        routes=[(r.area, r.route_id, r.front_name) for r in routes],
+        widgets=[(w.widget_id, w.class_name) for w in widgets],
+        menu_items=[(mi.menu_item_id, mi.title) for mi in menu_items],
+        cache_types=[(ct.cache_type_id, ct.instance) for ct in cache_types],
         file_analyses=file_analyses,
     )
 

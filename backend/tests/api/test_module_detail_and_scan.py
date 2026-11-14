@@ -6,7 +6,18 @@ import pytest
 from httpx import ASGITransport, AsyncClient
 
 from app.main import app
-from app.models import AnalysisCache, Module, ModuleDocument
+from app.models import (
+    AclResource,
+    AnalysisCache,
+    Module,
+    ModuleCacheType,
+    ModuleDocument,
+    ModuleIndexer,
+    ModuleMenuItem,
+    ModuleMview,
+    ModuleRoute,
+    ModuleWidget,
+)
 from app.scanner.orchestrator import ScanAlreadyInProgressError
 
 
@@ -109,6 +120,46 @@ async def test_get_module_readme_renders_markdown_from_the_stored_doc(db_session
     assert f"# {module.name}" in response.text
     assert "A test module." in response.text
     assert "Business summary." in response.text
+
+
+@pytest.mark.asyncio
+async def test_get_module_includes_the_phase_19_20_22_23_25_fact_types(db_session):
+    # acl_resources/indexers/mviews/routes/widgets/menu_items/cache_types are
+    # parsed and persisted purely for fleet-wide conflict detection (Phases
+    # 19/20/22/23/25) -- this confirms they also reach ModuleDetail, the gap
+    # Phase 26 closes.
+    suffix = uuid.uuid4().hex[:8]
+    module = await _make_module(db_session, suffix)
+    db_session.add_all(
+        [
+            AclResource(module_id=module.id, resource_id="Vendor_Module::sample", title="Sample", parent_id=None),
+            ModuleIndexer(module_id=module.id, indexer_id="vendor_module_indexer", view_id="vendor_module_view", class_name="Vendor\\Module\\Indexer"),
+            ModuleMview(module_id=module.id, view_id="vendor_module_view", class_name="Vendor\\Module\\Indexer", group_name="indexer"),
+            ModuleRoute(module_id=module.id, area="frontend", route_id="vendor_module", front_name="vendormodule"),
+            ModuleWidget(module_id=module.id, widget_id="vendor_module_widget", class_name="Vendor\\Module\\Widget"),
+            ModuleMenuItem(module_id=module.id, menu_item_id="vendor_module_menu", title="Sample Menu"),
+            ModuleCacheType(module_id=module.id, cache_type_id="vendor_module_cache", instance="Vendor\\Module\\Cache"),
+        ]
+    )
+    await db_session.commit()
+
+    transport = ASGITransport(app=app)
+    async with AsyncClient(transport=transport, base_url="http://test") as client:
+        response = await client.get(f"/modules/{module.id}")
+
+    assert response.status_code == 200
+    detail = response.json()
+    assert detail["acl_resources"] == [{"resource_id": "Vendor_Module::sample", "title": "Sample", "parent_id": None}]
+    assert detail["indexers"] == [
+        {"indexer_id": "vendor_module_indexer", "view_id": "vendor_module_view", "class_name": "Vendor\\Module\\Indexer"}
+    ]
+    assert detail["mviews"] == [
+        {"view_id": "vendor_module_view", "class_name": "Vendor\\Module\\Indexer", "group_name": "indexer"}
+    ]
+    assert detail["routes"] == [{"area": "frontend", "route_id": "vendor_module", "front_name": "vendormodule"}]
+    assert detail["widgets"] == [{"widget_id": "vendor_module_widget", "class_name": "Vendor\\Module\\Widget"}]
+    assert detail["menu_items"] == [{"menu_item_id": "vendor_module_menu", "title": "Sample Menu"}]
+    assert detail["cache_types"] == [{"cache_type_id": "vendor_module_cache", "instance": "Vendor\\Module\\Cache"}]
 
 
 @pytest.mark.asyncio

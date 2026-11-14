@@ -9,9 +9,11 @@ from sqlalchemy import delete, update
 from app.agent.tools import (
     find_by_class,
     find_by_event,
+    find_duplicate_module_pairs,
     find_similar_modules,
     get_dependencies,
     get_module,
+    get_module_dependency_graph,
     get_module_findings,
     get_module_history,
     list_modules,
@@ -392,6 +394,91 @@ async def test_find_similar_modules_tool_empty_when_nothing_close_enough(db_sess
     assert result == {"found": True, "module_name": target.name, "similar": []}
 
     await db_session.execute(delete(Module).where(Module.id == target.id))
+    await db_session.commit()
+
+
+@pytest.mark.asyncio
+async def test_get_module_dependency_graph_tool_returns_a_real_edge(db_session):
+    from app.models import ModuleDependency
+
+    suffix = uuid.uuid4().hex[:8]
+    upstream = await _make_bare_module(db_session, f"{suffix}-up", name=f"Upstream_{suffix}")
+    downstream = await _make_bare_module(db_session, f"{suffix}-down", name=f"Downstream_{suffix}")
+    db_session.add(ModuleDependency(module_id=downstream.id, depends_on_name=upstream.name))
+    await db_session.commit()
+
+    result = await get_module_dependency_graph(db_session, module_id=downstream.id)
+
+    assert result["found"] is True
+    assert result["center_label"] == downstream.name
+    assert len(result["nodes"]) == 2
+    assert result["edges"] == [
+        {
+            "source": f"module:{downstream.id}",
+            "target": f"module:{upstream.id}",
+            "relation": "depends_on",
+        }
+    ]
+    assert result["truncated"] is False
+
+    await db_session.execute(delete(Module).where(Module.id.in_([upstream.id, downstream.id])))
+    await db_session.commit()
+
+
+@pytest.mark.asyncio
+async def test_get_module_dependency_graph_tool_not_found(db_session):
+    result = await get_module_dependency_graph(db_session, module_id=999999999)
+    assert result == {"found": False}
+
+
+@pytest.mark.asyncio
+async def test_find_duplicate_module_pairs_tool_returns_a_real_pair(db_session):
+    suffix = uuid.uuid4().hex[:8]
+    base = _base_dim(suffix)
+    a = await _make_bare_module(db_session, f"{suffix}-a", name=f"DupA_{suffix}")
+    b = await _make_bare_module(db_session, f"{suffix}-b", name=f"DupB_{suffix}")
+
+    db_session.add(
+        Chunk(
+            module_id=a.id,
+            chunk_type="module",
+            content_hash=f"module-chunk-{a.id}",
+            text="module summary",
+            embedding=_vector({base: 1.0}),
+        )
+    )
+    db_session.add(
+        Chunk(
+            module_id=b.id,
+            chunk_type="module",
+            content_hash=f"module-chunk-{b.id}",
+            text="module summary",
+            embedding=_vector({base: 0.99, base + 1: 0.01}),
+        )
+    )
+    await db_session.commit()
+
+    result = await find_duplicate_module_pairs(db_session, min_similarity=0.5)
+
+    pair = next(
+        p for p in result["pairs"] if {p["module_a_id"], p["module_b_id"]} == {a.id, b.id}
+    )
+    assert pair["similarity"] > 0.9
+
+    await db_session.execute(delete(Module).where(Module.id.in_([a.id, b.id])))
+    await db_session.commit()
+
+
+@pytest.mark.asyncio
+async def test_find_duplicate_module_pairs_tool_empty_when_nothing_close_enough(db_session):
+    suffix = uuid.uuid4().hex[:8]
+    alone = await _make_bare_module(db_session, f"{suffix}-alone", name=f"Alone_{suffix}")
+
+    result = await find_duplicate_module_pairs(db_session, min_similarity=0.999999)
+
+    assert all(alone.id not in (p["module_a_id"], p["module_b_id"]) for p in result["pairs"])
+
+    await db_session.execute(delete(Module).where(Module.id == alone.id))
     await db_session.commit()
 
 

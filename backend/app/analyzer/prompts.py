@@ -163,6 +163,48 @@ def build_module_synthesis_prompt(facts: ModuleFacts) -> str:
             acl_note = f" (ACL: {acl_resource})" if acl_resource else ""
             lines.append(f"- {http_method} {url} -> {service_class}::{service_method}{acl_note}")
 
+    if facts.acl_resources:
+        lines.append("\nACL resources (from etc/acl.xml):")
+        for resource_id, title, parent_id in facts.acl_resources:
+            title_note = f" ({title})" if title else ""
+            parent_note = f" under {parent_id}" if parent_id else ""
+            lines.append(f"- {resource_id}{title_note}{parent_note}")
+
+    if facts.indexers:
+        lines.append("\nIndexers (from etc/indexer.xml):")
+        for indexer_id, view_id, class_name in facts.indexers:
+            view_note = f" (view: {view_id})" if view_id else ""
+            class_note = f" -> {class_name}" if class_name else ""
+            lines.append(f"- {indexer_id}{class_note}{view_note}")
+
+    if facts.mviews:
+        lines.append("\nMaterialized views (from etc/mview.xml):")
+        for view_id, class_name, group_name in facts.mviews:
+            class_note = f" -> {class_name}" if class_name else ""
+            group_note = f" (group: {group_name})" if group_name else ""
+            lines.append(f"- {view_id}{class_note}{group_note}")
+
+    if facts.routes:
+        lines.append("\nFrontend/adminhtml routes (from etc/{frontend,adminhtml}/routes.xml):")
+        lines.extend(f"- [{area}] {route_id} -> frontName {front_name}" for area, route_id, front_name in facts.routes)
+
+    if facts.widgets:
+        lines.append("\nWidgets (from view/widget.xml):")
+        lines.extend(f"- {widget_id} -> {class_name}" for widget_id, class_name in facts.widgets)
+
+    if facts.menu_items:
+        lines.append("\nAdmin menu items (from etc/adminhtml/menu.xml):")
+        lines.extend(
+            f"- {menu_item_id}" + (f" ({title})" if title else "") for menu_item_id, title in facts.menu_items
+        )
+
+    if facts.cache_types:
+        lines.append("\nCache types (from etc/cache.xml):")
+        lines.extend(
+            f"- {cache_type_id}" + (f" -> {instance}" if instance else "")
+            for cache_type_id, instance in facts.cache_types
+        )
+
     if facts.php_classes:
         lines.append("\nPHP classes discovered in this module:")
         for c in facts.php_classes:
@@ -182,8 +224,8 @@ def build_module_synthesis_prompt(facts: ModuleFacts) -> str:
                 lines.append(f"  notable: {fa.notable_behavior}")
 
     lines.append(
-        "\nUsing ONLY the facts above (never invent events, plugins, dependencies, GraphQL fields, or classes "
-        "not listed), "
+        "\nUsing ONLY the facts above (never invent events, plugins, dependencies, GraphQL fields, ACL resources, "
+        "indexers, mviews, routes, widgets, menu items, cache types, or classes not listed), "
         "produce a structured module description:\n"
         "- summary: one or two sentences.\n"
         "- description: a fuller technical/business description.\n"

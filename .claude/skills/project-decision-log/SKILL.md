@@ -3319,3 +3319,49 @@ attributes is real and intentional).
   pytest (823 passed, up from 799) green; then the real `.env` restored
   from the scratchpad backup and diffed byte-for-byte (identical MD5)
   before finishing.
+
+**Phase 26: surface 6 orphaned fact types + 2 missing agent tools (recorded
+2026-11-14):** closes both remaining candidates from this session's "co
+dalej?" research pass (candidate 1, the strongest finding, and candidate
+2). Pure exposure work -- no new parser, no schema change, no migration.
+
+- `acl_resources`/`ModuleIndexer`/`ModuleMview`/`ModuleRoute`/`ModuleWidget`/
+  `ModuleMenuItem`/`ModuleCacheType` (Phases 19/20/22/23/25) were parsed and
+  persisted purely for fleet-wide conflict detection -- never reaching the
+  AI synthesis prompt or `ModuleDetail`, unlike every other structural fact
+  type since Phase 14. Added all 7 to `ModuleFacts`/`gather_module_facts()`
+  (`app/analyzer/facts.py`), to `build_module_synthesis_prompt()`
+  (`app/analyzer/prompts.py`, one new human-readable block per type, same
+  terse bullet style as every existing block), and to `ModuleDetail`/
+  `get_module()` (`app/api/routes/modules.py`, 7 new `XSummary` models +
+  `model_validate(..., from_attributes=True)`, the exact existing pattern).
+  Confirmed no frontend change was needed before touching anything:
+  `ModuleDetailClient.tsx` renders every `ModuleDetail` field generically
+  through AI-written README prose (only Plugins/Observers/Configuration get
+  a dedicated card) -- new fields fall through to prose with zero UI work,
+  matching the Phase 14 precedent exactly.
+- `get_module_dependency_graph`/`find_duplicate_module_pairs` wrap the
+  existing `GET /modules/{id}/graph` and `GET /modules/duplicate-pairs`
+  REST endpoints as chat-agent tools -- the same gap class
+  `find_similar_modules`/`get_module_history`/`get_module_findings` closed
+  earlier this session. The dependency-graph route function has no
+  separate query-layer helper (its BFS logic is inline in the route) and
+  takes `(module_id, depth, session)` as plain arguments -- `@router.get`
+  returns the function unchanged, so the tool wrapper imports and calls it
+  directly (aliased `_get_module_dependency_graph`) rather than duplicating
+  ~170 lines of BFS logic. `find_duplicate_module_pairs` is fleet-wide (no
+  `module_id`) and returns a plain list, same no-found-flag shape as
+  `list_modules`.
+- Regenerated `frontend/lib/api-types.ts` **without touching the real
+  `.env`** (this machine's `.env` points at the live production Neon demo):
+  ran the API directly with `DATABASE_URL`/`REDIS_URL` passed as explicit
+  process env vars (overriding whatever `.env` has, the same override
+  trick already used for every `pytest` invocation this session) against
+  local `db`/`redis` containers, instead of a full `docker compose up`.
+  Confirmed the resulting diff touched only the 7 new summary types and
+  their `ModuleDetail` fields before committing.
+- Verified: 5 new/extended backend tests (49 passed in the touched files,
+  828 passed full suite, up from 823) plus `ruff`/`mypy` clean; frontend
+  `tsc`/`eslint`/`vitest` (265 passed, unchanged -- nothing references the
+  new fields yet) clean. No migration, no real-stack Playwright run needed
+  -- no new scanning behavior, no new UI/e2e-visible journey.

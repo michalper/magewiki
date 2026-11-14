@@ -4,6 +4,7 @@ from typing import cast
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.api.routes.modules import get_module_dependency_graph as _get_module_dependency_graph
 from app.config import settings
 from app.models import (
     Chunk,
@@ -20,6 +21,7 @@ from app.models import (
 from app.search.hybrid import hybrid_search
 from app.search.query_rewrite import rewrite_query
 from app.search.rerank import rerank_results
+from app.search.similar_modules import find_duplicate_module_pairs as _find_duplicate_module_pairs
 from app.search.similar_modules import find_similar_modules as _find_similar_modules
 
 # Reranking needs more raw candidates than the final answer to actually have
@@ -186,6 +188,39 @@ async def get_module_history(session: AsyncSession, module_id: int, limit: int =
                 "finding_counts": row.finding_counts,
             }
             for row in rows
+        ],
+    }
+
+
+async def get_module_dependency_graph(session: AsyncSession, module_id: int, depth: int = 1) -> dict:
+    module = await session.get(Module, module_id)
+    if module is None:
+        return {"found": False}
+
+    graph = await _get_module_dependency_graph(module_id, depth, session)
+    return {
+        "found": True,
+        "center_label": graph.center_label,
+        "nodes": [n.model_dump() for n in graph.nodes],
+        "edges": [e.model_dump() for e in graph.edges],
+        "truncated": graph.truncated,
+    }
+
+
+async def find_duplicate_module_pairs(session: AsyncSession, min_similarity: float = 0.5, limit: int = 20) -> dict:
+    pairs = await _find_duplicate_module_pairs(session, min_similarity=min_similarity, limit=limit)
+    return {
+        "pairs": [
+            {
+                "module_a_id": p.module_a_id,
+                "module_a_name": p.module_a_name,
+                "module_a_composer_name": p.module_a_composer_name,
+                "module_b_id": p.module_b_id,
+                "module_b_name": p.module_b_name,
+                "module_b_composer_name": p.module_b_composer_name,
+                "similarity": p.similarity,
+            }
+            for p in pairs
         ],
     }
 
@@ -381,6 +416,8 @@ TOOL_FUNCTIONS: dict[str, Callable[..., Awaitable[dict]]] = {
     "get_module_findings": get_module_findings,
     "find_similar_modules": find_similar_modules,
     "get_module_history": get_module_history,
+    "get_module_dependency_graph": get_module_dependency_graph,
+    "find_duplicate_module_pairs": find_duplicate_module_pairs,
     "find_by_event": find_by_event,
     "find_by_class": find_by_class,
     "read_file": read_file,
@@ -492,6 +529,47 @@ TOOL_SCHEMAS = [
                     "limit": {"type": "integer", "description": "Max entries, default 10"},
                 },
                 "required": ["module_id"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "get_module_dependency_graph",
+            "description": (
+                "Get the dependency graph centered on a module: module.xml dependencies and di.xml preference/"
+                "plugin relationships, expanded breadth-first up to `depth` hops. Use for 'what does this module "
+                "depend on, transitively?' or 'show me the dependency graph'. An unresolved class (core/unscanned) "
+                "becomes an external leaf node, never a guess. Returns found=false if the module doesn't exist."
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "module_id": {"type": "integer"},
+                    "depth": {"type": "integer", "description": "1-3 hops, default 1"},
+                },
+                "required": ["module_id"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "find_duplicate_module_pairs",
+            "description": (
+                "Fleet-wide: every pair of modules whose stored content is semantically similar but aren't the "
+                "same vendor/package -- likely redundant integrations across the whole fleet, not scoped to one "
+                "module. Use for 'which modules across the fleet look like duplicates?', distinct from "
+                "find_similar_modules (which is scoped to one given module). Always returns a list, possibly "
+                "empty if nothing has been embedded yet or nothing is similar enough."
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "min_similarity": {"type": "number", "description": "0-1, default 0.5"},
+                    "limit": {"type": "integer", "description": "Max pairs, default 20"},
+                },
+                "required": [],
             },
         },
     },

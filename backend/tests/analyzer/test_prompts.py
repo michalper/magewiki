@@ -72,6 +72,25 @@ def test_build_module_synthesis_prompt_includes_every_fact_category_when_populat
             ("/V1/vendor-module/resource", "GET", "Vendor\\Module\\Api\\ResourceInterface", "get", "Vendor_Module::view"),
             ("/V1/vendor-module/open", "POST", "Vendor\\Module\\Api\\OpenInterface", "create", None),
         ],
+        acl_resources=[
+            ("Vendor_Module::sample", "Sample", "Magento_Backend::stores"),
+            ("Vendor_Module::bare", None, None),
+        ],
+        indexers=[
+            ("vendor_module_indexer", "vendor_module_view", "Vendor\\Module\\Model\\Indexer\\Sample"),
+            ("vendor_module_bare", None, None),
+        ],
+        mviews=[
+            ("vendor_module_view", "Vendor\\Module\\Model\\Indexer\\Sample", "indexer"),
+            ("vendor_module_bare_view", None, None),
+        ],
+        routes=[("frontend", "vendor_module", "vendormodule"), ("adminhtml", "vendor_module_admin", "vendormodule/admin")],
+        widgets=[("vendor_module_widget", "Vendor\\Module\\Block\\Widget\\Sample")],
+        menu_items=[("vendor_module_menu", "Sample Menu"), ("vendor_module_bare_menu", None)],
+        cache_types=[
+            ("vendor_module_cache", "Vendor\\Module\\Model\\Cache\\Type"),
+            ("vendor_module_bare_cache", None),
+        ],
         php_classes=[
             PhpClassFact(
                 fqcn="Vendor\\Module\\Plugin\\SamplePlugin", class_name="SamplePlugin", kind="class",
@@ -108,6 +127,19 @@ def test_build_module_synthesis_prompt_includes_every_fact_category_when_populat
     assert "- no_schedule runs C::m" in prompt
     assert "- GET /V1/vendor-module/resource -> Vendor\\Module\\Api\\ResourceInterface::get (ACL: Vendor_Module::view)" in prompt
     assert "- POST /V1/vendor-module/open -> Vendor\\Module\\Api\\OpenInterface::create" in prompt
+    assert "- Vendor_Module::sample (Sample) under Magento_Backend::stores" in prompt
+    assert "- Vendor_Module::bare" in prompt and "- Vendor_Module::bare (" not in prompt
+    assert "- vendor_module_indexer -> Vendor\\Module\\Model\\Indexer\\Sample (view: vendor_module_view)" in prompt
+    assert "- vendor_module_bare" in prompt and "- vendor_module_bare ->" not in prompt
+    assert "- vendor_module_view -> Vendor\\Module\\Model\\Indexer\\Sample (group: indexer)" in prompt
+    assert "- vendor_module_bare_view" in prompt and "- vendor_module_bare_view ->" not in prompt
+    assert "- [frontend] vendor_module -> frontName vendormodule" in prompt
+    assert "- [adminhtml] vendor_module_admin -> frontName vendormodule/admin" in prompt
+    assert "- vendor_module_widget -> Vendor\\Module\\Block\\Widget\\Sample" in prompt
+    assert "- vendor_module_menu (Sample Menu)" in prompt
+    assert "- vendor_module_bare_menu" in prompt and "- vendor_module_bare_menu (" not in prompt
+    assert "- vendor_module_cache -> Vendor\\Module\\Model\\Cache\\Type" in prompt
+    assert "- vendor_module_bare_cache" in prompt and "- vendor_module_bare_cache ->" not in prompt
     assert "- Vendor\\Module\\Plugin\\SamplePlugin (class) [plugin] — Plugin/SamplePlugin.php" in prompt
     assert "- Vendor\\Module\\Model\\Plain (class) — Model/Plain.php" in prompt
     assert "- Plugin/SamplePlugin.php: Blocks checkout." in prompt

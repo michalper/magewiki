@@ -418,6 +418,15 @@ export interface paths {
 export type webhooks = Record<string, never>;
 export interface components {
     schemas: {
+        /** AclResourceSummary */
+        AclResourceSummary: {
+            /** Resource Id */
+            resource_id: string;
+            /** Title */
+            title: string | null;
+            /** Parent Id */
+            parent_id: string | null;
+        };
         /** ChatMessage */
         ChatMessage: {
             /** Role */
@@ -642,6 +651,13 @@ export interface components {
             /** End Line */
             end_line: number | null;
         };
+        /** ModuleCacheTypeSummary */
+        ModuleCacheTypeSummary: {
+            /** Cache Type Id */
+            cache_type_id: string;
+            /** Instance */
+            instance: string | null;
+        };
         /** ModuleDetail */
         ModuleDetail: {
             /** Id */
@@ -785,6 +801,41 @@ export interface components {
              */
             queue_bindings: components["schemas"]["QueueBindingSummary"][];
             /**
+             * Acl Resources
+             * @default []
+             */
+            acl_resources: components["schemas"]["AclResourceSummary"][];
+            /**
+             * Indexers
+             * @default []
+             */
+            indexers: components["schemas"]["ModuleIndexerSummary"][];
+            /**
+             * Mviews
+             * @default []
+             */
+            mviews: components["schemas"]["ModuleMviewSummary"][];
+            /**
+             * Routes
+             * @default []
+             */
+            routes: components["schemas"]["ModuleRouteSummary"][];
+            /**
+             * Widgets
+             * @default []
+             */
+            widgets: components["schemas"]["ModuleWidgetSummary"][];
+            /**
+             * Menu Items
+             * @default []
+             */
+            menu_items: components["schemas"]["ModuleMenuItemSummary"][];
+            /**
+             * Cache Types
+             * @default []
+             */
+            cache_types: components["schemas"]["ModuleCacheTypeSummary"][];
+            /**
              * Quality Findings
              * @default []
              */
@@ -815,6 +866,31 @@ export interface components {
                 [key: string]: number;
             };
         };
+        /** ModuleIndexerSummary */
+        ModuleIndexerSummary: {
+            /** Indexer Id */
+            indexer_id: string;
+            /** View Id */
+            view_id: string | null;
+            /** Class Name */
+            class_name: string | null;
+        };
+        /** ModuleMenuItemSummary */
+        ModuleMenuItemSummary: {
+            /** Menu Item Id */
+            menu_item_id: string;
+            /** Title */
+            title: string | null;
+        };
+        /** ModuleMviewSummary */
+        ModuleMviewSummary: {
+            /** View Id */
+            view_id: string;
+            /** Class Name */
+            class_name: string | null;
+            /** Group Name */
+            group_name: string | null;
+        };
         /** ModuleOverlapEntry */
         ModuleOverlapEntry: {
             /** Name */
@@ -827,6 +903,15 @@ export interface components {
             version_drift: boolean;
             /** Stores */
             stores: components["schemas"]["OverlapStoreEntry"][];
+        };
+        /** ModuleRouteSummary */
+        ModuleRouteSummary: {
+            /** Area */
+            area: string;
+            /** Route Id */
+            route_id: string;
+            /** Front Name */
+            front_name: string;
         };
         /** ModuleScanOutcomeResponse */
         ModuleScanOutcomeResponse: {
@@ -915,6 +1000,13 @@ export interface components {
             finding_counts: {
                 [key: string]: number;
             };
+        };
+        /** ModuleWidgetSummary */
+        ModuleWidgetSummary: {
+            /** Widget Id */
+            widget_id: string;
+            /** Class Name */
+            class_name: string;
         };
         /** OverlapStoreEntry */
         OverlapStoreEntry: {
