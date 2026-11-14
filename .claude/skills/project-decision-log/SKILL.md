@@ -3365,3 +3365,47 @@ dalej?" research pass (candidate 1, the strongest finding, and candidate
   `tsc`/`eslint`/`vitest` (265 passed, unchanged -- nothing references the
   new fields yet) clean. No migration, no real-stack Playwright run needed
   -- no new scanning behavior, no new UI/e2e-visible journey.
+
+**Docs-freshness pass: README conflict-check list + screenshots refreshed
+(recorded 2026-11-14):** a "what's next" research round found two genuine,
+self-flagged gaps rather than any new feature scope. (1) README's
+"Cross-module conflict detection" section said "these fifteen" and
+listed 15 bullets, but the real `CHECK_TYPES` list had grown to 17
+fleet-wide conflict check_types since Phase 19 first flagged this exact
+section as going stale -- missing `menu_item_id_conflict`/
+`cache_type_conflict` (Phase 25) entirely. Fixed the count and added both
+bullets. Also found and fixed a second, bigger gap the research pass
+itself didn't check: the README's own `[x] Phase N` checklist stopped at
+Phase 23 -- Phases 24 and 25 (both real, numbered CLAUDE.md phases) were
+missing rows; added them. (Phase 26 stayed decision-log-only, matching
+how the earlier `find_similar_modules`-tool/duplicate-pairs-view additions
+were never added to this checklist either -- the checklist's own
+convention is numbered phases only.)
+
+(2) `docs/screenshots/modules.jpg`/`stats.jpg` were last captured
+2026-11-10, predating Phases 19-26 -- missing the newer conflict badges,
+the Phase 21 similar-modules/compare additions, and the Phase 22b
+fleet-trend chart. Recaptured against a real, running local stack, same
+`.env`-swap-to-local-docker protocol as every real-stack verification
+this session (backed up to the scratchpad, replaced with a safe local
+version pointing both scan roots at the committed `demo-store`/
+`conflict-store` fixtures, restored and diffed byte-for-byte afterward).
+Seeded via the same `POST /scan` + `packagist_cache`-seeding calls
+`global-setup.ts` already uses for e2e, then captured via
+`claude-in-chrome` rather than Playwright (a one-off capture task, not a
+repeatable test). The resulting `modules.jpg` is admittedly busier than
+the original (Vendor_ConflictA alone carries ~20 badges, since the
+conflict-store fixture is deliberately dense to exercise every check) --
+accepted as a fair tradeoff: this is the same safe, already-approved test
+data this project uses everywhere else, and a screenshot showing real
+depth of checks is a reasonable thing for a portfolio project to show off,
+not a defect to fix.
+
+Also updated CLAUDE.md's own Working Method section per an explicit user
+request mid-session: "every new feature needs both 100% unit-test coverage
+and real e2e coverage" -- strengthens the existing "require tests alongside
+code" bullet from a vague requirement into the two concrete bars this
+project has in fact been holding itself to since the 100%-coverage-in-CI
+decision (`codecov.yml`) and the per-phase Playwright-coverage discipline,
+making both an explicit, standing rule rather than something a future
+session would need to re-derive from precedent alone.

@@ -193,7 +193,7 @@ tool-calling both ran) — with no `ANTHROPIC_API_KEY`/`OPENAI_API_KEY`/
 
 ## Cross-module conflict detection
 
-Every quality check above looks at one module at a time. These fifteen look
+Every quality check above looks at one module at a time. These seventeen look
 across the whole scanned fleet for a pair of modules that silently fight over
 the same thing — all free, parser-derived, zero AI involved:
 
@@ -244,6 +244,14 @@ the same thing — all free, parser-derived, zero AI involved:
 - **widget.xml id conflicts** — two modules declaring a widget with the same
   id; Magento merges every module's widget table into one global namespace
   by id, the same silent-override risk as the indexer case above.
+- **menu.xml id conflicts** — two modules declaring the same admin menu item
+  id. Unlike every other check here, this one is a confirmed hard Magento
+  error ("Two 'add' commands cannot have equal id"), not a silent override —
+  kept the same severity as the rest of this family for consistency.
+- **cache.xml type conflicts** — two modules declaring the same cache type
+  name with a different backing `instance`; a module that only overrides
+  cosmetic attributes (label/description) without setting `instance` isn't
+  flagged, since that's a real, intentional override pattern.
 
 A separate, per-module **missing ACL** check flags a `Controller/Adminhtml/*`
 class with no resolvable `ADMIN_RESOURCE` constant — that admin action is
@@ -323,6 +331,8 @@ network-isolated container.
 - [x] **Phase 21** — Semantic duplicate/overlap detection (reusing Phase 4's existing module-level embeddings, no new scan or API call) plus a side-by-side module comparison page
 - [x] **Phase 22** — Cross-module conflict detection, round 5: `routes.xml` facts, a route-id conflict check, and a frontName conflict check, both scoped per area
 - [x] **Phase 23** — Cross-module conflict detection, round 6: `widget.xml` facts (no area column -- widget ids are a single global namespace) and a duplicate-widget-id conflict check
+- [x] **Phase 24** — Lightweight access gate (shared token) on write/cost-incurring endpoints (`POST /chat`, `PATCH /settings/llm`, `POST /scan[/stream]`) — lets an operator safely enable a real LLM key on the public demo without open budget exposure; read-only browsing stays open
+- [x] **Phase 25** — Cross-module conflict detection, round 7: `menu.xml` admin-menu-item-id conflicts (a confirmed hard Magento error, kept the same severity as the rest of this family) and `cache.xml` type conflicts (only when the backing `instance` disagrees)
 
 Full detail (done-criteria, data model, RAG design, and the decision recorded behind each phase) per phase: see `CLAUDE.md`.
 

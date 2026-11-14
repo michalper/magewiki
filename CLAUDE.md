@@ -160,7 +160,7 @@ The author previously built a PHP tool for his employer Cognize — the predeces
 ## Working method
 
 - Start each phase in plan mode; propose a plan and wait for approval before writing code.
-- Require tests alongside code (fixture: a small module under `backend/tests/fixtures/`).
+- Require tests alongside code (fixture: a small module under `backend/tests/fixtures/`). Every new feature needs both 100% unit-test coverage (backend `pytest`/frontend `vitest`, enforced in CI via `codecov.yml`'s project+patch targets) and real Playwright e2e coverage of its user-visible behavior — not just one or the other.
 - Reset context between phases.
 - Record settled, always-relevant rule changes in this file. Record incident write-ups, bug fixes, and narrower per-feature decision rationale in the `project-decision-log` skill, as they're made.
 - Repo language is English: README, docs, comments, commit messages, UI.
