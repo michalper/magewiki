@@ -2,7 +2,7 @@ import { screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { renderWithQueryClient } from "../../test-utils";
-import StatsPage, { truncateLabelTail } from "./page";
+import StatsPage, { formatMobileAxisTick, truncateLabelTail } from "./page";
 
 vi.mock("@/lib/api", () => ({ apiFetch: vi.fn() }));
 
@@ -41,6 +41,12 @@ describe("truncateLabelTail", () => {
 
   it("truncates from the start, keeping the tail", () => {
     expect(truncateLabelTail("Vendor_VeryLongModuleName", 11)).toBe("…ModuleName");
+  });
+});
+
+describe("formatMobileAxisTick", () => {
+  it("delegates to truncateLabelTail with the mobile label budget", () => {
+    expect(formatMobileAxisTick("Vendor_VeryLongModuleName")).toBe("…ModuleName");
   });
 });
 

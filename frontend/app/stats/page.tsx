@@ -310,6 +310,14 @@ export function truncateLabelTail(label: string, maxChars: number): string {
   return `…${label.slice(-(maxChars - 1))}`;
 }
 
+// Named instead of inline so it's directly unit-testable -- Recharts never
+// actually calls a YAxis tickFormatter in these tests (see the
+// truncateLabelTail describe block above), since jsdom's ResponsiveContainer
+// never gets real layout dimensions.
+export function formatMobileAxisTick(name: string): string {
+  return truncateLabelTail(name, MOBILE_LABEL_CHARS);
+}
+
 function TopFindingsBar({ modules }: { modules: ModuleSummary[] }) {
   const palette = useChartPalette();
   // A fixed YAxis label column (Recharts needs a real pixel width, not a
@@ -353,7 +361,7 @@ function TopFindingsBar({ modules }: { modules: ModuleSummary[] }) {
             type="category"
             dataKey="name"
             width={isNarrow ? MOBILE_AXIS_WIDTH : DESKTOP_AXIS_WIDTH}
-            tickFormatter={isNarrow ? (name: string) => truncateLabelTail(name, MOBILE_LABEL_CHARS) : undefined}
+            tickFormatter={isNarrow ? formatMobileAxisTick : undefined}
             tick={{ fill: palette.ink.muted, fontSize: 12 }}
           />
           <Tooltip />
