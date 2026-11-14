@@ -3409,3 +3409,32 @@ project has in fact been holding itself to since the 100%-coverage-in-CI
 decision (`codecov.yml`) and the per-phase Playwright-coverage discipline,
 making both an explicit, standing rule rather than something a future
 session would need to re-derive from precedent alone.
+
+**README: real PHPUnit coverage screenshot + a stale phase-count fix
+(recorded 2026-11-14):** the user asked, after confirming the real
+PHPUnit-execution feature already existed, to also put it in the
+screenshots -- the README's Screenshots section had four images (modules,
+stats, graph, chat) but no module-detail view at all, so the "1/N tests
+failed · N% coverage" badge was never actually shown anywhere. Used the
+real `Ordo_Automation` fixture (CLAUDE.md's own approved public test
+data, at `/Users/michalper/Projects/magento-ordo-test/vendor-src-sync`)
+rather than a committed synthetic fixture, for the same reason the Wiki's
+own screenshots already use it -- a real 1515-class, 3013-test module is a
+far more convincing demonstration than a toy fixture. Same `.env`-swap-
+to-local-docker protocol as every other real-stack capture this session
+(backed up, replaced with a safe local version pointing
+`MAGEWIKI_SCAN_ROOT_1` at the Ordo fixture, local `db`/`redis` only, no
+LLM key); the real scan took ~4 minutes (1515 classes, full PHPStan/
+PHPMD/phpcs/Rector/PHPUnit against a real module) and came back with
+3013 tests run, 1 failed, 96.94% coverage -- consistent with the
+decision log's own earlier-recorded numbers for this same fixture. New
+`docs/screenshots/module-detail.jpg`, with a new row in the README's
+Screenshots section. `.env` restored from the backup and diffed
+byte-for-byte afterward, same as every prior round.
+
+Also fixed, found while editing the same section: the README's own
+"Project status" line still said "all 24 planned phases done (0–12b,
+13–23)", unsynced since Phase 23 despite the Roadmap checklist right
+below it already listing through Phase 25 (fixed in the earlier
+docs-freshness pass). Updated to "26 planned phases... (0–12b, 13–25)"
+and added the Phase 24/25 achievements to the same sentence.
