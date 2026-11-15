@@ -8,6 +8,12 @@ on:
 permissions:
   contents: read
 
+# main's branch protection requires 4 of this workflow's jobs to pass before a PR
+# can merge: backend, frontend, docker-build, e2e-smoke (the same set `deploy`
+# already gates on below). Renaming/removing any of those job ids needs a matching
+# update to the required_status_checks list (Settings > Branches, or via the API),
+# or the check a PR is waiting on simply never reports again.
+#
 # Cancel a superseded run on the same PR/branch (saves runner minutes on fast
 # force-pushes/rebases) -- but never on main itself, where cancelling an
 # in-flight run could cancel the deploy job mid-release.
