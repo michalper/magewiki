@@ -8,13 +8,18 @@ inputs:
 runs:
   using: composite
   steps:
+    # setup-python's own `cache: poetry` needs `poetry` already on PATH to resolve
+    # its cache directory -- installing it first via pipx (preinstalled on GitHub's
+    # runner image, and independent of whichever Python setup-python activates next)
+    # rather than after setup-python, which is what actually broke it: confirmed
+    # directly, "Unable to locate executable file: poetry" on the first real run.
+    - run: pipx install poetry==1.8.3
+      shell: bash
     - uses: actions/setup-python@v5
       with:
         python-version: "3.13"
         cache: poetry
         cache-dependency-path: ${{ inputs.working-directory }}/poetry.lock
-    - run: pip install "poetry==1.8.3"
-      shell: bash
     - run: poetry install --no-root
       shell: bash
       working-directory: ${{ inputs.working-directory }}

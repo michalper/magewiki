@@ -350,6 +350,15 @@ jobs:
           tags: magewiki-php-analyzer
           load: true
           cache-from: type=gha,scope=php-analyzer
+      # frontend/next-env.d.ts is bind-mounted (not one of the anonymous
+      # node_modules/.next volumes, which Docker already seeds with the
+      # image's own node-owned content), so it keeps the checkout's own
+      # ownership (the runner's user, not the container's non-root `node`)
+      # -- and `next dev` rewrites it on every startup. Confirmed directly:
+      # since frontend/Dockerfile moved to `USER node`, this failed every
+      # single run with EACCES, never surfaced before because nothing
+      # required e2e-smoke to pass until now.
+      - run: chmod 666 frontend/next-env.d.ts
       - run: docker compose up -d
       - name: Wait for api and web to be ready
         run: |
