@@ -350,15 +350,19 @@ jobs:
           tags: magewiki-php-analyzer
           load: true
           cache-from: type=gha,scope=php-analyzer
-      # frontend/next-env.d.ts is bind-mounted (not one of the anonymous
-      # node_modules/.next volumes, which Docker already seeds with the
-      # image's own node-owned content), so it keeps the checkout's own
-      # ownership (the runner's user, not the container's non-root `node`)
-      # -- and `next dev` rewrites it on every startup. Confirmed directly:
-      # since frontend/Dockerfile moved to `USER node`, this failed every
-      # single run with EACCES, never surfaced before because nothing
-      # required e2e-smoke to pass until now.
-      - run: chmod 666 frontend/next-env.d.ts
+      # frontend/next-env.d.ts isn't tracked by git (Next.js generates it on
+      # first `next dev`/`next build`) and isn't one of the anonymous
+      # node_modules/.next volumes Docker already seeds node-owned -- it's a
+      # brand new file `next dev` creates inside the bind-mounted ./frontend
+      # the first time it runs in CI. Creating a file needs write permission
+      # on the *directory*, not the (nonexistent) file -- confirmed directly
+      # with `chmod 666` on the file itself: "No such file or directory".
+      # ./frontend is owned by the runner's own user (from checkout), and the
+      # container's non-root `node` is neither that owner nor in its group,
+      # so it EACCESs trying to create the file, every run since
+      # frontend/Dockerfile moved to `USER node` -- never surfaced before
+      # because nothing required e2e-smoke to pass until now.
+      - run: chmod o+w frontend
       - run: docker compose up -d
       - name: Wait for api and web to be ready
         run: |
