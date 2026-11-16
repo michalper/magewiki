@@ -1,7 +1,7 @@
 from collections.abc import Awaitable, Callable
 from typing import cast
 
-from sqlalchemy import func, select
+from sqlalchemy import ColumnElement, TextClause, bindparam, func, select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.routes.modules import get_module_dependency_graph as _get_module_dependency_graph
@@ -366,40 +366,65 @@ async def list_modules(
     limit: int = 20,
     offset: int = 0,
 ) -> dict:
-    query = select(Module, ModuleDocument.doc).outerjoin(ModuleDocument, ModuleDocument.module_id == Module.id)
+    # tags/integration used to be filtered in Python after fetching every
+    # matching module's full row -- on a large fleet, a single chat question
+    # with either filter loaded the whole table into the agent process before
+    # discarding most of it. module_docs.doc->'tags'/'integrations' are each a
+    # JSON array of objects (not a plain array of strings), so this needs a
+    # real EXISTS-over-jsonb_array_elements subquery, not a jsonb containment
+    # operator -- same SQL-first-class-citizen treatment status/enabled/
+    # check_type already got.
+    filters: list[ColumnElement[bool] | TextClause] = []
     if status:
-        query = query.where(Module.state == status)
+        filters.append(Module.state == status)
     if enabled is not None:
-        query = query.where(Module.enabled == enabled)
+        filters.append(Module.enabled == enabled)
     if check_type:
         # A plain IN-subquery, not a join -- a module can have several
         # findings of the same check_type (e.g. 3 hardcoded_secret rows),
         # which would otherwise duplicate that module's own row in the
         # result set.
-        query = query.where(
+        filters.append(
             Module.id.in_(select(ModuleQualityFinding.module_id).where(ModuleQualityFinding.check_type == check_type))
         )
+    if tags:
+        filters.append(
+            text(
+                "EXISTS (SELECT 1 FROM jsonb_array_elements(coalesce(module_docs.doc->'tags', '[]'::jsonb)) AS tag_elem "
+                "WHERE tag_elem->>'name' IN :tool_tags)"
+            ).bindparams(bindparam("tool_tags", value=tags, expanding=True))
+        )
+    if integration:
+        filters.append(
+            text(
+                "EXISTS (SELECT 1 FROM jsonb_array_elements(coalesce(module_docs.doc->'integrations', '[]'::jsonb)) "
+                "AS integration_elem WHERE integration_elem->>'name' ILIKE :tool_integration_pattern)"
+            ).bindparams(bindparam("tool_integration_pattern", value=f"%{integration}%"))
+        )
 
-    rows = (await session.execute(query.order_by(Module.name))).all()
+    total = (
+        await session.scalar(
+            select(func.count(Module.id)).outerjoin(ModuleDocument, ModuleDocument.module_id == Module.id).where(*filters)
+        )
+    ) or 0
 
-    filtered = []
+    rows = (
+        await session.execute(
+            select(Module, ModuleDocument.doc)
+            .outerjoin(ModuleDocument, ModuleDocument.module_id == Module.id)
+            .where(*filters)
+            .order_by(Module.name)
+            .limit(limit)
+            .offset(offset)
+        )
+    ).all()
+
+    page = []
     for row in rows:
         # select(Module, ModuleDocument.doc)'s Row degenerates each element to
         # `object` under mypy (confirmed via reveal_type) — cast() is the
         # type-level fix, zero runtime effect.
-        module = cast(Module, row[0])
-        doc = cast(dict | None, row[1]) or {}
-        if tags:
-            doc_tags = {t.get("name") for t in doc.get("tags", [])}
-            if not set(tags) & doc_tags:
-                continue
-        if integration:
-            doc_integrations = [i.get("name", "") for i in doc.get("integrations", [])]
-            if not any(integration.lower() in name.lower() for name in doc_integrations):
-                continue
-        filtered.append((module, doc))
-
-    page = filtered[offset : offset + limit]
+        page.append((cast(Module, row[0]), cast(dict | None, row[1]) or {}))
 
     finding_counts: dict[int, int] = {}
     if check_type:
@@ -414,7 +439,7 @@ async def list_modules(
         finding_counts = dict(count_rows)
 
     return {
-        "total": len(filtered),
+        "total": total,
         "modules": [
             {
                 "module_id": module.id,

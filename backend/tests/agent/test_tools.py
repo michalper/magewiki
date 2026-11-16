@@ -638,6 +638,54 @@ async def test_list_modules_filters_by_status_and_tags(db_session):
 
 
 @pytest.mark.asyncio
+async def test_list_modules_total_and_pagination_are_correct_with_a_tags_filter(db_session):
+    """Regression test: tags is now filtered in SQL (an EXISTS over
+    jsonb_array_elements), with its own COUNT query for `total` and its own
+    LIMIT/OFFSET for the page -- both must agree with each other and with
+    reality, not just with whichever modules happen to land on one page.
+    """
+    suffix = uuid.uuid4().hex[:8]
+    tagged = [await _make_bare_module(db_session, f"{suffix}-{i}", name=f"Tagged_{suffix}_{i:02d}") for i in range(5)]
+    untagged = await _make_bare_module(db_session, f"{suffix}-untagged", name=f"Untagged_{suffix}")
+
+    cache = AnalysisCache(
+        content_hash=f"doc-{suffix}",
+        model="seeded",
+        prompt_version=MODULE_SYNTHESIS_PROMPT_VERSION,
+        kind="module_synthesis",
+        response={},
+        tokens_in=0,
+        tokens_out=0,
+        cost_usd=Decimal(0),
+    )
+    db_session.add(cache)
+    await db_session.flush()
+    for module in tagged:
+        db_session.add(
+            ModuleDocument(
+                module_id=module.id,
+                content_hash=f"doc-{suffix}-{module.id}",
+                model="seeded",
+                prompt_version=MODULE_SYNTHESIS_PROMPT_VERSION,
+                cache_id=cache.id,
+                doc={"tags": [{"name": "payments", "source": "ai", "confidence": 0.9}], "integrations": []},
+            )
+        )
+    await db_session.commit()
+
+    first_page = await list_modules(db_session, tags=["payments"], limit=2, offset=0)
+    second_page = await list_modules(db_session, tags=["payments"], limit=2, offset=2)
+
+    assert first_page["total"] == 5  # the real count of tagged modules, not just this page's size
+    assert [m["name"] for m in first_page["modules"]] == [tagged[0].name, tagged[1].name]
+    assert second_page["total"] == 5
+    assert [m["name"] for m in second_page["modules"]] == [tagged[2].name, tagged[3].name]
+
+    await db_session.execute(delete(Module).where(Module.id.in_([m.id for m in tagged] + [untagged.id])))
+    await db_session.commit()
+
+
+@pytest.mark.asyncio
 async def test_list_modules_filters_by_enabled_and_integration(db_session):
     suffix = uuid.uuid4().hex[:8]
     enabled_module = await _make_bare_module(db_session, f"{suffix}-enabled", name=f"Enabled_{suffix}")
