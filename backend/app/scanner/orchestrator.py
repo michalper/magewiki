@@ -1210,7 +1210,12 @@ async def _persist_module(
         else:
             miss_sources[relative_path] = php_sources[relative_path]
 
-    freshly_parsed = catalog_module_classes(pm.discovered.root, miss_sources)
+    # Pure CPU work (tree-sitter parsing of already-in-memory bytes, no disk
+    # I/O) -- same reasoning as the to_thread calls above: calling it directly
+    # here would block the whole event loop for as long as this module's
+    # cache-miss files take to parse, stalling every other concurrent
+    # coroutine for the duration.
+    freshly_parsed = await asyncio.to_thread(catalog_module_classes, pm.discovered.root, miss_sources)
     classes.extend(freshly_parsed)
 
     if miss_sources:
