@@ -2,6 +2,7 @@ import { screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { AccessTokenRequiredError } from "@/lib/access-token";
+import { notifyQueryParamChange } from "@/lib/use-query-param";
 import { renderWithQueryClient } from "../../test-utils";
 import ModulesPage from "./page";
 
@@ -482,6 +483,27 @@ describe("ModulesPage", () => {
 
       await waitFor(() => expect(screen.getByText("1 of 60 modules")).toBeInTheDocument());
       expect(screen.getByText("Page 1 of 1")).toBeInTheDocument();
+    });
+
+    it("clamps the current page back when a URL-driven filter narrows the list past it", async () => {
+      // Unlike the search filter above (which resets page through its own
+      // onChange handler), repoFilter/findingFilter come from the URL via
+      // useQueryParam with no such handler -- this is the render-time clamp
+      // that backstops exactly that case.
+      const withFinding = modules(60).map((m, i) => (i < 5 ? { ...m, finding_counts: { hardcoded_secret: 1 } } : m));
+      mockApi({ modules: withFinding });
+      const user = userEvent.setup();
+      renderWithQueryClient(<ModulesPage />);
+
+      await waitFor(() => expect(screen.getByText("Page 1 of 3")).toBeInTheDocument());
+      await user.click(screen.getByRole("button", { name: "Next" }));
+      await waitFor(() => expect(screen.getByText("Page 2 of 3")).toBeInTheDocument());
+
+      setSearch("?finding=hardcoded_secret");
+      notifyQueryParamChange();
+
+      await waitFor(() => expect(screen.getByText("Page 1 of 1")).toBeInTheDocument());
+      expect(screen.getByText("5 of 60 modules")).toBeInTheDocument();
     });
   });
 

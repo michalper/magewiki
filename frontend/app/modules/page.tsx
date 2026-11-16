@@ -616,9 +616,15 @@ export default function ModulesPage() {
           setScanResult(event.result);
           queryClient.invalidateQueries({ queryKey: ["modules"] });
           queryClient.invalidateQueries({ queryKey: ["module"] });
-        } else if (event.event === "error") {
-          setScanStatus("error");
-          setScanError(event.detail);
+        } else {
+          // Defensive: ScanStreamEvent's own type is exhaustively discovered |
+          // store | module | done | error, so this "else" can only ever hold
+          // "error" in practice.
+          /* v8 ignore next */
+          if (event.event === "error") {
+            setScanStatus("error");
+            setScanError(event.detail);
+          }
         }
       }, controller.signal);
     } catch (err) {

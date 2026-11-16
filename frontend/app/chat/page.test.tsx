@@ -226,6 +226,20 @@ describe("ChatPage", () => {
     await waitFor(() => expect(screen.getByText("150 tokens · $0.0042")).toBeInTheDocument());
   });
 
+  it("renders a malformed cost_usd as $0.0000 instead of $NaN", async () => {
+    streamSseMock.mockImplementation(async (_url, _body, onEvent: (e: ChatEvent) => void) => {
+      onEvent({ event: "token", text: "answer" });
+      onEvent({ event: "done", tokens_in: 120, tokens_out: 30, cost_usd: "not-a-number" });
+    });
+    const user = userEvent.setup();
+    render(<ChatPage />);
+
+    await user.type(screen.getByLabelText("Chat message"), "hi");
+    await user.click(screen.getByRole("button", { name: "Send" }));
+
+    await waitFor(() => expect(screen.getByText("150 tokens · $0.0000")).toBeInTheDocument());
+  });
+
   it("does not show a token usage line when the done event reports zero tokens", async () => {
     // The budget-exceeded early-exit path sends tokens_in/tokens_out as 0
     // alongside its own "error" event -- showing "0 tokens · $0.0000" there

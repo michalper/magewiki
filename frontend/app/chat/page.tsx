@@ -156,17 +156,22 @@ export default function ChatPage() {
               next[next.length - 1] = { ...last, sources: event.sources };
             } else if (event.event === "error") {
               next[next.length - 1] = { ...last, error: event.detail };
-            } else if (event.event === "done") {
-              // Per-answer cost/usage the backend already computes (see
-              // CLAUDE.md's "Response: SSE stream with sources, token, done
-              // (token usage) events") -- previously received and silently
-              // dropped here. Skipped when both are 0 (the budget-exceeded
-              // early-exit path, where an error is already shown instead).
-              if (event.tokens_in > 0 || event.tokens_out > 0) {
-                next[next.length - 1] = {
-                  ...last,
-                  usage: { tokensIn: event.tokens_in, tokensOut: event.tokens_out, costUsd: event.cost_usd },
-                };
+            } else {
+              // Defensive: ChatEvent's own type is exhaustively token | sources |
+              // error | done, so this "else" can only ever hold "done" in practice.
+              /* v8 ignore next */
+              if (event.event === "done") {
+                // Per-answer cost/usage the backend already computes (see
+                // CLAUDE.md's "Response: SSE stream with sources, token, done
+                // (token usage) events") -- previously received and silently
+                // dropped here. Skipped when both are 0 (the budget-exceeded
+                // early-exit path, where an error is already shown instead).
+                if (event.tokens_in > 0 || event.tokens_out > 0) {
+                  next[next.length - 1] = {
+                    ...last,
+                    usage: { tokensIn: event.tokens_in, tokensOut: event.tokens_out, costUsd: event.cost_usd },
+                  };
+                }
               }
             }
             return next;
@@ -207,6 +212,11 @@ export default function ChatPage() {
   }
 
   function retryAfterUnlock() {
+    // Defensive: retryAfterUnlock is only ever reachable once needsToken is
+    // true, which only happens after runChat ran via handleSubmit -- which
+    // always sets lastHistoryRef.current right before that call. Null here
+    // in practice can't happen.
+    /* v8 ignore next */
     if (lastHistoryRef.current) runChat(lastHistoryRef.current);
   }
 

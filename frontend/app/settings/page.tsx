@@ -230,6 +230,10 @@ export default function SettingsPage() {
           {needsToken && (
             <AccessTokenPrompt
               onUnlock={() => {
+                // Defensive: needsToken is only true once patchMutation has already
+                // errored, which means mutate() already ran and set variables --
+                // never falsy here in practice.
+                /* v8 ignore next */
                 if (patchMutation.variables) patchMutation.mutate(patchMutation.variables);
               }}
             />

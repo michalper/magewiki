@@ -1,4 +1,4 @@
-import { screen, waitFor } from "@testing-library/react";
+import { screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { renderWithQueryClient } from "../../../test-utils";
@@ -238,14 +238,17 @@ describe("ModuleDetailClient", () => {
   });
 
   describe("README", () => {
-    it("shows a loading placeholder while the README fetches", () => {
+    it("shows a loading placeholder while the README fetches", async () => {
       fetchMock.mockImplementation(async (path: string) => (path === "/modules" ? { total: 0, modules: [] } : moduleDetail()));
       vi.stubGlobal("fetch", vi.fn().mockReturnValue(new Promise(() => {})));
       renderWithQueryClient(<ModuleDetailClient id="1" />);
 
-      return waitFor(() =>
-        expect(screen.getByText("Loading...", { selector: "p" })).toBeInTheDocument(),
-      );
+      // Wait for the module itself to load first -- otherwise this assertion
+      // can pass on the page's own top-level "Loading..." placeholder (shown
+      // while moduleQuery itself is still pending) without ever reaching the
+      // README section's own loading box at all.
+      await waitFor(() => expect(screen.getByRole("heading", { name: "Vendor_Module" })).toBeInTheDocument());
+      expect(within(document.getElementById("readme")!).getByText("Loading...")).toBeInTheDocument();
     });
 
     it("shows a not-analyzed placeholder on a 404", async () => {
