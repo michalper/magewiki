@@ -10,7 +10,7 @@ from app.analyzer.client import LlmCallResult
 from app.config import settings
 from app.db import async_session_factory
 from app.main import app
-from app.models import Module, RuntimeLlmConfig
+from app.models import AnalysisCache, Module, RuntimeLlmConfig
 from app.tasks.queue import get_arq_pool
 
 
@@ -18,10 +18,17 @@ from app.tasks.queue import get_arq_pool
 async def _clear_runtime_config():
     async with async_session_factory() as session:
         await session.execute(delete(RuntimeLlmConfig))
+        # The dimension probe is now cached by content hash ("dimension probe"
+        # is a fixed string, so every test probing the same model name would
+        # otherwise hit a previous test's cached row instead of exercising its
+        # own embed_text stub) — cleared alongside the runtime config so every
+        # test starts and ends with a real cache miss.
+        await session.execute(delete(AnalysisCache).where(AnalysisCache.kind == "embedding"))
         await session.commit()
     yield
     async with async_session_factory() as session:
         await session.execute(delete(RuntimeLlmConfig))
+        await session.execute(delete(AnalysisCache).where(AnalysisCache.kind == "embedding"))
         await session.commit()
 
 
@@ -35,7 +42,7 @@ def _stub_embedding_probe(monkeypatch):
 
     async def fake_embed_text(text, *, model, api_key, api_base=None):
         vector = [0.0] * settings.embedding_dimensions
-        return vector, LlmCallResult(response_json={}, tokens_in=1, tokens_out=0, cost_usd=Decimal(0))
+        return vector, LlmCallResult(response_json={"embedding": vector}, tokens_in=1, tokens_out=0, cost_usd=Decimal(0))
 
     monkeypatch.setattr("app.api.routes.llm_settings.embed_text", fake_embed_text)
 
@@ -124,8 +131,9 @@ async def test_patch_embedding_model_with_matching_dimension_succeeds(monkeypatc
     async def fake_embed_text(text, *, model, api_key, api_base=None):
         nonlocal probe_called
         probe_called = True
-        return [0.0] * settings.embedding_dimensions, LlmCallResult(
-            response_json={}, tokens_in=1, tokens_out=0, cost_usd=Decimal(0)
+        vector = [0.0] * settings.embedding_dimensions
+        return vector, LlmCallResult(
+            response_json={"embedding": vector}, tokens_in=1, tokens_out=0, cost_usd=Decimal(0)
         )
 
     monkeypatch.setattr("app.api.routes.llm_settings.embed_text", fake_embed_text)
@@ -151,7 +159,8 @@ async def test_patch_embedding_model_with_mismatched_dimension_is_rejected(monke
     """
 
     async def fake_embed_text(text, *, model, api_key, api_base=None):
-        return [0.0] * 1024, LlmCallResult(response_json={}, tokens_in=1, tokens_out=0, cost_usd=Decimal(0))
+        vector = [0.0] * 1024
+        return vector, LlmCallResult(response_json={"embedding": vector}, tokens_in=1, tokens_out=0, cost_usd=Decimal(0))
 
     monkeypatch.setattr("app.api.routes.llm_settings.embed_text", fake_embed_text)
 
@@ -164,6 +173,65 @@ async def test_patch_embedding_model_with_mismatched_dimension_is_rejected(monke
     assert "1024" in response.text
     assert str(settings.embedding_dimensions) in response.text
     assert unchanged.json()["embedding_model"] == settings.embedding_model  # rejected, not persisted
+
+
+@pytest.mark.asyncio
+async def test_patch_embedding_model_probe_is_rejected_once_the_budget_is_exceeded(monkeypatch):
+    """Regression test: the dimension probe is a real, billed embed_text() call
+    with no budget check at all -- repeatedly PATCHing embedding_model back and
+    forth was a real, uncapped bypass of the monthly LLM budget, the same bug
+    class as the GET /search one this mirrors.
+    """
+    probe_called = False
+
+    async def fake_embed_text(text, *, model, api_key, api_base=None):
+        nonlocal probe_called
+        probe_called = True
+        vector = [0.0] * settings.embedding_dimensions
+        return vector, LlmCallResult(response_json={"embedding": vector}, tokens_in=1, tokens_out=0, cost_usd=Decimal(0))
+
+    monkeypatch.setattr("app.api.routes.llm_settings.embed_text", fake_embed_text)
+    monkeypatch.setattr(settings, "llm_monthly_budget_usd", -1.0)  # already exceeded, unconditionally
+
+    transport = ASGITransport(app=app)
+    async with AsyncClient(transport=transport, base_url="http://test") as client:
+        response = await client.patch("/settings/llm", json={"embedding_model": "ollama/bge-m3"})
+        unchanged = await client.get("/settings/llm")
+
+    assert response.status_code == 503
+    assert probe_called is False  # budget checked before the real call, not after
+    assert unchanged.json()["embedding_model"] == settings.embedding_model  # rejected, not persisted
+
+
+@pytest.mark.asyncio
+async def test_patch_embedding_model_probe_is_cached_so_re_probing_the_same_model_is_free(monkeypatch):
+    """A second PATCH probing the same (already-probed) model must hit the
+    content-hash cache instead of making a second real, billed call -- the
+    same cache-then-budget-check pattern embed_query_text uses."""
+    call_count = 0
+
+    async def fake_embed_text(text, *, model, api_key, api_base=None):
+        nonlocal call_count
+        call_count += 1
+        vector = [0.0] * settings.embedding_dimensions
+        return vector, LlmCallResult(response_json={"embedding": vector}, tokens_in=1, tokens_out=0, cost_usd=Decimal(0))
+
+    monkeypatch.setattr("app.api.routes.llm_settings.embed_text", fake_embed_text)
+
+    transport = ASGITransport(app=app)
+    async with AsyncClient(transport=transport, base_url="http://test") as client:
+        first = await client.patch("/settings/llm", json={"embedding_model": "ollama/bge-m3"})
+        # A genuine change away from bge-m3 (not a no-op) -- the default model
+        # has never been probed yet, so this is real call #2, not a cache hit.
+        reset = await client.patch("/settings/llm", json={"embedding_model": settings.embedding_model})
+        # Back to bge-m3 again -- a genuine change (not a no-op skip), but
+        # bge-m3's own probe was already cached by the first call above.
+        second = await client.patch("/settings/llm", json={"embedding_model": "ollama/bge-m3"})
+
+    assert first.status_code == 200
+    assert reset.status_code == 200
+    assert second.status_code == 200
+    assert call_count == 2  # bge-m3, then the default -- re-probing bge-m3 a second time was a cache hit
 
 
 @pytest.mark.asyncio

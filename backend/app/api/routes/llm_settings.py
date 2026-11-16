@@ -3,10 +3,13 @@ from pydantic import BaseModel
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.analyzer.embeddings import embed_text
+from app.analyzer.budget import is_budget_exceeded
+from app.analyzer.cache import get_or_create_cache_entry, lookup_cache
+from app.analyzer.embeddings import embed_text, hash_text
+from app.analyzer.prompts import EMBEDDING_PROMPT_VERSION
 from app.api.auth import require_write_access
 from app.config import settings
-from app.db import get_session
+from app.db import async_session_factory, get_session
 from app.models import Module, RuntimeLlmConfig
 from app.runtime_config import resolve_embedding_config, resolve_llm_config
 from app.tasks.queue import get_arq_pool
@@ -139,15 +142,46 @@ async def update_llm_settings(
             # model with a different output dimension would crash the next scan's embed
             # step, not this request. Probe the real dimension now, with one tiny live
             # call, so the mismatch is caught here with an actionable error instead.
-            try:
-                vector, _result = await embed_text(
-                    "dimension probe", model=effective.model, api_key=effective.api_key, api_base=effective.api_base
-                )
-            except Exception as exc:
-                await session.rollback()
-                raise HTTPException(
-                    status_code=400, detail=f"could not verify {effective.model}'s embedding dimension: {exc}"
-                ) from exc
+            #
+            # This probe is itself a real, billed embed_text() call -- cached by
+            # content hash (so re-probing the same model is free) and budget-
+            # checked on a miss, the same guard embed_query_text applies to every
+            # other live query-embedding call. Without this, repeatedly PATCHing
+            # embedding_model back and forth was a real, uncapped budget bypass,
+            # same bug class as the GET /search one this mirrors.
+            probe_hash = hash_text("dimension probe")
+            cached_probe = await lookup_cache(session, probe_hash, effective.model, EMBEDDING_PROMPT_VERSION, "embedding")
+            if cached_probe is not None:
+                vector = cached_probe.response["embedding"]
+            else:
+                if await is_budget_exceeded(session):
+                    await session.rollback()
+                    raise HTTPException(
+                        status_code=503,
+                        detail="Monthly LLM budget exceeded — cannot verify a new embedding model's dimension right now.",
+                    )
+                try:
+                    vector, probe_result = await embed_text(
+                        "dimension probe",
+                        model=effective.model,
+                        api_key=effective.api_key,
+                        api_base=effective.api_base,
+                    )
+                except Exception as exc:
+                    await session.rollback()
+                    raise HTTPException(
+                        status_code=400, detail=f"could not verify {effective.model}'s embedding dimension: {exc}"
+                    ) from exc
+                # Recorded in its own, independent session: a real, billed call
+                # already happened by this point and must reach the monthly
+                # budget ledger regardless of what happens to the rest of this
+                # request (a dimension mismatch just below still rolls `session`
+                # back and raises, which must not also lose this cost record).
+                async with async_session_factory() as cost_session:
+                    await get_or_create_cache_entry(
+                        cost_session, probe_hash, effective.model, EMBEDDING_PROMPT_VERSION, "embedding", probe_result
+                    )
+                    await cost_session.commit()
             if len(vector) != settings.embedding_dimensions:
                 await session.rollback()
                 raise HTTPException(
