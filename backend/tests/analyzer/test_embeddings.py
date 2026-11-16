@@ -163,6 +163,37 @@ async def test_embed_texts_batch_splits_tokens_and_cost_so_they_sum_to_the_real_
 
 
 @pytest.mark.asyncio
+async def test_embed_texts_batch_falls_back_to_computed_cost_when_litellm_raises(monkeypatch):
+    async def fake_aembedding(**kwargs):
+        return _fake_batch_response([[0.1], [0.2]], prompt_tokens=20)
+
+    def raising_cost(**kwargs):
+        raise RuntimeError("no pricing data for this model")
+
+    monkeypatch.setattr("app.analyzer.embeddings.litellm.aembedding", fake_aembedding)
+    monkeypatch.setattr("app.analyzer.embeddings.litellm.completion_cost", raising_cost)
+    monkeypatch.setattr("app.analyzer.embeddings.compute_cost_usd", lambda model, tin, tout: Decimal("0.0001"))
+
+    results = await embed_texts_batch(["aa", "bb"], model="m", api_key="k")
+
+    assert sum(r.cost_usd for _v, r in results) == Decimal("0.0001")
+
+
+@pytest.mark.asyncio
+async def test_embed_texts_batch_falls_back_to_computed_cost_when_litellm_returns_zero(monkeypatch):
+    async def fake_aembedding(**kwargs):
+        return _fake_batch_response([[0.1], [0.2]], prompt_tokens=20)
+
+    monkeypatch.setattr("app.analyzer.embeddings.litellm.aembedding", fake_aembedding)
+    monkeypatch.setattr("app.analyzer.embeddings.litellm.completion_cost", lambda **k: 0)
+    monkeypatch.setattr("app.analyzer.embeddings.compute_cost_usd", lambda model, tin, tout: Decimal("0.0002"))
+
+    results = await embed_texts_batch(["aa", "bb"], model="m", api_key="k")
+
+    assert sum(r.cost_usd for _v, r in results) == Decimal("0.0002")
+
+
+@pytest.mark.asyncio
 async def test_embed_texts_batch_reorders_by_the_responses_own_index_field(monkeypatch):
     """OpenAI documents returning batch embeddings in input order already, but
     each item also carries its own "index" -- sorting by it (rather than

@@ -56,7 +56,7 @@ async def get_or_create_cache_entry(
         # back empty would mean the unique constraint fired against a row this
         # query can't see, which is a bug in this function, not a normal runtime
         # condition to swallow.
-        raise AssertionError(
+        raise AssertionError(  # pragma: no cover - defensive; the race described above
             f"AnalysisCache conflict on ({content_hash!r}, {model!r}, {prompt_version!r}, {kind!r}) "
             "but no existing row was found"
         )
