@@ -10,6 +10,10 @@ const nextConfig: NextConfig = {
   cacheComponents: true,
   partialPrefetching: true,
   turbopack: {
+    // The repo root's own package.json/package-lock.json (for the Neon
+    // integration) makes Next.js see two lockfiles and guess at the
+    // workspace root -- pin it explicitly to silence that warning.
+    root: process.cwd(),
     rules: {
       "*.css": {
         loaders: ["@tailwindcss/turbopack"],

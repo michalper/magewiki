@@ -203,6 +203,8 @@ class TestExecutionResult:
     in this checkout, or no Test/Unit directory), not a failure.
     """
 
+    __test__ = False  # not a pytest test class -- name just starts with "Test"
+
     executed: bool
     tests_run: int = 0
     tests_failed: int = 0

@@ -174,6 +174,7 @@ def real_webhook_server():
     finally:
         server.shutdown()
         thread.join(timeout=5)
+        server.server_close()  # shutdown() stops serve_forever()'s loop but leaves the listening socket open
 
 
 @pytest.mark.asyncio
