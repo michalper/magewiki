@@ -1,0 +1,26 @@
+name: Dependency Review
+
+# Separate from ci.yml's own dependency checks (pip-audit/npm audit, Dependabot
+# itself): those scan what's already in main on a schedule or after the fact.
+# This one runs at PR time and blocks the PR itself if it introduces a new
+# dependency with an already-known vulnerability -- a different point of
+# control, not a duplicate of either.
+
+on:
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  dependency-review:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/dependency-review-action@v5
+        with:
+          # Matches this project's own pip-audit/npm-audit continue-on-error
+          # posture for CVEs with no upstream fix yet (see CLAUDE.md and the
+          # decision log) -- low severity findings alone shouldn't block a PR,
+          # moderate-and-up should.
+          fail-on-severity: moderate
