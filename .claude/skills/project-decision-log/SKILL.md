@@ -3546,5 +3546,16 @@ CLAUDE.md's own phase-plan table already carries the same done-criteria
 and per-phase decision links, so nothing was lost, only de-duplicated.
 This supersedes the "annotated rather than deleted" call made minutes
 earlier in the same session for the Phase 13 bullet specifically: that
-bullet is gone now along with the rest of the section, by the user's own
-explicit instruction, not a change of mind by the agent.
+bullet is gone from README now along with the rest of the section, by
+the user's own explicit instruction, not a change of mind by the agent.
+
+Minutes later still, in the same session: the user asked to move the
+removed checklist to its own file rather than lose it outright. Recovered
+the exact removed text via `git show <prev-commit>^:README.md` (not
+retyped) into new `docs/roadmap.md`, matching the existing
+`docs/v1-port-roadmap.md` naming convention, and pointed the README
+intro paragraph at it (`See docs/roadmap.md for the per-phase changelog
+and CLAUDE.md for the full design/decision behind each one`). Net effect
+across these three back-to-back asks: the README intro no longer carries
+a 26-line changelog inline, but the changelog itself still exists,
+one click away, unchanged.

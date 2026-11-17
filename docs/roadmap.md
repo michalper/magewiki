@@ -1,0 +1,32 @@
+# Roadmap
+
+Per-phase changelog. Full detail (done-criteria, data model, RAG design, and the decision recorded behind each phase): see `CLAUDE.md`.
+
+- [x] **Phase 0** — Repo skeleton, docker-compose, migrations
+- [x] **Phase 1** — Scanner: module discovery, XML/composer/PHP parsers, saved to the DB
+- [x] **Phase 2** — Per-file hash, diff, module state machine, ARQ+Redis queue
+- [x] **Phase 3** — AI analysis: JSON schema, tag dictionary, cache, cost tracking, budget, README from the DB
+- [x] **Phase 4** — Embeddings and hybrid retriever (vector + FTS + trigram, RRF)
+- [x] **Phase 5** — Agent with tools, SSE chat, citations, pm/dev modes
+- [x] **Phase 6** — Cron, HMAC webhook, BYOK in the UI, Ollama, dependency graph
+- [x] **Phase 7** — Evaluation suite (hit_rate@k, MRR, negative/enumeration questions)
+- [x] **Phase 7b** — CI/CD (GitHub Actions): lint, tests, Docker build, and the PR-comment RAG eval all verified green
+- [x] **Phase 8** — Kubernetes: Kustomize manifests, scan CronJob, verified end-to-end on a local `kind` cluster
+- [x] **Phase 9** — Parser-only quality checks (composer completeness, `@deprecated`, hardcoded secrets, test presence) + badge/KPI-ring UI foundation
+- [x] **Phase 10** — Dependency intelligence: CVE/security-advisory check + abandoned/outdated check
+- [x] **Phase 11** — Multi-repo fleet view
+- [x] **Phase 12** — PHP static-analysis toolchain (PHPStan/PHPMD/phpcs/Rector/PhpMetrics)
+- [x] **Phase 12b** — Magento upgrade readiness: PHP-version and `magento/*` dependency compatibility against the latest Magento release, refreshed via a daily cron
+- [x] **Phase 13** — Public demo deployment: Fly.io + Neon (not the originally planned GCP/Azure/Terraform — no budget for that, see `CLAUDE.md`); decommissioned 2026-11-17 after the deployment stopped serving — see the decision log
+- [x] **Phase 14** — Deeper structural facts: `webapi.xml`, `crontab.xml`, `db_schema.xml`, `system.xml`, `di.xml` `virtualType`, and message-queue topology (`communication.xml`/`queue_topology.xml`/`queue_consumer.xml`)
+- [x] **Phase 15** — Cross-module conflict detection, round 2: `di.xml` `<preference>` conflicts, `crontab.xml` job-code conflicts, GraphQL field conflicts
+- [x] **Phase 16** — Module history: a per-scan-change snapshot table and a "what changed since last scan" view on every module page
+- [x] **Phase 17** — RAG query rewriting, opt-in (mirrors how reranking shipped — a second, independently budget-gated LLM call)
+- [x] **Phase 18** — Alerting: one webhook POST per scan when a secret/CVE count goes up for any module — works directly with a Slack or Google Chat webhook URL, off by default
+- [x] **Phase 19** — Cross-module conflict detection, round 3: `acl.xml` admin-ACL resource facts, a duplicate-ACL-resource-id conflict check, and a new unprotected-admin-controller check (`Controller/Adminhtml/*` with no resolvable `ADMIN_RESOURCE`)
+- [x] **Phase 20** — Cross-module conflict detection, round 4: `indexer.xml`/`mview.xml` facts, a duplicate-indexer-id check, and a duplicate-mview-id check
+- [x] **Phase 21** — Semantic duplicate/overlap detection (reusing Phase 4's existing module-level embeddings, no new scan or API call) plus a side-by-side module comparison page
+- [x] **Phase 22** — Cross-module conflict detection, round 5: `routes.xml` facts, a route-id conflict check, and a frontName conflict check, both scoped per area
+- [x] **Phase 23** — Cross-module conflict detection, round 6: `widget.xml` facts (no area column -- widget ids are a single global namespace) and a duplicate-widget-id conflict check
+- [x] **Phase 24** — Lightweight access gate (shared token) on write/cost-incurring endpoints (`POST /chat`, `PATCH /settings/llm`, `POST /scan[/stream]`) — lets an operator safely enable a real LLM key on the public demo without open budget exposure; read-only browsing stays open
+- [x] **Phase 25** — Cross-module conflict detection, round 7: `menu.xml` admin-menu-item-id conflicts (a confirmed hard Magento error, kept the same severity as the rest of this family) and `cache.xml` type conflicts (only when the backing `instance` disagrees)
