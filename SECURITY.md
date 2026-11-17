@@ -21,8 +21,6 @@ see it.
 - The application code in this repository (`backend/`, `frontend/`,
   `php-analyzer/`) and its own configuration (`k8s/`, `docker-compose.yml`,
   the `Dockerfile`s).
-- The public demo deployment (Fly.io), to the extent a report is actually
-  about this project's own code rather than Fly's platform itself.
 
 Out of scope: third-party dependencies with no code of this project's own
 involved (report those upstream instead) and findings already called out as

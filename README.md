@@ -1,7 +1,6 @@
 # MageWiki-AI
 
 ![CI](https://github.com/michalper/magewiki/actions/workflows/ci.yml/badge.svg)
-[![Live Demo](https://img.shields.io/badge/demo-live-EE672F)](https://magewiki-web.fly.dev/modules?has_doc=true)
 [![codecov](https://codecov.io/gh/michalper/magewiki/branch/main/graph/badge.svg)](https://codecov.io/gh/michalper/magewiki)
 [![Quality Gate](https://sonarcloud.io/api/project_badges/measure?project=michalper_magewiki&metric=alert_status)](https://sonarcloud.io/summary/new_code?id=michalper_magewiki)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
@@ -16,8 +15,6 @@
 An AI-powered catalog and chat agent for Magento 2 codebases. MageWiki-AI scans Magento modules (`module.xml`, `composer.json`, `di.xml`, `events.xml`, `Plugin/` classes), builds a knowledge base in PostgreSQL, and lets developers and PMs ask natural-language questions about the architecture — with every answer citing the module and file it came from. It also runs a battery of quality, security, and Magento-upgrade-readiness checks on every scanned module and surfaces the results as badges, a stats dashboard, and a multi-repo fleet view — including **cross-module conflict detection**: two modules fighting over the same plugin hook, a Composer package version range, or a REST route don't fail quietly until someone hits the bug in production; MageWiki flags the exact pair and why.
 
 Project status: **all 26 planned phases done** (0–12b, 13–25) — the MVP (v1.0, Phases 0–5) plus cron/webhook automation, BYOK in the UI, Ollama support, a per-module dependency graph, an evaluation suite, CI/CD, a local Kubernetes deployment, parser-only quality checks, CVE/dependency intelligence, a multi-repo fleet view, a real PHP static-analysis toolchain (PHPStan/PHPMD/phpcs/Rector), Magento-upgrade-readiness checking, deeper structural facts (webapi/crontab/db_schema/system.xml), a second round of cross-module conflict detection (`di.xml` preferences, `crontab.xml` jobs, GraphQL fields), per-module change history, opt-in RAG query rewriting, webhook alerting on new secrets/CVEs, a third round of conflict detection on `acl.xml` admin-ACL resources plus an unprotected-admin-controller check, a fourth round on `indexer.xml`/`mview.xml` ids, semantic duplicate-module detection plus a side-by-side module comparison page, a fifth conflict-detection round on `routes.xml` route ids/frontNames, a sixth on `widget.xml` ids, a lightweight access gate on write/cost-incurring endpoints, and a seventh conflict-detection round on `menu.xml`/`cache.xml` ids. See [Roadmap](#roadmap) below and `CLAUDE.md` for the full design, including the recorded decision behind each phase.
-
-**[Live demo](https://magewiki-web.fly.dev/modules?has_doc=true)** — seeded with a real scan (Magento core + a real third-party module), not synthetic data. The link leads with the modules that already have a full AI-generated analysis; clear the filter to see the whole fleet. The deployment has no scan root or LLM key configured, so Scan and Chat are effectively read-only there — it's meant as a look at already-collected data, not a sandbox to scan your own code or run live chat against.
 
 **[See the full Wiki](https://github.com/michalper/magewiki/wiki)** for a screen-by-screen walkthrough — every screenshot there is a real scan of [Ordo_Automation](https://github.com/michalper/ordo), not a synthetic demo. **[See `docs/architecture.md`](docs/architecture.md)** for the reasoning behind the retrieval design, the anti-hallucination guarantees, and how LLM cost is kept bounded — the "why", not just the "what".
 
@@ -324,7 +321,7 @@ network-isolated container.
 - [x] **Phase 11** — Multi-repo fleet view
 - [x] **Phase 12** — PHP static-analysis toolchain (PHPStan/PHPMD/phpcs/Rector/PhpMetrics)
 - [x] **Phase 12b** — Magento upgrade readiness: PHP-version and `magento/*` dependency compatibility against the latest Magento release, refreshed via a daily cron
-- [x] **Phase 13** — Public demo deployment: Fly.io + Neon (not the originally planned GCP/Azure/Terraform — no budget for that, see `CLAUDE.md`)
+- [x] **Phase 13** — Public demo deployment: Fly.io + Neon (not the originally planned GCP/Azure/Terraform — no budget for that, see `CLAUDE.md`); decommissioned 2026-11-17 after the deployment stopped serving — see the decision log
 - [x] **Phase 14** — Deeper structural facts: `webapi.xml`, `crontab.xml`, `db_schema.xml`, `system.xml`, `di.xml` `virtualType`, and message-queue topology (`communication.xml`/`queue_topology.xml`/`queue_consumer.xml`)
 - [x] **Phase 15** — Cross-module conflict detection, round 2: `di.xml` `<preference>` conflicts, `crontab.xml` job-code conflicts, GraphQL field conflicts
 - [x] **Phase 16** — Module history: a per-scan-change snapshot table and a "what changed since last scan" view on every module page
