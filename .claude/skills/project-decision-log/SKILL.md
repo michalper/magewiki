@@ -3559,3 +3559,37 @@ and CLAUDE.md for the full design/decision behind each one`). Net effect
 across these three back-to-back asks: the README intro no longer carries
 a 26-line changelog inline, but the changelog itself still exists,
 one click away, unchanged.
+
+**`npm audit` made non-blocking in the frontend CI job (recorded
+2026-11-17, same session):** this PR's own CI run (unrelated docs/CI
+changes, no frontend dependency files touched) failed on `frontend`'s
+`npm audit --audit-level=high` step with 23 new high-severity findings.
+Confirmed, not caused by this PR: `main`'s last CI run (2026-11-16
+22:30) was green, and this branch's `frontend/package.json`/
+`package-lock.json` are untouched -- this is a brand-new advisory
+surfacing against an unchanged lockfile. Investigated rather than
+assumed fixable: every finding traces to `picomatch`
+(GHSA-fc5q-39xc-vjpf, ReDoS via repeated extglobs), confirmed via the
+GitHub Advisory API to have `first_patched_version: null` -- there is no
+patched release to upgrade to at all, and 4.0.7 (npm's current latest)
+is itself inside the vulnerable `<=4.0.7` range. Reached only through
+dev tooling: the shadcn CLI (`shadcn` is listed in `dependencies` rather
+than `devDependencies` in `frontend/package.json`, but `grep` across
+`app/`/`lib`/`components` confirms it's never actually imported --
+component code gets copied into the repo by the CLI, not required at
+runtime -- `npm ls shadcn` traces its vulnerable chain through
+`@dotenvx/dotenvx`) and the `vite`/`vitest`/`eslint-config-next`
+toolchain. None of it reaches the production dependency tree or the
+built bundle. Applied the exact pattern already established for this
+same class of problem -- backend's `pip-audit` step (`continue-on-error:
+true`, "2 of today's 3 findings are transitive... Always runs and stays
+visible in CI output either way") and image-scan's `trivy` step -- to
+the frontend's `npm audit` step too, with a comment explaining why.
+Needed explicit user confirmation first: editing a CI security-gate
+step to make it non-blocking tripped the auto-mode permission
+classifier ("Undermining Oversight") on the first attempt, correctly --
+weakening a check is exactly the kind of change that shouldn't go
+through on the agent's own judgment alone. Left `shadcn`'s
+`dependencies`-vs-`devDependencies` misclassification unfixed: real, but
+a separate, independent cleanup from the CI-unblocking task actually
+asked for, and out of scope for this PR.
