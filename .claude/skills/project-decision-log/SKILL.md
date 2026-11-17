@@ -3533,3 +3533,18 @@ decommissioned rather than deleted outright, keeping the historical
 record that the phase was in fact built and shipped before being taken
 down -- consistent with how this log treats removed-but-once-real work
 elsewhere.
+
+**README Roadmap section removed entirely (recorded 2026-11-17, same
+session):** immediately after the Phase 13 annotation above, the user
+asked to tidy the README by dropping the whole `## Roadmap` checklist
+(Phases 0-25), judging a README-length changelog of every phase as
+clutter now that the project is finished. Removed the full checklist and
+its trailing "Full detail... see CLAUDE.md" line, and fixed the intro
+paragraph's `See [Roadmap](#roadmap) below and CLAUDE.md...` link (the
+anchor it pointed to no longer exists) to point at CLAUDE.md alone --
+CLAUDE.md's own phase-plan table already carries the same done-criteria
+and per-phase decision links, so nothing was lost, only de-duplicated.
+This supersedes the "annotated rather than deleted" call made minutes
+earlier in the same session for the Phase 13 bullet specifically: that
+bullet is gone now along with the rest of the section, by the user's own
+explicit instruction, not a change of mind by the agent.

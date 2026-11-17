@@ -14,7 +14,7 @@
 
 An AI-powered catalog and chat agent for Magento 2 codebases. MageWiki-AI scans Magento modules (`module.xml`, `composer.json`, `di.xml`, `events.xml`, `Plugin/` classes), builds a knowledge base in PostgreSQL, and lets developers and PMs ask natural-language questions about the architecture — with every answer citing the module and file it came from. It also runs a battery of quality, security, and Magento-upgrade-readiness checks on every scanned module and surfaces the results as badges, a stats dashboard, and a multi-repo fleet view — including **cross-module conflict detection**: two modules fighting over the same plugin hook, a Composer package version range, or a REST route don't fail quietly until someone hits the bug in production; MageWiki flags the exact pair and why.
 
-Project status: **all 26 planned phases done** (0–12b, 13–25) — the MVP (v1.0, Phases 0–5) plus cron/webhook automation, BYOK in the UI, Ollama support, a per-module dependency graph, an evaluation suite, CI/CD, a local Kubernetes deployment, parser-only quality checks, CVE/dependency intelligence, a multi-repo fleet view, a real PHP static-analysis toolchain (PHPStan/PHPMD/phpcs/Rector), Magento-upgrade-readiness checking, deeper structural facts (webapi/crontab/db_schema/system.xml), a second round of cross-module conflict detection (`di.xml` preferences, `crontab.xml` jobs, GraphQL fields), per-module change history, opt-in RAG query rewriting, webhook alerting on new secrets/CVEs, a third round of conflict detection on `acl.xml` admin-ACL resources plus an unprotected-admin-controller check, a fourth round on `indexer.xml`/`mview.xml` ids, semantic duplicate-module detection plus a side-by-side module comparison page, a fifth conflict-detection round on `routes.xml` route ids/frontNames, a sixth on `widget.xml` ids, a lightweight access gate on write/cost-incurring endpoints, and a seventh conflict-detection round on `menu.xml`/`cache.xml` ids. See [Roadmap](#roadmap) below and `CLAUDE.md` for the full design, including the recorded decision behind each phase.
+Project status: **all 26 planned phases done** (0–12b, 13–25) — the MVP (v1.0, Phases 0–5) plus cron/webhook automation, BYOK in the UI, Ollama support, a per-module dependency graph, an evaluation suite, CI/CD, a local Kubernetes deployment, parser-only quality checks, CVE/dependency intelligence, a multi-repo fleet view, a real PHP static-analysis toolchain (PHPStan/PHPMD/phpcs/Rector), Magento-upgrade-readiness checking, deeper structural facts (webapi/crontab/db_schema/system.xml), a second round of cross-module conflict detection (`di.xml` preferences, `crontab.xml` jobs, GraphQL fields), per-module change history, opt-in RAG query rewriting, webhook alerting on new secrets/CVEs, a third round of conflict detection on `acl.xml` admin-ACL resources plus an unprotected-admin-controller check, a fourth round on `indexer.xml`/`mview.xml` ids, semantic duplicate-module detection plus a side-by-side module comparison page, a fifth conflict-detection round on `routes.xml` route ids/frontNames, a sixth on `widget.xml` ids, a lightweight access gate on write/cost-incurring endpoints, and a seventh conflict-detection round on `menu.xml`/`cache.xml` ids. See `CLAUDE.md` for the full phase plan and the design/decision behind each one.
 
 **[See the full Wiki](https://github.com/michalper/magewiki/wiki)** for a screen-by-screen walkthrough — every screenshot there is a real scan of [Ordo_Automation](https://github.com/michalper/ordo), not a synthetic demo. **[See `docs/architecture.md`](docs/architecture.md)** for the reasoning behind the retrieval design, the anti-hallucination guarantees, and how LLM cost is kept bounded — the "why", not just the "what".
 
@@ -303,39 +303,6 @@ line coverage, confirmed against a real `pcov`-instrumented run. See
 `CLAUDE.md`'s "Real PHPUnit test execution" entry for the full sandboxing
 writeup: wall-clock kill timeout, disabled shell-spawning functions,
 network-isolated container.
-
-## Roadmap
-
-- [x] **Phase 0** — Repo skeleton, docker-compose, migrations
-- [x] **Phase 1** — Scanner: module discovery, XML/composer/PHP parsers, saved to the DB
-- [x] **Phase 2** — Per-file hash, diff, module state machine, ARQ+Redis queue
-- [x] **Phase 3** — AI analysis: JSON schema, tag dictionary, cache, cost tracking, budget, README from the DB
-- [x] **Phase 4** — Embeddings and hybrid retriever (vector + FTS + trigram, RRF)
-- [x] **Phase 5** — Agent with tools, SSE chat, citations, pm/dev modes
-- [x] **Phase 6** — Cron, HMAC webhook, BYOK in the UI, Ollama, dependency graph
-- [x] **Phase 7** — Evaluation suite (hit_rate@k, MRR, negative/enumeration questions)
-- [x] **Phase 7b** — CI/CD (GitHub Actions): lint, tests, Docker build, and the PR-comment RAG eval all verified green
-- [x] **Phase 8** — Kubernetes: Kustomize manifests, scan CronJob, verified end-to-end on a local `kind` cluster
-- [x] **Phase 9** — Parser-only quality checks (composer completeness, `@deprecated`, hardcoded secrets, test presence) + badge/KPI-ring UI foundation
-- [x] **Phase 10** — Dependency intelligence: CVE/security-advisory check + abandoned/outdated check
-- [x] **Phase 11** — Multi-repo fleet view
-- [x] **Phase 12** — PHP static-analysis toolchain (PHPStan/PHPMD/phpcs/Rector/PhpMetrics)
-- [x] **Phase 12b** — Magento upgrade readiness: PHP-version and `magento/*` dependency compatibility against the latest Magento release, refreshed via a daily cron
-- [x] **Phase 13** — Public demo deployment: Fly.io + Neon (not the originally planned GCP/Azure/Terraform — no budget for that, see `CLAUDE.md`); decommissioned 2026-11-17 after the deployment stopped serving — see the decision log
-- [x] **Phase 14** — Deeper structural facts: `webapi.xml`, `crontab.xml`, `db_schema.xml`, `system.xml`, `di.xml` `virtualType`, and message-queue topology (`communication.xml`/`queue_topology.xml`/`queue_consumer.xml`)
-- [x] **Phase 15** — Cross-module conflict detection, round 2: `di.xml` `<preference>` conflicts, `crontab.xml` job-code conflicts, GraphQL field conflicts
-- [x] **Phase 16** — Module history: a per-scan-change snapshot table and a "what changed since last scan" view on every module page
-- [x] **Phase 17** — RAG query rewriting, opt-in (mirrors how reranking shipped — a second, independently budget-gated LLM call)
-- [x] **Phase 18** — Alerting: one webhook POST per scan when a secret/CVE count goes up for any module — works directly with a Slack or Google Chat webhook URL, off by default
-- [x] **Phase 19** — Cross-module conflict detection, round 3: `acl.xml` admin-ACL resource facts, a duplicate-ACL-resource-id conflict check, and a new unprotected-admin-controller check (`Controller/Adminhtml/*` with no resolvable `ADMIN_RESOURCE`)
-- [x] **Phase 20** — Cross-module conflict detection, round 4: `indexer.xml`/`mview.xml` facts, a duplicate-indexer-id check, and a duplicate-mview-id check
-- [x] **Phase 21** — Semantic duplicate/overlap detection (reusing Phase 4's existing module-level embeddings, no new scan or API call) plus a side-by-side module comparison page
-- [x] **Phase 22** — Cross-module conflict detection, round 5: `routes.xml` facts, a route-id conflict check, and a frontName conflict check, both scoped per area
-- [x] **Phase 23** — Cross-module conflict detection, round 6: `widget.xml` facts (no area column -- widget ids are a single global namespace) and a duplicate-widget-id conflict check
-- [x] **Phase 24** — Lightweight access gate (shared token) on write/cost-incurring endpoints (`POST /chat`, `PATCH /settings/llm`, `POST /scan[/stream]`) — lets an operator safely enable a real LLM key on the public demo without open budget exposure; read-only browsing stays open
-- [x] **Phase 25** — Cross-module conflict detection, round 7: `menu.xml` admin-menu-item-id conflicts (a confirmed hard Magento error, kept the same severity as the rest of this family) and `cache.xml` type conflicts (only when the backing `instance` disagrees)
-
-Full detail (done-criteria, data model, RAG design, and the decision recorded behind each phase) per phase: see `CLAUDE.md`.
 
 ## Evaluation
 
