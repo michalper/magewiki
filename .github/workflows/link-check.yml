@@ -31,5 +31,10 @@ jobs:
       - uses: actions/checkout@v7
       - uses: lycheeverse/lychee-action@v2.9.0
         with:
-          args: --no-progress --exclude-loopback --exclude-private
+          # args overrides the action's own default entirely rather than
+          # merging with it -- confirmed the hard way, by a real failed run
+          # ("required arguments were not provided: <inputs>...") when this
+          # only had the flags below and no file globs at all. Globs match
+          # the action's own documented default.
+          args: --no-progress --exclude-loopback --exclude-private './**/*.md' './**/*.html' './**/*.rst'
           fail: true
