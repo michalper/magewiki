@@ -208,7 +208,14 @@ jobs:
           cache-from: type=gha,scope=php-analyzer
           cache-to: type=gha,mode=max,scope=php-analyzer
 
-  image-scan:
+  # image-scan/image-structure-test/sbom used to be 3 separate matrix jobs
+  # (9 job runs total), each independently re-pulling the GHA cache and
+  # rebuilding the same image from scratch just to run one check against it.
+  # Merged into one job per image: the image is loaded once, then Trivy,
+  # container-structure-test, and the SBOM generator each run against that
+  # same already-loaded image -- same checks, a third of the runner
+  # startup/cache-restore overhead.
+  image-quality:
     needs: docker-build
     runs-on: ubuntu-latest
     permissions:
@@ -237,7 +244,6 @@ jobs:
           tags: magewiki-${{ matrix.image }}-ci
           load: true
           cache-from: type=gha,scope=${{ matrix.image }}
-          cache-to: type=gha,mode=max,scope=${{ matrix.image }}
       # pip-audit/npm audit (in the backend/frontend jobs above) only scan the
       # project's own lockfiles — this catches CVEs in the OS-layer packages the
       # base image (e.g. python:3.13-slim) brings in, which nothing else here does.
@@ -259,33 +265,6 @@ jobs:
         with:
           sarif_file: trivy-${{ matrix.image }}.sarif
           category: "trivy-${{ matrix.image }}"
-
-  image-structure-test:
-    needs: docker-build
-    runs-on: ubuntu-latest
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - image: backend
-            context: ./backend
-            dockerfile: ./backend/Dockerfile
-          - image: frontend
-            context: ./frontend
-            dockerfile: ./frontend/Dockerfile
-          - image: php-analyzer
-            context: .
-            dockerfile: php-analyzer/Dockerfile
-    steps:
-      - uses: actions/checkout@v7
-      - uses: docker/setup-buildx-action@v3
-      - uses: docker/build-push-action@v6
-        with:
-          context: ${{ matrix.context }}
-          file: ${{ matrix.dockerfile }}
-          tags: magewiki-${{ matrix.image }}-ci
-          load: true
-          cache-from: type=gha,scope=${{ matrix.image }}
       - name: Install container-structure-test
         run: |
           curl -fLO https://github.com/GoogleContainerTools/container-structure-test/releases/download/v1.22.1/container-structure-test-linux-amd64
@@ -293,43 +272,16 @@ jobs:
           sudo mv container-structure-test-linux-amd64 /usr/local/bin/container-structure-test
       - name: container-structure-test (${{ matrix.image }})
         run: container-structure-test test --image magewiki-${{ matrix.image }}-ci --config "$(dirname ${{ matrix.dockerfile }})/container-structure-test.yaml"
-
-  sbom:
-    # SBOM only, no cosign image signing: nothing in this project ever pushes
-    # these images to a registry (no GHCR/Docker Hub publish step exists at
-    # all -- docker-build/image-scan/image-structure-test/e2e-smoke/k8s-smoke
-    # all build and use them locally, within the same job, then discard
-    # them). Signing an image that's never distributed verifies nothing for
-    # anyone -- there's no pull site for a consumer to check the signature
-    # against. A CycloneDX SBOM has real value even for a locally-built,
-    # never-published image: it's a per-build, auditable record of exactly
-    # what's inside each image (OS packages + language deps), independent of
-    # Trivy's own point-in-time CVE scan above.
-    needs: docker-build
-    runs-on: ubuntu-latest
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - image: backend
-            context: ./backend
-            dockerfile: ./backend/Dockerfile
-          - image: frontend
-            context: ./frontend
-            dockerfile: ./frontend/Dockerfile
-          - image: php-analyzer
-            context: .
-            dockerfile: php-analyzer/Dockerfile
-    steps:
-      - uses: actions/checkout@v7
-      - uses: docker/setup-buildx-action@v3
-      - uses: docker/build-push-action@v6
-        with:
-          context: ${{ matrix.context }}
-          file: ${{ matrix.dockerfile }}
-          tags: magewiki-${{ matrix.image }}-ci
-          load: true
-          cache-from: type=gha,scope=${{ matrix.image }}
+      # SBOM only, no cosign image signing: nothing in this project ever pushes
+      # these images to a registry (no GHCR/Docker Hub publish step exists at
+      # all -- every job that uses these images, including this one, builds
+      # and discards them locally). Signing an image that's never
+      # distributed verifies nothing for anyone -- there's no pull site for
+      # a consumer to check the signature against. A CycloneDX SBOM has real
+      # value even for a locally-built, never-published image: it's a
+      # per-build, auditable record of exactly what's inside each image (OS
+      # packages + language deps), independent of Trivy's own point-in-time
+      # CVE scan above.
       - name: Generate SBOM (${{ matrix.image }})
         uses: anchore/sbom-action@v0.24.0
         with:

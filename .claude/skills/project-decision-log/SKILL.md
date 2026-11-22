@@ -3842,3 +3842,20 @@ being wired in:
   architecture.md`'s own fuzzy-search example, and a fuzzy-match eval
   question in `dataset.py` already commented "deliberate typo"). Confirmed
   clean (exit 0) after the config, not just "looks plausible."
+
+**CI runtime optimization (recorded 2026-11-22, same session): merged
+`image-scan`/`image-structure-test`/`sbom` into one `image-quality` job per
+image.** User's own call when asked, after the session's own additions
+tripled the redundancy this pattern already had: each of the 3 old jobs
+independently re-pulled the GHA cache and rebuilt the same image from
+scratch (unchanged, since nothing invalidated the cache between them) just
+to run one check against it -- 9 job runs total (3 images × 3 checks) with
+3× the runner-startup/checkout/buildx-setup/cache-restore overhead that
+achieves, instead of loading each image once and running Trivy +
+container-structure-test + the SBOM generator against that same load in
+one job. Not the bigger version of this idea (`docker save` the one image
+`docker-build` already built, instead of every consumer job rebuilding
+from GHA cache) -- that's still the existing, consciously accepted
+trade-off from the Nov-15 required-status-checks entry above, not revisited
+here. None of the three old job names were in `main`'s required-status-checks
+list, so this needed no branch-protection update.
