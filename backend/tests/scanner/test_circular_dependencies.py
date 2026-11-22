@@ -56,3 +56,25 @@ def test_does_not_duplicate_the_same_cycle_reached_from_different_start_nodes():
     findings = detect_circular_dependencies(deps)
 
     assert {module_id for module_id, _ in findings} == {1, 2, 3}
+
+
+def test_a_chain_deeper_than_pythons_recursion_limit_does_not_crash():
+    # Regression test: a real module.xml <sequence> chain in a large fleet
+    # (CLAUDE.md's own 760-module reference point) can plausibly approach
+    # Python's default recursion limit (1000) -- traversal must be iterative,
+    # not a recursive `visit()` closure, or this raises an uncaught
+    # RecursionError that fails the *whole* scan, not just this one check.
+    depth = 5000
+    deps = [_dep(i, f"Vendor_M{i}", f"Vendor_M{i + 1}") for i in range(depth)]
+
+    assert detect_circular_dependencies(deps) == []
+
+
+def test_a_cycle_at_the_far_end_of_a_long_chain_is_still_found():
+    depth = 5000
+    deps = [_dep(i, f"Vendor_M{i}", f"Vendor_M{i + 1}") for i in range(depth)]
+    deps.append(_dep(depth, f"Vendor_M{depth}", "Vendor_M0"))  # closes the cycle
+
+    findings = detect_circular_dependencies(deps)
+
+    assert {module_id for module_id, _ in findings} == set(range(depth + 1))

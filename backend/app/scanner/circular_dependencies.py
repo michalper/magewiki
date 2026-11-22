@@ -43,25 +43,37 @@ def detect_circular_dependencies(deps: list[ModuleDependencyRow]) -> list[tuple[
     cycles: list[list[str]] = []
     seen: set[frozenset[str]] = set()
 
-    def visit(node: str) -> None:
-        color[node] = GRAY
-        path.append(node)
-        for neighbor in edges.get(node, ()):
-            if color[neighbor] == GRAY:
-                idx = path.index(neighbor)
-                cycle = [*path[idx:], neighbor]
-                key = frozenset(cycle[:-1])
-                if key not in seen:
-                    seen.add(key)
-                    cycles.append(cycle)
-            elif color[neighbor] == WHITE:
-                visit(neighbor)
-        path.pop()
-        color[node] = BLACK
-
-    for node in edges:
-        if color[node] == WHITE:
-            visit(node)
+    # Iterative, not a recursive `visit(node)` closure -- a real
+    # module.xml <sequence> chain in a large fleet (CLAUDE.md's own 760-module
+    # reference point) can plausibly exceed Python's default recursion limit
+    # (1000), and an uncaught RecursionError here would fail the whole scan,
+    # not just this one check, unlike every other conflict check in this
+    # file. Each stack frame pairs a node with an iterator over its
+    # neighbors so it can resume from exactly where it left off, the same
+    # way a recursive call's local `for` loop would.
+    for start in edges:
+        if color[start] != WHITE:
+            continue
+        color[start] = GRAY
+        path.append(start)
+        stack = [iter(edges.get(start, ()))]
+        while stack:
+            for neighbor in stack[-1]:
+                if color[neighbor] == GRAY:
+                    idx = path.index(neighbor)
+                    cycle = [*path[idx:], neighbor]
+                    key = frozenset(cycle[:-1])
+                    if key not in seen:
+                        seen.add(key)
+                        cycles.append(cycle)
+                elif color[neighbor] == WHITE:
+                    color[neighbor] = GRAY
+                    path.append(neighbor)
+                    stack.append(iter(edges.get(neighbor, ())))
+                    break
+            else:
+                color[path.pop()] = BLACK
+                stack.pop()
 
     findings: list[tuple[int, QualityFinding]] = []
     for cycle in cycles:
