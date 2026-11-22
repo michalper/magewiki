@@ -1,7 +1,9 @@
+import json
 import uuid
 from datetime import UTC, datetime
 from decimal import Decimal
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 from sqlalchemy import delete, select
@@ -351,10 +353,30 @@ async def test_run_retrieval_eval_raises_when_no_chunk_matches(demo_store_path, 
         await run_retrieval_eval(db_session, questions, module)
 
 
+def _fake_rerank_response(ranked_chunk_ids: list[int]):
+    tool_call = SimpleNamespace(function=SimpleNamespace(arguments=json.dumps({"ranked_chunk_ids": ranked_chunk_ids})))
+    message = SimpleNamespace(tool_calls=[tool_call])
+    return SimpleNamespace(
+        choices=[SimpleNamespace(message=message)], usage=SimpleNamespace(prompt_tokens=100, completion_tokens=20),
+    )
+
+
+def _fake_rewrite_response(rewritten: str):
+    tool_call = SimpleNamespace(function=SimpleNamespace(arguments=json.dumps({"rewritten_query": rewritten})))
+    message = SimpleNamespace(tool_calls=[tool_call])
+    return SimpleNamespace(
+        choices=[SimpleNamespace(message=message)], usage=SimpleNamespace(prompt_tokens=50, completion_tokens=10),
+    )
+
+
 @pytest.mark.asyncio
-async def test_run_retrieval_eval_scores_vector_keyword_and_hybrid_for_a_real_match(
+async def test_run_retrieval_eval_scores_every_mode_including_rerank_and_query_rewrite(
     demo_store_path, db_session, monkeypatch
 ):
+    """rerank/query_rewrite are scored unconditionally (not gated on
+    RERANK_ENABLED/QUERY_REWRITE_ENABLED) -- see run_retrieval_eval's own
+    docstring for why.
+    """
     from app.evaluation.runner import run_retrieval_eval
 
     module = await scan_demo_store(demo_store_path, db_session)
@@ -370,6 +392,20 @@ async def test_run_retrieval_eval_scores_vector_keyword_and_hybrid_for_a_real_ma
 
     monkeypatch.setattr("app.search.hybrid.embed_query_text", _fake_embed)
     monkeypatch.setattr("app.evaluation.isolated_retrieval.embed_query_text", _fake_embed)
+    # rerank_results/rewrite_query each make a real litellm.acompletion call
+    # when not budget-exceeded -- mocked here the same way
+    # tests/search/test_rerank.py and tests/search/test_query_rewrite.py do,
+    # so this test costs nothing and doesn't depend on network access.
+    async def _fake_rerank_acompletion(**kwargs):
+        return _fake_rerank_response([chunk.id])
+
+    async def _fake_rewrite_acompletion(**kwargs):
+        return _fake_rewrite_response("anything")
+
+    monkeypatch.setattr("app.search.rerank.litellm.acompletion", _fake_rerank_acompletion)
+    monkeypatch.setattr("app.search.rerank.litellm.completion_cost", lambda **k: 0.0015)
+    monkeypatch.setattr("app.search.query_rewrite.litellm.acompletion", _fake_rewrite_acompletion)
+    monkeypatch.setattr("app.search.query_rewrite.litellm.completion_cost", lambda **k: 0.0003)
 
     questions = [
         RetrievalQuestion(
@@ -380,7 +416,7 @@ async def test_run_retrieval_eval_scores_vector_keyword_and_hybrid_for_a_real_ma
 
     metrics = await run_retrieval_eval(db_session, questions, module)
 
-    assert set(metrics) == {"vector", "keyword", "hybrid"}
+    assert set(metrics) == {"vector", "keyword", "hybrid", "rerank", "query_rewrite"}
     for mode_metrics in metrics.values():
         assert "mrr" in mode_metrics
 

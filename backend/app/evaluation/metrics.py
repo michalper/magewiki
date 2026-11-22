@@ -1,7 +1,13 @@
 from collections.abc import Sequence
 
 DEFAULT_KS: tuple[int, ...] = (1, 3, 5, 10)
-MODE_LABELS: dict[str, str] = {"vector": "Vector-only", "keyword": "FTS-only", "hybrid": "Hybrid (RRF)"}
+MODE_LABELS: dict[str, str] = {
+    "vector": "Vector-only",
+    "keyword": "FTS-only",
+    "hybrid": "Hybrid (RRF)",
+    "rerank": "Hybrid + rerank",
+    "query_rewrite": "Hybrid + query rewrite",
+}
 
 
 def hit_at_k(ranked_ids: Sequence[int], relevant_ids: set[int], k: int) -> bool:
@@ -42,12 +48,19 @@ def aggregate(
 
 
 def render_markdown_table(metrics: dict[str, dict[str, float]], ks: tuple[int, ...] = DEFAULT_KS) -> str:
-    """A `| Mode | hit_rate@k... | MRR |` table for vector/keyword/hybrid metrics."""
+    """A `| Mode | hit_rate@k... | MRR |` table. Renders whichever of
+    MODE_LABELS' modes are actually present in `metrics`, in that fixed
+    order -- the CI eval (run_ci_eval.py) only ever scores vector/keyword/
+    hybrid (synthetic, zero-cost), while the real eval (runner.py's
+    run_retrieval_eval) also scores rerank/query_rewrite.
+    """
     header = "| Mode | " + " | ".join(f"hit_rate@{k}" for k in ks) + " | MRR |"
     sep = "|---" * (len(ks) + 2) + "|"
     rows = []
-    for mode in ("vector", "keyword", "hybrid"):
+    for mode, label in MODE_LABELS.items():
+        if mode not in metrics:
+            continue
         m = metrics[mode]
         cells = " | ".join(f"{m[f'hit_rate@{k}']:.2f}" for k in ks)
-        rows.append(f"| {MODE_LABELS[mode]} | {cells} | {m['mrr']:.2f} |")
+        rows.append(f"| {label} | {cells} | {m['mrr']:.2f} |")
     return "\n".join([header, sep, *rows])

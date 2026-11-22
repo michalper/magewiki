@@ -14,7 +14,7 @@ from sqlalchemy import delete, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.agent.loop import run_agent
-from app.agent.tools import TOOL_FUNCTIONS
+from app.agent.tools import _RERANK_CANDIDATE_POOL, TOOL_FUNCTIONS
 from app.evaluation.dataset import (
     MODULE_ID_PLACEHOLDER,
     MODULE_SENTINEL,
@@ -28,6 +28,8 @@ from app.evaluation.metrics import aggregate, render_markdown_table
 from app.models import Chunk, FileHash, Module
 from app.scanner.orchestrator import scan_repository
 from app.search.hybrid import hybrid_search
+from app.search.query_rewrite import rewrite_query
+from app.search.rerank import rerank_results
 from app.tasks.jobs import analyze_file, embed_chunks, synthesize_module
 
 
@@ -94,7 +96,17 @@ class QuestionResult:
 async def run_retrieval_eval(
     session: AsyncSession, questions: list[RetrievalQuestion], module: Module
 ) -> dict[str, dict[str, float]]:
-    per_mode: dict[str, list[tuple[Sequence[int], set[int]]]] = {"vector": [], "keyword": [], "hybrid": []}
+    """hybrid's own hit_rate@k/MRR, plus the two opt-in, independently
+    budget-gated optimizations layered on top of it in production
+    (app/agent/tools.py's search_modules, gated by RERANK_ENABLED/
+    QUERY_REWRITE_ENABLED) -- scored unconditionally here regardless of
+    those settings, so turning either one on in production is backed by a
+    real measurement of whether it actually helps or hurts, not just an
+    assumption that an LLM reordering/rewriting step can only help.
+    """
+    per_mode: dict[str, list[tuple[Sequence[int], set[int]]]] = {
+        "vector": [], "keyword": [], "hybrid": [], "rerank": [], "query_rewrite": [],
+    }
     for q in questions:
         relevant = await _relevant_chunk_ids(session, module.id, q.relevant_relative_paths)
         if not relevant:
@@ -104,9 +116,21 @@ async def run_retrieval_eval(
         keyword_results = await keyword_only_search(session, q.query, limit=10)
         hybrid_results = await hybrid_search(session, q.query, limit=10)
 
+        # Same two-step shape as search_modules' RERANK_ENABLED branch: widen
+        # the candidate pool, then let the reranker pick/reorder the final 10.
+        rerank_candidates = await hybrid_search(session, q.query, limit=max(10, _RERANK_CANDIDATE_POOL))
+        rerank_results_ranked = await rerank_results(session, q.query, rerank_candidates, top_k=10)
+
+        # Same shape as search_modules' QUERY_REWRITE_ENABLED branch:
+        # reformulate the query, then run hybrid_search on the rewrite.
+        rewritten_query = await rewrite_query(session, q.query)
+        query_rewrite_results = await hybrid_search(session, rewritten_query, limit=10)
+
         per_mode["vector"].append(([r.chunk_id for r in vector_results], relevant))
         per_mode["keyword"].append(([r.chunk_id for r in keyword_results], relevant))
         per_mode["hybrid"].append(([r.chunk_id for r in hybrid_results], relevant))
+        per_mode["rerank"].append(([r.chunk_id for r in rerank_results_ranked], relevant))
+        per_mode["query_rewrite"].append(([r.chunk_id for r in query_rewrite_results], relevant))
 
     return {mode: aggregate(rows) for mode, rows in per_mode.items()}
 

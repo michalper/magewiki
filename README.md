@@ -331,6 +331,13 @@ embedding dimension" decision note) — one honest caveat remains: these numbers
 `bge-m3`, not OpenAI's embedding model, so they aren't directly comparable to a run
 with `EMBEDDING_MODEL` left at its OpenAI default.
 
+The runner also now scores two more rows unconditionally — `Hybrid + rerank` and
+`Hybrid + query rewrite` — regardless of whether `RERANK_ENABLED`/
+`QUERY_REWRITE_ENABLED` are actually on, so turning either one on in production is
+backed by a real measurement instead of an assumption that an LLM reordering/
+rewriting step can only help. The table below predates that addition; regenerating it
+(`run_eval`, above) will add both rows.
+
 | Mode | hit_rate@1 | hit_rate@3 | hit_rate@5 | hit_rate@10 | MRR |
 |---|---|---|---|---|---|
 | Vector-only | 0.50 | 0.80 | 0.90 | 0.90 | 0.68 |
