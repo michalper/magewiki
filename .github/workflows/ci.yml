@@ -395,6 +395,65 @@ jobs:
       - if: always()
         run: docker compose logs --tail=200
 
+  k8s-smoke:
+    # Phase 8's own "done when" bar is "full stack runs on a local cluster" --
+    # until now that was only ever checked by hand (README's own kind recipe).
+    # This job runs that exact recipe for real on every push/PR, so a broken
+    # Kustomize manifest (bad YAML, a configmap key renamed in api.yaml but not
+    # configmap.yaml, a Service/Deployment selector mismatch, etc.) fails CI
+    # instead of shipping silently.
+    needs: docker-build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: docker/setup-buildx-action@v3
+      # Same three images docker-build already warmed the GHA cache for
+      # (scope names match), tagged :dev to match what k8s/base's manifests
+      # reference -- see k8s/base/{api,worker,web,php-analyzer,migrate-job}.yaml.
+      - uses: docker/build-push-action@v6
+        with:
+          context: ./backend
+          tags: magewiki-backend:dev
+          load: true
+          cache-from: type=gha,scope=backend
+      - uses: docker/build-push-action@v6
+        with:
+          context: ./frontend
+          tags: magewiki-frontend:dev
+          load: true
+          cache-from: type=gha,scope=frontend
+      - uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: php-analyzer/Dockerfile
+          tags: magewiki-php-analyzer:dev
+          load: true
+          cache-from: type=gha,scope=php-analyzer
+      - uses: helm/kind-action@v1.14.0
+        with:
+          cluster_name: magewiki
+          config: k8s/overlays/kind/kind-config.yaml
+          wait: 90s
+      - run: |
+          kind load docker-image magewiki-backend:dev magewiki-frontend:dev magewiki-php-analyzer:dev --name magewiki
+      # CI has no real LLM/HMAC secrets to put here and doesn't need any --
+      # this job only proves the manifests apply and the stack comes up, the
+      # same bar README's own manual recipe checks.
+      - run: cp k8s/base/.env.k8s.example k8s/base/.env.k8s
+      - run: kubectl apply -k k8s/overlays/kind
+      - run: kubectl wait --for=condition=complete job/migrate -n magewiki --timeout=120s
+      - run: kubectl rollout restart deployment/api deployment/worker -n magewiki
+      - run: kubectl wait --for=condition=available deployment/api deployment/worker deployment/web deployment/php-analyzer -n magewiki --timeout=120s
+      - name: curl api and web through the kind NodePort mapping
+        run: |
+          timeout 60 bash -c 'until curl -sf http://localhost:8080/health > /dev/null; do sleep 2; done'
+          timeout 60 bash -c 'until curl -sf http://localhost:3080/modules > /dev/null; do sleep 2; done'
+      - if: failure()
+        run: |
+          kubectl get pods -n magewiki -o wide
+          kubectl describe pods -n magewiki
+          kubectl logs -n magewiki -l app --all-containers --tail=200 || true
+
   rag-eval-comment:
     if: github.event_name == 'pull_request'
     runs-on: ubuntu-latest
