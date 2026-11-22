@@ -3881,3 +3881,19 @@ Real trade-off, not a guaranteed win either direction: GHA's layer-based
 cache can sometimes beat a full-image artifact transfer for a large image
 depending on what changed, so this is worth watching in real CI run times
 after merge, not assumed correct from the YAML alone.
+
+**Measured, not assumed (same session, PR #53's real CI run):** a real win.
+`docker-build` itself got slower (2min -> 3m31s, now also running 3
+`docker save`s), but every consumer using the saved artifact got faster
+despite the extra download+load step: `e2e-smoke` 6m2s -> 5m50s, `k8s-smoke`
+4m25s -> 3m56s. The merged `image-quality` (3 jobs, 5m51s total) replaced
+9 separate jobs that totaled roughly 10 minutes (`image-scan` ~4m +
+`image-structure-test` ~2m44s + `sbom` ~3m39s). Across just these jobs,
+roughly 23.5 billed runner-minutes before, ~19.4 after -- about 17% less,
+on top of the clearer per-image job attribution the merge itself already
+bought. Also confirmed in this same run: a real bug in `link-check.yml`
+caught immediately -- `lychee-action`'s `args` input *replaces* its own
+documented default rather than merging with it, so shipping only the
+exclude flags with no file globs failed outright ("required arguments
+were not provided: `<inputs>`..."); fixed by restoring the default globs
+alongside the flags, confirmed green on the next run.
