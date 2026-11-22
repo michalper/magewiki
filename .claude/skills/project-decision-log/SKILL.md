@@ -3950,3 +3950,43 @@ Undermining-Oversight-class action, correctly). Also fixed the header
 comment itself to describe the *current* required-checks shape instead of
 the stale one, and to name this exact incident as the reason to update it
 again next time the matrix shape changes.
+
+**OpenSSF Scorecard's actual first real result, and what came of it
+(recorded 2026-11-23).** Fetched the real score (`api.securityscorecards.dev`,
+not guessed): 5/10 overall. Most of the low-scoring checks are structural,
+not fixable by a code change, for a solo-maintainer portfolio project --
+`Maintained` (repo <90 days old), `Contributors` (0 companies), `Code-Review`
+(0/21 approved changesets -- no second reviewer on a solo project),
+`CII-Best-Practices` (a manual external certification, not a code change),
+`Fuzzing` (real fuzzing infra is disproportionate effort here), and
+`Signed-Releases` (see below). Two real, safe fixes made: `codeql.yml` was
+missing a top-level `permissions:` block entirely (every job already had
+its own narrower one, but Scorecard's Token-Permissions check wants the
+explicit top-level default too, matching every other workflow file's own
+existing convention) -- added `contents: read`. `scorecard.yml`'s own
+top-level `permissions: read-all` was flagged as excessive, even though the
+`analysis` job already overrides it with exactly what it needs -- narrowed
+to `contents: read`, a no-op for that job's actual permissions since
+job-level blocks always fully replace the top-level default. Deliberately
+NOT touched: `dependabot-auto-merge.yml`'s `contents: write` was also
+flagged, but there's no confirmed documentation that `gh pr merge --auto`
+(which only enables auto-merge via a GraphQL mutation, not an immediate
+merge) doesn't need it -- the one real reference implementation found
+(peter-evans/enable-pull-request-automerge's own sample workflow) uses both
+`pull-requests: write` and `contents: write` together. Risking a silent
+break of real, working Dependabot auto-merge automation on an unconfirmed
+guess wasn't worth the Scorecard points.
+
+`Signed-Releases` turned out to be a user question, not a fix: "no releases
+found" was Scorecard's (misleadingly worded) way of saying no *signed*
+release artifacts exist -- real GitHub Releases already existed (v1.0.0
+through v1.9.2, one per squash-merged PR, each with substantial real
+release notes, apparently cut by hand after merges with no release-automation
+workflow), just stale (13 commits behind by this point). Cut `v1.10.0`
+covering everything since, in the same style as the existing releases, with
+the user's own explicit confirmation before publishing (a public-facing
+action). Real cryptographic signing of release artifacts wasn't pursued
+further -- this project ships via `docker compose`, with no binary/package/
+container artifact attached to any release for Sigstore/cosign to sign, so
+chasing that specific Scorecard point would mean inventing an artifact to
+publish and sign purely for the score, not because the project needs one.

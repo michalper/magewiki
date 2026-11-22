@@ -17,7 +17,13 @@ on:
   push:
     branches: [main]
 
-permissions: read-all
+# Minimal top-level default; the analysis job below sets its own real,
+# broader needs explicitly. Scorecard's own Token-Permissions check flagged
+# the previous `read-all` here as excessive -- a job-level block always
+# fully overrides this default for that job regardless, so narrowing this
+# doesn't change what `analysis` can actually do.
+permissions:
+  contents: read
 
 jobs:
   analysis:

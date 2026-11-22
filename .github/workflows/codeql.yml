@@ -10,6 +10,13 @@ name: CodeQL
 # setup makes the language matrix and triggers explicit and version-
 # controlled, same reasoning as every other CI job in this repo.
 
+# OpenSSF Scorecard's Token-Permissions check wants an explicit top-level
+# default even when (like here) every job already sets its own narrower
+# permissions block -- this is every other workflow file's own convention
+# already (see ci.yml, dependency-review.yml), just missing here until now.
+permissions:
+  contents: read
+
 on:
   push:
     branches: [main]
