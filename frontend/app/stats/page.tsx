@@ -525,7 +525,11 @@ export default function StatsPage() {
           </div>
 
           <TopFindingsBar modules={modules} />
-          <FleetTrendChart points={fleetTrend} />
+          {fleetTrendQuery.isError ? (
+            <p className="text-destructive">Failed to load the fleet history trend.</p>
+          ) : (
+            <FleetTrendChart points={fleetTrend} />
+          )}
         </>
       )}
     </div>

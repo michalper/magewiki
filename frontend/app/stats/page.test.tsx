@@ -201,6 +201,24 @@ describe("StatsPage", () => {
     expect(screen.queryByText("No quality findings across any scanned module.")).not.toBeInTheDocument();
   });
 
+  it("shows a real error instead of the chart's empty state when the trend fetch fails", async () => {
+    // Regression test: fleetTrend defaulted failed fetches to `?? []`, which
+    // FleetTrendChart's own empty state ("No history yet...") then rendered
+    // as if nothing had changed yet -- indistinguishable from a real fetch
+    // failure (a 500, a timeout) with no error shown at all, unlike the
+    // modules query above which does show "Failed to load modules.".
+    fetchMock.mockImplementation(async (path: string) => {
+      if (path === "/modules") return { total: 1, modules: [mod()] };
+      throw new Error("boom");
+    });
+    renderWithQueryClient(<StatsPage />);
+
+    await waitFor(() => expect(screen.getByText("Failed to load the fleet history trend.")).toBeInTheDocument());
+    expect(
+      screen.queryByText("No history yet — this fills in once a rescan changes something for at least one module."),
+    ).not.toBeInTheDocument();
+  });
+
   it("shows the fleet-trend chart's empty state when there is no history yet", async () => {
     fetchMock.mockImplementation(async (path: string) => (path === "/modules" ? { total: 1, modules: [mod()] } : []));
     renderWithQueryClient(<StatsPage />);
