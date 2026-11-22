@@ -3593,3 +3593,174 @@ through on the agent's own judgment alone. Left `shadcn`'s
 `dependencies`-vs-`devDependencies` misclassification unfixed: real, but
 a separate, independent cleanup from the CI-unblocking task actually
 asked for, and out of scope for this PR.
+
+**CI/feature health-check pass (recorded 2026-11-22):** two parallel agents
+reviewed (a) the Phase 26-through-main commit range for correctness and (b)
+`ci.yml` for coverage gaps. Fixes made:
+
+- **`k8s-smoke` CI job added** (`ci.yml`): Phase 8's own "done when" bar
+  ("full stack runs on a local cluster") was previously only ever checked by
+  hand, via README's own `kind` recipe. The new job runs that exact recipe for
+  real on every push/PR -- builds the 3 images tagged `:dev` (reusing
+  `docker-build`'s GHA cache scopes), creates a real `kind` cluster via
+  `helm/kind-action@v1.14.0`, `kubectl apply -k k8s/overlays/kind`, waits for
+  `migrate`/the 4 Deployments, then curls `/health` and the web UI through the
+  NodePort mapping. Not added to `main`'s required-status-checks list, matching
+  the existing pattern for `secret-scan`/`sonar`/`dockerfile-lint`/
+  `image-scan`/`image-structure-test` (see the "required-status-checks
+  decision" entry above): extra verification, not a merge gate.
+- **`GET /modules` and the agent's `list_modules` tool had no deterministic
+  sort tiebreaker** (`backend/app/api/routes/modules.py`,
+  `backend/app/agent/tools.py`): ties on `sort_by` (most modules have
+  `plugin_count`/`observer_count` = 0; a batch scan produces many equal
+  `last_scanned_at` timestamps; the same module name can repeat across
+  `repo_root`s in a multi-repo fleet) had no guaranteed stable order across
+  separate `LIMIT`/`OFFSET` pages -- Postgres doesn't owe you one. Fixed by
+  appending `Module.id` as a final tiebreaker in both places. Caught a second,
+  deeper issue while verifying this end-to-end: the modules page's own
+  pagination UI (`frontend/app/modules/page.tsx`) uses TanStack Query's
+  `placeholderData: keepPreviousData`, so the "Page X of Y" label updates from
+  local state the instant Next/Previous is clicked, but the *table* keeps
+  showing the previous page's rows for roughly 100-300ms until the refetch
+  resolves -- a real, by-design gap, but one that silently breaks an e2e
+  assertion that reads row content right after the label updates instead of
+  polling for it.
+- **`find_by_event`/`find_by_class` capped results at 50 with no truncation
+  signal** (`backend/app/agent/tools.py`): CLAUDE.md routes "who listens to
+  this event"/"who overrides this class" through SQL specifically because
+  top-k retrieval isn't guaranteed complete -- a capped SQL list with no way
+  to tell the agent "this is clipped, not exhaustive" quietly reintroduced
+  that exact problem. Added a `truncated`/`..._truncated` field (fetch
+  limit+1, slice, flag) to every affected result list, plus a system-prompt
+  rule (`app/agent/prompt.py`) telling the agent to say so explicitly rather
+  than presenting a clipped list as complete.
+- **New e2e test for the pagination UI** (`frontend/tests/e2e/modules.spec.ts`,
+  "pagination controls move between real pages..."): closes a real gap --
+  the previous pagination rewrite (commit `2eec7a6`) shipped with no
+  pagination-specific e2e scenario at all, and the existing fixtures
+  (demo-store: 1 module, conflict-store: 4) couldn't reach the UI's smallest
+  page-size option (25) anyway. Added two bare filler modules to
+  `conflict-store` (`Vendor_PaginationFillerOne`/`Two`, no checks target them)
+  and a new `5`-per-page option to `PAGE_SIZE_OPTIONS`, giving the seeded
+  fleet (7 modules) a real second page to cross. User explicitly chose this
+  over the lighter alternative (asserting Next/Previous are wired up without
+  ever crossing a boundary) when asked, accepting the shared-fixture/UI-option
+  footprint for a test that actually exercises the tiebreaker fix above.
+- **Found and fixed a separate, pre-existing flaky-test bug while verifying
+  the above**: `tests/e2e/global-setup.ts`'s `seedScan` for `scanRoots[1]`
+  failed deterministically (`TypeError: fetch failed` / `SocketError: other
+  side closed`) on this author's machine, 100% reproducible, unrelated to any
+  code change in this session -- reproduced against both the shared dev
+  stack and a from-scratch isolated `docker compose -p` stack with a fresh
+  volume, so it wasn't data contamination. Root cause: `seedPackagistCache`
+  runs 7 synchronous `execFileSync` calls (`docker compose exec`, each
+  blocking Node's event loop for real wall-clock time) right before this
+  fetch; uvicorn's default 5s keep-alive timeout can close the *previous*
+  fetch's pooled connection while Node's event loop is blocked and unable to
+  notice, and undici then tries to reuse that now-dead socket for this one.
+  Reordering (packagist cache before the scan) isn't safe -- the scan must
+  see the cache already seeded for its security_advisory/abandoned_dependency
+  findings to be deterministic (see the "`global-setup.ts` now loops to a
+  second scan root" entry above). Fixed with a single retry on a
+  connection-level failure (not on a real HTTP error) in `seedScan` --
+  confirmed fixed by running the full `modules.spec.ts` suite twice in a row
+  against a fresh isolated stack after the fix, both green, after it had
+  failed deterministically on every attempt before. Not reproduced in CI
+  (Linux runner, likely different undici/keep-alive timing) -- recorded here
+  in case it ever surfaces there too.
+- Verification method for all of the above: built and ran an isolated
+  `docker compose -p magewiki-e2e-verify` stack (separate named volume, never
+  the author's real dev DB) for the real end-to-end checks, torn down
+  (`down -v`) afterward. First attempt at manual verification accidentally
+  ran against the author's actual dev-stack Postgres volume (21 real
+  pre-existing modules, not the expected 7) before switching to the isolated
+  stack -- harmless (scanning only upserts, never deletes) but confirmed and
+  cleaned up directly (`DELETE FROM modules WHERE id IN (...)` for the two
+  rows actually created), rather than left for the author to notice later.
+
+**Second round, same session (recorded 2026-11-22): the tiebreaker's own
+tests don't actually catch the bug they claim to -- twice.** Two more
+parallel review agents checked this session's own diff and did a broader
+sweep. Findings and fixes:
+
+- **The new e2e pagination test sorted by Name, which has no ties at all**
+  (every seeded module name is a distinct string) -- it would pass identically
+  with or without the `Module.id` tiebreaker fix above, proving only that
+  pagination doesn't crash. Fixed by sorting by `plugin_count` instead (a real
+  tie: 1 for 3 modules, 0 for the other 4, landing exactly on the pageSize:5
+  boundary) -- except manually reverting the tiebreaker and rerunning the
+  real e2e test against a fresh isolated `docker compose -p` stack showed it
+  *still* passed. Postgres returns a consistent scan order for a tiny,
+  unmodified table with no concurrent writes regardless of whether a tie
+  exists or whether `ORDER BY` names a tiebreaker -- Postgres not
+  *guaranteeing* a stable order without one doesn't mean it will actually
+  *show* instability at this table's size and lack of concurrent activity.
+  No e2e/HTTP-level test on this fixture can reliably prove the fix; the e2e
+  test's comments were corrected to say so rather than overclaim, and it's
+  kept anyway as a real (if weaker) pagination sanity check with real tied
+  data.
+- **The real proof had to move to a white-box test**: added
+  `test_list_modules_order_by_includes_module_id_tiebreaker` to both
+  `backend/tests/api/test_modules_list_api.py` and `backend/tests/agent/
+  test_tools.py` -- these listen for the actual SQL `before_cursor_execute`
+  and assert `Module.id` is the last *top-level* `ORDER BY` key. First attempt
+  at this was itself a false positive: a naive `"modules.id" in
+  order_by_clause` substring check passed even with the tiebreaker reverted,
+  because `plugin_count`'s own sort column is a correlated subquery
+  (`... WHERE php_classes.module_id = modules.id`) whose *text* contains
+  "modules.id" regardless of whether it's a real sort key. Fixed with a
+  paren-depth-aware top-level comma split, confirmed to actually fail when
+  the tiebreaker is manually reverted (both backend and agent-tools versions)
+  and pass when restored -- the standard this whole incident argues for
+  checking is "does flipping the fix off actually fail this test," not just
+  "does the test pass with the fix on."
+- **`CLAUDE.md`'s own tag-vocabulary count was wrong**: said 21, `app/
+  analyzer/tags.py`'s real `ALLOWED_TAGS` has 22 (confirmed by direct parse;
+  commit `ea643de`'s own title says "10 to 22"). Fixed the number in CLAUDE.md.
+- **Stats page silently misreported a fleet-trend fetch failure as "no
+  history yet"**: `fleetTrendQuery`'s data defaulted to `?? []` on any
+  failure, which `FleetTrendChart`'s own real empty state then rendered
+  indistinguishably from "nothing's changed yet" -- unlike the `modulesQuery`
+  on the same page, which does show a real "Failed to load modules." error.
+  Fixed by rendering an explicit error message instead of the chart when
+  `fleetTrendQuery.isError`.
+- **`circular_dependencies.py`'s cycle detection used unbounded recursion**:
+  a real `module.xml` `<sequence>` chain in a large fleet (this project's own
+  760-module reference point) could plausibly exceed Python's default
+  recursion limit (1000) and raise an uncaught `RecursionError` -- unlike
+  every other check in this family, nothing wraps this call, so it would fail
+  the *whole* scan rather than just this one check. Rewrote the DFS
+  iteratively (an explicit stack of per-node neighbor iterators, each resuming
+  where it left off -- the same semantics as a recursive call's own local
+  `for` loop, just without a call stack frame per node). Added two regression
+  tests at depth 5000 (a plain chain, and a chain with a cycle at the far
+  end) -- both would have crashed the old recursive version outright.
+- Not yet acted on, flagged for a conscious decision rather than fixed
+  silently: the eval suite's `hit_rate@k`/MRR numbers never pass through
+  reranking or query rewriting (`run_retrieval_eval` calls the raw
+  vector/keyword/hybrid search functions directly, bypassing
+  `agent/tools.py`'s `search_modules`, the only place either feature actually
+  runs) -- so nothing in the repo would catch either one making retrieval
+  *worse*. `docs/architecture.md` frames both as "optimizing an
+  already-working retriever," which may make this an accepted gap, but it
+  hasn't been an explicit one until this note.
+
+**Follow-up, same session: closed the eval blind spot rather than just
+recording it.** User's own call when asked. `run_retrieval_eval`
+(`backend/app/evaluation/runner.py`) now scores two more modes per question,
+unconditionally (not gated on `RERANK_ENABLED`/`QUERY_REWRITE_ENABLED` --
+the point is measuring what each one *would* do, not what's currently on):
+`rerank` mirrors `search_modules`' own two-step shape (widen the candidate
+pool to `_RERANK_CANDIDATE_POOL`, imported directly from `agent/tools.py`
+rather than duplicating the magic number, then `rerank_results`);
+`query_rewrite` mirrors its own shape (`rewrite_query` first, then
+`hybrid_search` on the rewrite). `app/evaluation/metrics.py`'s
+`render_markdown_table` now renders whatever subset of `MODE_LABELS`' modes
+is actually present in a given metrics dict (`run_ci_eval.py`'s synthetic,
+zero-cost CI run still only ever produces vector/keyword/hybrid, and must
+keep working unchanged -- confirmed it still does). Deliberately NOT run
+against the real `Ordo_Automation` fixture to refresh README's frozen table
+in this same pass -- that's a separate, real-money action (Anthropic
+synthesis + embeddings + now two more real LLM calls per retrieval question)
+left for the user to trigger on their own schedule/budget; README now notes
+the table predates this addition.
