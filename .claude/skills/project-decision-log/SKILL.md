@@ -3859,3 +3859,25 @@ from GHA cache) -- that's still the existing, consciously accepted
 trade-off from the Nov-15 required-status-checks entry above, not revisited
 here. None of the three old job names were in `main`'s required-status-checks
 list, so this needed no branch-protection update.
+
+**CI optimization, round 2, same session: revisited the Nov-15 trade-off
+above and actually did it.** User's own call when asked a second time, after
+`dockerfile-lint` got the same merge treatment (3 matrix jobs -> 1 job
+looping over all 3 Dockerfiles; `if: always()` on the 2nd/3rd hadolint
+steps, or a backend/Dockerfile finding would silently skip checking
+frontend/php-analyzer in the same run -- the job's own conclusion is still
+failure if any step failed, same gating as the old matrix's `fail-fast:
+false` had). `docker-build` now `docker save`s its 3 already-built images
+and uploads them as one `actions/upload-artifact`; `image-quality`,
+`e2e-smoke`, and `k8s-smoke` each `docker load` + `docker tag` that
+artifact under whatever name each one needs
+(`magewiki-<image>-ci`/`magewiki-api`+`magewiki-worker`+`magewiki-migrate`+
+`magewiki-web`+`magewiki-php-analyzer`/`magewiki-<image>:dev` respectively)
+instead of each independently re-invoking buildx against the GHA cache --
+used to happen 4 times total (docker-build itself plus the 3 consumers) for
+identical, already-built image content. `cache-to: type=gha` is kept on
+`docker-build`'s own build step as a fallback for the next PR, not removed.
+Real trade-off, not a guaranteed win either direction: GHA's layer-based
+cache can sometimes beat a full-image artifact transfer for a large image
+depending on what changed, so this is worth watching in real CI run times
+after merge, not assumed correct from the YAML alone.

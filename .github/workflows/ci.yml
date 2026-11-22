@@ -155,19 +155,30 @@ jobs:
           SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
 
   dockerfile-lint:
+    # One job looping over all 3 Dockerfiles, not 3 matrix jobs -- hadolint
+    # itself takes seconds per file; most of each old job's wall-clock was
+    # pure runner-startup/checkout overhead, paid 3 times for no reason.
     runs-on: ubuntu-latest
-    strategy:
-      fail-fast: false
-      matrix:
-        dockerfile:
-          - backend/Dockerfile
-          - frontend/Dockerfile
-          - php-analyzer/Dockerfile
     steps:
       - uses: actions/checkout@v7
+      # if: always() on the 2nd/3rd -- a failing step otherwise skips every
+      # step after it, so a backend/Dockerfile finding would silently hide
+      # frontend/php-analyzer findings in the same run. The job's own
+      # conclusion is still failure if any step failed, same gating as
+      # before (fail-fast: false's matrix never skipped sibling jobs either).
       - uses: hadolint/hadolint-action@v3.5.0
         with:
-          dockerfile: ${{ matrix.dockerfile }}
+          dockerfile: backend/Dockerfile
+          config: .hadolint.yaml
+      - if: always()
+        uses: hadolint/hadolint-action@v3.5.0
+        with:
+          dockerfile: frontend/Dockerfile
+          config: .hadolint.yaml
+      - if: always()
+        uses: hadolint/hadolint-action@v3.5.0
+        with:
+          dockerfile: php-analyzer/Dockerfile
           config: .hadolint.yaml
 
   docker-build:
@@ -175,16 +186,15 @@ jobs:
     steps:
       - uses: actions/checkout@v7
       - uses: docker/setup-buildx-action@v3
-      # cache-from/cache-to: type=gha -- the three images built here are
-      # rebuilt again, unchanged, by image-scan's own matrix and by
-      # e2e-smoke's `docker compose up --build`, each on its own separate
-      # runner with no shared local Docker daemon state. GitHub's Actions
-      # cache backend (unlike the local Docker build cache) persists across
-      # jobs/runners within the same workflow run, so warming it here lets
-      # both of those later builds hit cache for every layer that hasn't
-      # actually changed, instead of rebuilding from scratch a second and
-      # third time. Scope names match image-scan's own matrix.image values
-      # and e2e-smoke's own three cache-from/-to calls below.
+      # cache-to: type=gha warms the GHA cache as a *fallback* (e.g. a
+      # Dependabot run that only touches one job's dependency file still
+      # lets other jobs' from-scratch builds hit cache for unrelated
+      # layers). The images themselves are built here once, saved, and
+      # handed to every other job as a single artifact below -- image-quality,
+      # e2e-smoke, and k8s-smoke all `docker load` + `docker tag` that
+      # artifact instead of each independently re-invoking buildx and
+      # re-pulling the cache, which used to happen 4 times total for
+      # identical, already-built image content.
       - uses: docker/build-push-action@v6
         with:
           context: ./backend
@@ -207,6 +217,16 @@ jobs:
           load: true
           cache-from: type=gha,scope=php-analyzer
           cache-to: type=gha,mode=max,scope=php-analyzer
+      - name: Save the 3 built images for reuse by other jobs
+        run: |
+          docker save magewiki-backend-ci -o /tmp/magewiki-backend-ci.tar
+          docker save magewiki-frontend-ci -o /tmp/magewiki-frontend-ci.tar
+          docker save magewiki-php-analyzer-ci -o /tmp/magewiki-php-analyzer-ci.tar
+      - uses: actions/upload-artifact@v4
+        with:
+          name: docker-images
+          path: /tmp/magewiki-*-ci.tar
+          retention-days: 1
 
   # image-scan/image-structure-test/sbom used to be 3 separate matrix jobs
   # (9 job runs total), each independently re-pulling the GHA cache and
@@ -226,24 +246,18 @@ jobs:
       matrix:
         include:
           - image: backend
-            context: ./backend
             dockerfile: ./backend/Dockerfile
           - image: frontend
-            context: ./frontend
             dockerfile: ./frontend/Dockerfile
           - image: php-analyzer
-            context: .
             dockerfile: php-analyzer/Dockerfile
     steps:
       - uses: actions/checkout@v7
-      - uses: docker/setup-buildx-action@v3
-      - uses: docker/build-push-action@v6
+      - uses: actions/download-artifact@v4
         with:
-          context: ${{ matrix.context }}
-          file: ${{ matrix.dockerfile }}
-          tags: magewiki-${{ matrix.image }}-ci
-          load: true
-          cache-from: type=gha,scope=${{ matrix.image }}
+          name: docker-images
+          path: /tmp
+      - run: docker load -i /tmp/magewiki-${{ matrix.image }}-ci.tar
       # pip-audit/npm audit (in the backend/frontend jobs above) only scan the
       # project's own lockfiles — this catches CVEs in the OS-layer packages the
       # base image (e.g. python:3.13-slim) brings in, which nothing else here does.
@@ -274,8 +288,8 @@ jobs:
         run: container-structure-test test --image magewiki-${{ matrix.image }}-ci --config "$(dirname ${{ matrix.dockerfile }})/container-structure-test.yaml"
       # SBOM only, no cosign image signing: nothing in this project ever pushes
       # these images to a registry (no GHCR/Docker Hub publish step exists at
-      # all -- every job that uses these images, including this one, builds
-      # and discards them locally). Signing an image that's never
+      # all -- every job that uses these images, including this one, only
+      # loads and discards them locally). Signing an image that's never
       # distributed verifies nothing for anyone -- there's no pull site for
       # a consumer to check the signature against. A CycloneDX SBOM has real
       # value even for a locally-built, never-published image: it's a
@@ -328,35 +342,26 @@ jobs:
       # and the whole fleet-wide conflict family, none of which demo-store's
       # single module can ever trigger. See frontend/tests/e2e/global-setup.ts.
       - run: echo "MAGEWIKI_SCAN_ROOT_2=$(pwd)/backend/tests/fixtures/conflict-store" >> .env
-      - uses: docker/setup-buildx-action@v3
-      # Pre-build and tag the three images docker-compose.yml's services
-      # expect (api/worker/migrate share one backend build, same dedup
-      # docker compose build itself would do), reading the same GHA cache
-      # scopes the docker-build job (this job's own `needs:`) just warmed --
-      # then `docker compose up -d` below with no --build reuses these
-      # already-tagged local images instead of rebuilding from scratch a
-      # third time. Tags match docker compose config --images' own
-      # auto-generated names (<project>-<service>, project name "magewiki"
-      # from this repo's directory name).
-      - uses: docker/build-push-action@v6
+      # Load the 3 images docker-build already built once (this job's own
+      # `needs:`) and tag them to match docker-compose.yml's own
+      # auto-generated service image names (<project>-<service>, project
+      # name "magewiki" from this repo's directory name) -- api/worker/
+      # migrate share one backend build, same dedup `docker compose build`
+      # itself would do. `docker compose up -d` below with no --build then
+      # reuses these already-tagged local images instead of rebuilding.
+      - uses: actions/download-artifact@v4
         with:
-          context: ./backend
-          tags: magewiki-api,magewiki-worker,magewiki-migrate
-          load: true
-          cache-from: type=gha,scope=backend
-      - uses: docker/build-push-action@v6
-        with:
-          context: ./frontend
-          tags: magewiki-web
-          load: true
-          cache-from: type=gha,scope=frontend
-      - uses: docker/build-push-action@v6
-        with:
-          context: .
-          file: php-analyzer/Dockerfile
-          tags: magewiki-php-analyzer
-          load: true
-          cache-from: type=gha,scope=php-analyzer
+          name: docker-images
+          path: /tmp
+      - run: |
+          docker load -i /tmp/magewiki-backend-ci.tar
+          docker load -i /tmp/magewiki-frontend-ci.tar
+          docker load -i /tmp/magewiki-php-analyzer-ci.tar
+          docker tag magewiki-backend-ci magewiki-api
+          docker tag magewiki-backend-ci magewiki-worker
+          docker tag magewiki-backend-ci magewiki-migrate
+          docker tag magewiki-frontend-ci magewiki-web
+          docker tag magewiki-php-analyzer-ci magewiki-php-analyzer
       # frontend/next-env.d.ts isn't tracked by git (Next.js generates it on
       # first `next dev`/`next build`) and isn't one of the anonymous
       # node_modules/.next volumes Docker already seeds node-owned -- it's a
@@ -405,29 +410,21 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
-      - uses: docker/setup-buildx-action@v3
-      # Same three images docker-build already warmed the GHA cache for
-      # (scope names match), tagged :dev to match what k8s/base's manifests
-      # reference -- see k8s/base/{api,worker,web,php-analyzer,migrate-job}.yaml.
-      - uses: docker/build-push-action@v6
+      # Load the same three images docker-build already built once (this
+      # job's own `needs:`) and tag them :dev to match what k8s/base's
+      # manifests reference -- see
+      # k8s/base/{api,worker,web,php-analyzer,migrate-job}.yaml.
+      - uses: actions/download-artifact@v4
         with:
-          context: ./backend
-          tags: magewiki-backend:dev
-          load: true
-          cache-from: type=gha,scope=backend
-      - uses: docker/build-push-action@v6
-        with:
-          context: ./frontend
-          tags: magewiki-frontend:dev
-          load: true
-          cache-from: type=gha,scope=frontend
-      - uses: docker/build-push-action@v6
-        with:
-          context: .
-          file: php-analyzer/Dockerfile
-          tags: magewiki-php-analyzer:dev
-          load: true
-          cache-from: type=gha,scope=php-analyzer
+          name: docker-images
+          path: /tmp
+      - run: |
+          docker load -i /tmp/magewiki-backend-ci.tar
+          docker load -i /tmp/magewiki-frontend-ci.tar
+          docker load -i /tmp/magewiki-php-analyzer-ci.tar
+          docker tag magewiki-backend-ci magewiki-backend:dev
+          docker tag magewiki-frontend-ci magewiki-frontend:dev
+          docker tag magewiki-php-analyzer-ci magewiki-php-analyzer:dev
       - uses: helm/kind-action@v1.14.0
         with:
           cluster_name: magewiki
