@@ -1,0 +1,35 @@
+name: Link Check
+
+# Catches a broken link in README/docs before a reader does -- both when a
+# doc changes (push/PR) and on a schedule (catches external link rot with no
+# doc change at all, e.g. a linked repo going private or a page moving).
+#
+# --exclude-loopback/--exclude-private: README.md has several real
+# http://localhost:* URLs in its local-dev-setup prose (e.g. "API health
+# check: http://localhost:8000/health") -- nothing is listening on those in
+# a CI runner, and checking them would always fail without ever meaning
+# anything.
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "**/*.md"
+  pull_request:
+    paths:
+      - "**/*.md"
+  schedule:
+    - cron: "0 6 * * 1"
+
+permissions:
+  contents: read
+
+jobs:
+  lychee:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: lycheeverse/lychee-action@v2.9.0
+        with:
+          args: --no-progress --exclude-loopback --exclude-private
+          fail: true

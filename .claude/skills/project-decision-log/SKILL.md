@@ -3795,3 +3795,50 @@ license gate to `dependency-review.yml`:
   as a dependency without the consuming project inheriting its license,
   unlike GPL/AGPL, which would require this MIT project to relicense to keep
   shipping it.
+
+**Second CI follow-up, same session: OpenSSF Scorecard, link checking,
+actionlint, typos -- user's own picks after being asked.** Four small,
+independent additions, each verified for real (not just YAML syntax) before
+being wired in:
+
+- **`scorecard.yml`**: scores this repo's supply-chain posture against the
+  OpenSSF checklist, publishes it, feeds a new README badge. Deliberately
+  not triggered by `pull_request` -- GitHub doesn't grant pull_request runs
+  `id-token: write` (a security restriction for forked PRs, and also
+  Scorecard's own documented recommendation for a public repo), so it only
+  runs on push to `main` + a weekly schedule.
+- **`link-check.yml`** (lychee): catches a broken README/docs link before a
+  reader does, on doc changes and weekly (catches external link rot with no
+  doc change at all). `--exclude-loopback --exclude-private`: README has
+  several real `http://localhost:*` URLs in its local-dev prose that nothing
+  in a CI runner is listening on. The local Docker image used to dry-run
+  this before committing (`lycheeverse/lychee:latest`) turned out to have a
+  stale/expired CA cert bundle baked in and hung for minutes on the first
+  HTTPS link before failing -- confirmed it was the image, not this
+  machine's clock or network, via a plain `curl` in a *different* container
+  working fine against the same URL. Not chased further: the real
+  `lycheeverse/lychee-action` downloads a fresh native binary at CI runtime
+  rather than using that image, so the problem doesn't carry over. Verified
+  all 14 real external URLs across every tracked `.md` file resolve (200)
+  via plain `curl` instead.
+- **`actionlint.yml`**: the most obvious gap of the three -- actionlint was
+  used by hand, manually, before every single workflow change made
+  elsewhere in this session, but was never itself a CI check. Runs via the
+  official download-script pattern pinned to v1.7.12, only when
+  `.github/workflows/**` changes. Confirmed clean (exit 0) against every
+  existing workflow file too, consistent with how carefully those were
+  hand-checked already.
+- **`typos.yml`** (crate-ci/typos, v1.51.1): a real dry run against the
+  whole repo before wiring it in surfaced mostly noise, not real typos --
+  dozens of garbage "typos" came from
+  `backend/tests/fixtures/conflict-store/app/code/Vendor/PhpunitSample/vendor/bin/phpunit`,
+  a committed real vendor PHUnit tree (needed for the real-PHPUnit-execution
+  sandbox tests) whose minified-JS/binary content isn't authored prose.
+  Added `_typos.toml`: excludes that vendor tree plus lockfiles, and
+  allowlists a handful of real false positives (`mis-` as a hyphenated
+  prefix the tokenizer splits on; `unparseable`/`requeueing`/
+  `canonicalizations`, all attested spellings typos' dictionary lacks) and
+  two genuinely *intentional* typos used as test/demo data (`docs/
+  architecture.md`'s own fuzzy-search example, and a fuzzy-match eval
+  question in `dataset.py` already commented "deliberate typo"). Confirmed
+  clean (exit 0) after the config, not just "looks plausible."

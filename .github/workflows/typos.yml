@@ -1,0 +1,21 @@
+name: Typos
+
+# Spell-checks source, comments, and docs -- not translations (there are
+# none in this repo) and not the vendored third-party PHPUnit tree under
+# backend/tests/fixtures/ (excluded in _typos.toml, see its own comment for
+# why: it's committed binary/minified-JS content, not authored prose).
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  typos:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: crate-ci/typos@v1.51.1

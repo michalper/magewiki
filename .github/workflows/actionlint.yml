@@ -1,0 +1,33 @@
+name: Actionlint
+
+# Semantic validation of this repo's own workflow files -- catches invalid
+# expression syntax, wrong input names, type mismatches, and (via its
+# shellcheck integration, pre-installed on the Ubuntu runner) real bugs in
+# `run:` blocks. ci.yml's own changes this repo has made were previously only
+# checked by hand (yaml.safe_load, which validates syntax but nothing
+# semantic) before being pushed -- this runs the same check actionlint
+# provides, automatically, on every future workflow change.
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - ".github/workflows/**"
+  pull_request:
+    paths:
+      - ".github/workflows/**"
+
+permissions:
+  contents: read
+
+jobs:
+  actionlint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - name: Download actionlint
+        run: bash <(curl -sf https://raw.githubusercontent.com/rhysd/actionlint/v1.7.12/scripts/download-actionlint.bash) 1.7.12
+        shell: bash
+      - name: Check workflow files
+        run: ./actionlint -color
+        shell: bash

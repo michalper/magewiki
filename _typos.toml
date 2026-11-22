@@ -1,0 +1,27 @@
+[files]
+# backend/tests/fixtures/**/vendor/** is a real, committed third-party PHPUnit
+# vendor tree (needed for the real-PHPUnit-execution sandbox tests) -- its
+# minified JS/binary PHAR content isn't authored prose or code, and matches
+# as pure noise (confirmed by hand: hundreds of garbage "typos" from a single
+# minified vendor/bin/phpunit file before this exclude was added).
+extend-exclude = [
+    "backend/tests/fixtures/**/vendor/**",
+    "**/poetry.lock",
+    "**/package-lock.json",
+]
+
+[default.extend-words]
+# "mis-" is a common English prefix (mis-attributed, mis-marking, mis-bucket)
+# that typos' tokenizer splits at the hyphen and flags as a standalone typo.
+mis = "mis"
+# Both attested spellings; this project's own code already uses the "-ee-"
+# form consistently.
+unparseable = "unparseable"
+requeueing = "requeueing"
+canonicalizations = "canonicalizations"
+# Deliberate, intentional typos used as test/demo data, not real mistakes:
+# docs/architecture.md's own fuzzy-search example ("Vendr_Modul should still
+# find Vendor_Module") and a fuzzy-match eval question in
+# backend/app/evaluation/dataset.py (explicitly commented "# deliberate typo").
+Modul = "Modul"
+Checout = "Checout"
