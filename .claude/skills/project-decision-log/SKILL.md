@@ -3897,3 +3897,29 @@ documented default rather than merging with it, so shipping only the
 exclude flags with no file globs failed outright ("required arguments
 were not provided: `<inputs>`..."); fixed by restoring the default globs
 alongside the flags, confirmed green on the next run.
+
+**CI optimization, round 3: critical-path, not just total runner-minutes
+(user's own call when asked "can it be even better").** The round-2
+measurement above showed total cost dropped but didn't target the
+critical path (the longest dependency chain a PR actually waits on) --
+`docker-build` -> `e2e-smoke` specifically. Two changes:
+
+- **`docker-build` is now itself a matrix** (one job per image, unique
+  `docker-image-<image>` artifact each) instead of one job building all 3
+  sequentially. The 3 builds don't depend on each other, so this job's own
+  wall-clock drops to roughly the slowest single build instead of the sum
+  of all 3 -- and every downstream job (`image-quality`/`e2e-smoke`/
+  `k8s-smoke`) waits on this job finishing first, so that difference
+  propagates. `image-quality` now downloads just its own matching artifact;
+  `e2e-smoke`/`k8s-smoke` download all 3 via `download-artifact`'s
+  `pattern: docker-image-*` + `merge-multiple: true` (no per-artifact
+  subfolders, since each one already holds a uniquely-named tar) and tag
+  them as before.
+- **`e2e-smoke` now caches the downloaded Chromium binary** (`actions/
+  cache` on `~/.cache/ms-playwright`, keyed on the installed `@playwright/
+  test` version) -- it's the single longest job on the critical path, and
+  re-downloading the same browser binary from scratch every run was a real
+  chunk of that. `--with-deps`' apt-installed system libraries (fonts,
+  `libnss3`, ...) aren't part of that cache dir, so a cache hit still runs
+  `playwright install-deps chromium` (fast, no large download) rather than
+  skipping browser setup entirely.

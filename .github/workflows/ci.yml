@@ -182,50 +182,51 @@ jobs:
           config: .hadolint.yaml
 
   docker-build:
+    # One matrix job per image, not 3 sequential builds in a single job --
+    # the 3 builds don't depend on each other, so running them in parallel
+    # shortens this job's own wall-clock to roughly the slowest single
+    # build instead of the sum of all 3, which matters because every
+    # downstream job (image-quality/e2e-smoke/k8s-smoke) waits on this one
+    # finishing first.
     runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        include:
+          - image: backend
+            context: ./backend
+            dockerfile: ./backend/Dockerfile
+          - image: frontend
+            context: ./frontend
+            dockerfile: ./frontend/Dockerfile
+          - image: php-analyzer
+            context: .
+            dockerfile: php-analyzer/Dockerfile
     steps:
       - uses: actions/checkout@v7
       - uses: docker/setup-buildx-action@v3
       # cache-to: type=gha warms the GHA cache as a *fallback* (e.g. a
       # Dependabot run that only touches one job's dependency file still
       # lets other jobs' from-scratch builds hit cache for unrelated
-      # layers). The images themselves are built here once, saved, and
-      # handed to every other job as a single artifact below -- image-quality,
-      # e2e-smoke, and k8s-smoke all `docker load` + `docker tag` that
-      # artifact instead of each independently re-invoking buildx and
-      # re-pulling the cache, which used to happen 4 times total for
-      # identical, already-built image content.
+      # layers). The image itself is built here once, saved, and handed to
+      # every other job as an artifact below -- image-quality, e2e-smoke,
+      # and k8s-smoke all `docker load` + `docker tag` that artifact
+      # instead of each independently re-invoking buildx and re-pulling the
+      # cache, which used to happen 4 times total for identical,
+      # already-built image content.
       - uses: docker/build-push-action@v6
         with:
-          context: ./backend
-          tags: magewiki-backend-ci
+          context: ${{ matrix.context }}
+          file: ${{ matrix.dockerfile }}
+          tags: magewiki-${{ matrix.image }}-ci
           load: true
-          cache-from: type=gha,scope=backend
-          cache-to: type=gha,mode=max,scope=backend
-      - uses: docker/build-push-action@v6
-        with:
-          context: ./frontend
-          tags: magewiki-frontend-ci
-          load: true
-          cache-from: type=gha,scope=frontend
-          cache-to: type=gha,mode=max,scope=frontend
-      - uses: docker/build-push-action@v6
-        with:
-          context: .
-          file: php-analyzer/Dockerfile
-          tags: magewiki-php-analyzer-ci
-          load: true
-          cache-from: type=gha,scope=php-analyzer
-          cache-to: type=gha,mode=max,scope=php-analyzer
-      - name: Save the 3 built images for reuse by other jobs
-        run: |
-          docker save magewiki-backend-ci -o /tmp/magewiki-backend-ci.tar
-          docker save magewiki-frontend-ci -o /tmp/magewiki-frontend-ci.tar
-          docker save magewiki-php-analyzer-ci -o /tmp/magewiki-php-analyzer-ci.tar
+          cache-from: type=gha,scope=${{ matrix.image }}
+          cache-to: type=gha,mode=max,scope=${{ matrix.image }}
+      - name: Save the image for reuse by other jobs
+        run: docker save magewiki-${{ matrix.image }}-ci -o /tmp/magewiki-${{ matrix.image }}-ci.tar
       - uses: actions/upload-artifact@v4
         with:
-          name: docker-images
-          path: /tmp/magewiki-*-ci.tar
+          name: docker-image-${{ matrix.image }}
+          path: /tmp/magewiki-${{ matrix.image }}-ci.tar
           retention-days: 1
 
   # image-scan/image-structure-test/sbom used to be 3 separate matrix jobs
@@ -255,7 +256,7 @@ jobs:
       - uses: actions/checkout@v7
       - uses: actions/download-artifact@v4
         with:
-          name: docker-images
+          name: docker-image-${{ matrix.image }}
           path: /tmp
       - run: docker load -i /tmp/magewiki-${{ matrix.image }}-ci.tar
       # pip-audit/npm audit (in the backend/frontend jobs above) only scan the
@@ -325,7 +326,29 @@ jobs:
           cache-dependency-path: frontend/package-lock.json
       - working-directory: frontend
         run: npm install
+      # Cache the downloaded Chromium binary across runs, keyed on the
+      # installed @playwright/test version -- e2e-smoke is the longest
+      # single job on the critical path (everything downstream of
+      # docker-build waits on it), and re-downloading the same browser
+      # binary from scratch every run was a real chunk of that. On a cache
+      # hit the browser binary itself is already in place, but --with-deps'
+      # apt-installed system libraries (fonts, libnss3, ...) aren't part of
+      # that cache dir, so those still need installing every run --
+      # install-deps alone is fast (no large download).
+      - name: Get installed Playwright version
+        id: playwright-version
+        working-directory: frontend
+        run: echo "version=$(node -e "console.log(require('@playwright/test/package.json').version)")" >> "$GITHUB_OUTPUT"
+      - uses: actions/cache@v4
+        id: playwright-cache
+        with:
+          path: ~/.cache/ms-playwright
+          key: playwright-browsers-${{ runner.os }}-${{ steps.playwright-version.outputs.version }}
       - working-directory: frontend
+        if: steps.playwright-cache.outputs.cache-hit == 'true'
+        run: npx playwright install-deps chromium
+      - working-directory: frontend
+        if: steps.playwright-cache.outputs.cache-hit != 'true'
         run: npx playwright install --with-deps chromium
       - run: cp .env.example .env
       # A real scan root, not left empty like .env.example's default --
@@ -349,10 +372,15 @@ jobs:
       # migrate share one backend build, same dedup `docker compose build`
       # itself would do. `docker compose up -d` below with no --build then
       # reuses these already-tagged local images instead of rebuilding.
+      # docker-build is now a matrix (one artifact per image, name
+      # docker-image-<image>) -- merge-multiple: true pulls all 3 straight
+      # into one directory with no per-artifact subfolders, since each
+      # artifact already holds one uniquely-named tar.
       - uses: actions/download-artifact@v4
         with:
-          name: docker-images
+          pattern: docker-image-*
           path: /tmp
+          merge-multiple: true
       - run: |
           docker load -i /tmp/magewiki-backend-ci.tar
           docker load -i /tmp/magewiki-frontend-ci.tar
@@ -416,8 +444,9 @@ jobs:
       # k8s/base/{api,worker,web,php-analyzer,migrate-job}.yaml.
       - uses: actions/download-artifact@v4
         with:
-          name: docker-images
+          pattern: docker-image-*
           path: /tmp
+          merge-multiple: true
       - run: |
           docker load -i /tmp/magewiki-backend-ci.tar
           docker load -i /tmp/magewiki-frontend-ci.tar
