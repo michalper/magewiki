@@ -1,0 +1,15 @@
+{
+    "name": "vendor/pagination-filler-one",
+    "description": "e2e fixture module -- no checks target this module specifically; it exists purely to push the fleet's real module count past a small page size, so modules.spec.ts can exercise the modules page's Next/Previous pagination against real data crossing a real page boundary, instead of only against a single page's worth of rows.",
+    "type": "magento2-module",
+    "license": ["MIT"],
+    "require": {
+        "php": ">=8.2"
+    },
+    "autoload": {
+        "files": ["registration.php"],
+        "psr-4": {
+            "Vendor\\PaginationFillerOne\\": ""
+        }
+    }
+}

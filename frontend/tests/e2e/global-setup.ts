@@ -113,13 +113,32 @@ async function globalSetup() {
 }
 
 async function seedScan(apiUrl: string, repoRoot: string) {
-  const response = await fetch(`${apiUrl}/scan`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ path: repoRoot }),
-  });
-  if (!response.ok) {
-    throw new Error(`Seed scan of ${repoRoot} failed: ${response.status} ${await response.text()}`);
+  // One retry on a connection-level failure (TypeError, e.g. "fetch failed" /
+  // "other side closed"), not on a real HTTP error response: this call for
+  // scanRoots[1] runs right after several synchronous execFileSync calls
+  // (seedPackagistCache, below) each blocking Node's event loop for the
+  // length of a real `docker compose exec` -- long enough, combined, that
+  // uvicorn's 5s keep-alive timeout can close the pooled connection from an
+  // *earlier* fetch on this same host before undici notices and tries to
+  // reuse it for this one. A fresh connection on retry doesn't hit a timed-out
+  // pooled socket and succeeds immediately -- confirmed directly: every
+  // manual re-run of this exact call in a fresh process succeeded.
+  for (let attempt = 1; ; attempt++) {
+    let response: Response;
+    try {
+      response = await fetch(`${apiUrl}/scan`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ path: repoRoot }),
+      });
+    } catch (error) {
+      if (attempt >= 2) throw error;
+      continue;
+    }
+    if (!response.ok) {
+      throw new Error(`Seed scan of ${repoRoot} failed: ${response.status} ${await response.text()}`);
+    }
+    return;
   }
 }
 

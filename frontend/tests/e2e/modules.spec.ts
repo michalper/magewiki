@@ -87,6 +87,81 @@ test("sorting by a column header reorders the table", async ({ page }) => {
   await expect(page.getByText(/\d+ of \d+ modules/)).toBeVisible();
 });
 
+test("pagination controls move between real pages without skipping or repeating a module", async ({ page }) => {
+  await page.goto("/modules");
+
+  // Sort by Plugins, not the default Name column -- every seeded module's
+  // name is a distinct string, so sorting by name has no real ties at all.
+  // plugin_count is 1 for three modules (Vendor_Module, Vendor_ConflictA,
+  // Vendor_ConflictB) and 0 for the other four, a real tie that (with
+  // pageSize:5 below) lands exactly on the page boundary. NOTE: confirmed by
+  // hand that even this doesn't reliably catch a missing Module.id
+  // tiebreaker (modules.py's order_by) -- Postgres returns a consistent scan
+  // order for a tiny, unmodified table regardless, tie or no tie. The real
+  // regression-proof for that is the white-box SQL `ORDER BY`-inspection
+  // test in the backend (test_modules_list_api.py /
+  // test_tools.py's `..._order_by_includes_module_id_tiebreaker`). This test
+  // still exercises real pagination end to end with real tied data, which is
+  // worth having even though it can't prove the tiebreaker by itself.
+  await page.getByRole("button", { name: /^Plugins/ }).click();
+
+  // Real fleet total (same pattern as the filters test above) -- demo-store +
+  // conflict-store (including its two Vendor_PaginationFiller* modules, added
+  // purely so this fleet has more than one 5-row page) put the real seeded
+  // total comfortably past a pageSize:5 page, so this can actually cross a
+  // page boundary with real data instead of only ever rendering a single
+  // page's worth of rows.
+  const countText = page.getByText(/\d+ of \d+ modules/);
+  await expect(countText).toBeVisible();
+  const [, total] = (await countText.textContent())!.match(/(\d+) of (\d+) modules/)!;
+  const pageSize = 5;
+  const expectedPageCount = Math.ceil(Number(total) / pageSize);
+  expect(expectedPageCount).toBeGreaterThan(1); // otherwise this test can't prove anything
+
+  await page.getByLabel("Modules per page").selectOption(String(pageSize));
+  await expect(page.getByText(`Page 1 of ${expectedPageCount}`)).toBeVisible();
+
+  // exact: true -- "Next" would otherwise also substring-match the
+  // Next.js dev-tools overlay button's "Open Next.js Dev Tools" accessible
+  // name (docker-compose.yml's web service runs `npm run dev`, dev-tools
+  // overlay included, in CI's e2e-smoke job too -- same reasoning as the
+  // "Scan" button match above).
+  const previousButton = page.getByRole("button", { name: "Previous", exact: true });
+  const nextButton = page.getByRole("button", { name: "Next", exact: true });
+  await expect(previousButton).toBeDisabled();
+  await expect(nextButton).toBeEnabled();
+
+  // Scope to the desktop table, not the md:hidden mobile-card layout
+  // (ModuleCard renders plain divs, never a <table>) -- this avoids matching
+  // the same module twice, once per responsive layout.
+  const firstColumnCells = () => page.locator("table tbody tr td:first-child");
+  // The "Page X of Y" label is plain local state and updates the instant a
+  // page/pageSize change is clicked, but the table keeps rendering the
+  // *previous* page's rows until the refetch resolves (TanStack Query's
+  // placeholderData: keepPreviousData, by design, so the table never
+  // flashes empty mid-fetch) -- expect.poll on the row count rather than a
+  // single read, so this doesn't race that gap and assert against stale rows.
+  const remainder = Number(total) % pageSize || pageSize;
+
+  await expect.poll(() => firstColumnCells().allTextContents()).toHaveLength(pageSize);
+  const page1Names = await firstColumnCells().allTextContents();
+
+  await nextButton.click();
+  await expect(page.getByText(`Page 2 of ${expectedPageCount}`)).toBeVisible();
+  await expect.poll(() => firstColumnCells().allTextContents()).toHaveLength(remainder);
+  const page2Names = await firstColumnCells().allTextContents();
+
+  // A real bug this would catch *if* Postgres happened to reorder a tied
+  // group between the two queries -- it didn't in manual testing on this
+  // small, static fleet (see the comment above), so this is a real pagination
+  // sanity check, not a reliable proof of the tiebreaker fix itself.
+  expect(new Set([...page1Names, ...page2Names]).size).toBe(page1Names.length + page2Names.length);
+
+  await previousButton.click();
+  await expect(page.getByText(`Page 1 of ${expectedPageCount}`)).toBeVisible();
+  await expect.poll(() => firstColumnCells().allTextContents()).toEqual(page1Names);
+});
+
 test("Export CSV downloads a real file with the module data", async ({ page }) => {
   await page.goto("/modules");
   const downloadPromise = page.waitForEvent("download");

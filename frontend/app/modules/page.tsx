@@ -194,7 +194,7 @@ function downloadModulesCsv(modules: ModuleSummary[]) {
 
 const TABLE_COLUMN_COUNT = 14;
 const PREVIEW_FINDING_COUNT = 5;
-const PAGE_SIZE_OPTIONS = [25, 50, 100, 200];
+const PAGE_SIZE_OPTIONS = [5, 25, 50, 100, 200];
 const DEFAULT_PAGE_SIZE = 25;
 // How long the search box waits after the last keystroke before it re-filters
 // the (potentially large, e.g. a 760-module fleet) list — re-filtering and
