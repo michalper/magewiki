@@ -294,6 +294,53 @@ jobs:
       - name: container-structure-test (${{ matrix.image }})
         run: container-structure-test test --image magewiki-${{ matrix.image }}-ci --config "$(dirname ${{ matrix.dockerfile }})/container-structure-test.yaml"
 
+  sbom:
+    # SBOM only, no cosign image signing: nothing in this project ever pushes
+    # these images to a registry (no GHCR/Docker Hub publish step exists at
+    # all -- docker-build/image-scan/image-structure-test/e2e-smoke/k8s-smoke
+    # all build and use them locally, within the same job, then discard
+    # them). Signing an image that's never distributed verifies nothing for
+    # anyone -- there's no pull site for a consumer to check the signature
+    # against. A CycloneDX SBOM has real value even for a locally-built,
+    # never-published image: it's a per-build, auditable record of exactly
+    # what's inside each image (OS packages + language deps), independent of
+    # Trivy's own point-in-time CVE scan above.
+    needs: docker-build
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - image: backend
+            context: ./backend
+            dockerfile: ./backend/Dockerfile
+          - image: frontend
+            context: ./frontend
+            dockerfile: ./frontend/Dockerfile
+          - image: php-analyzer
+            context: .
+            dockerfile: php-analyzer/Dockerfile
+    steps:
+      - uses: actions/checkout@v7
+      - uses: docker/setup-buildx-action@v3
+      - uses: docker/build-push-action@v6
+        with:
+          context: ${{ matrix.context }}
+          file: ${{ matrix.dockerfile }}
+          tags: magewiki-${{ matrix.image }}-ci
+          load: true
+          cache-from: type=gha,scope=${{ matrix.image }}
+      - name: Generate SBOM (${{ matrix.image }})
+        uses: anchore/sbom-action@v0.24.0
+        with:
+          image: magewiki-${{ matrix.image }}-ci
+          format: cyclonedx-json
+          output-file: sbom-${{ matrix.image }}.cdx.json
+      - uses: actions/upload-artifact@v4
+        with:
+          name: sbom-${{ matrix.image }}
+          path: sbom-${{ matrix.image }}.cdx.json
+
   e2e-smoke:
     needs: docker-build
     runs-on: ubuntu-latest

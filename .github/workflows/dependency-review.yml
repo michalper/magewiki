@@ -24,3 +24,12 @@ jobs:
           # decision log) -- low severity findings alone shouldn't block a PR,
           # moderate-and-up should.
           fail-on-severity: moderate
+          # This repo is MIT (see CLAUDE.md/LICENSE) -- block a new dependency
+          # that's strong copyleft (GPL/AGPL), which would require this
+          # project itself to be relicensed to keep distributing it. NOT
+          # LGPL: the existing dependency tree already carries one real,
+          # completely standard LGPL-3.0 package (sharp's libvips native
+          # binding, a devDependency of Next.js's image optimizer) -- LGPL
+          # explicitly permits use as a dependency without this project
+          # inheriting its license, unlike GPL/AGPL.
+          deny-licenses: GPL-2.0-only, GPL-2.0-or-later, GPL-3.0-only, GPL-3.0-or-later, AGPL-3.0-only, AGPL-3.0-or-later

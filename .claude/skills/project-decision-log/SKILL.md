@@ -3764,3 +3764,34 @@ in this same pass -- that's a separate, real-money action (Anthropic
 synthesis + embeddings + now two more real LLM calls per retrieval question)
 left for the user to trigger on their own schedule/budget; README now notes
 the table predates this addition.
+
+**CI follow-up, same session: picked up the first round's two "nice-to-have"
+items (user's own call when asked).** Added a `sbom` job (`ci.yml`) and a
+license gate to `dependency-review.yml`:
+
+- **SBOM, not image signing.** Investigated whether cosign image signing was
+  actually worth adding first: nothing in this repo ever pushes `docker-build`'s
+  images to a registry (no GHCR/Docker Hub publish step exists at all --
+  every CI job that uses these images builds and discards them locally,
+  within its own job). Signing an image with no pull site for a consumer to
+  check the signature against verifies nothing for anyone -- it would be
+  pure theater. A CycloneDX SBOM still has real value on a never-published
+  image (an auditable per-build record of exactly what's inside, independent
+  of Trivy's own point-in-time CVE scan), so added `anchore/sbom-action` over
+  `image-structure-test`'s own build-and-matrix pattern, uploaded as a build
+  artifact per image. Verified the actual mechanism locally first (`docker
+  save` the real backend image to a tarball, ran the real `syft` Docker image
+  against `docker-archive:`, got a real CycloneDX 1.7 SBOM with 3305
+  components) rather than trusting the YAML alone.
+- **License gate**: `dependency-review-action` already blocks CVEs at
+  moderate+ severity but never checked license compatibility with this
+  repo's own MIT license. Checked what's actually in the dependency tree
+  before picking a list (`pip`'s own package metadata for backend, `npx
+  license-checker --summary` for frontend): zero GPL/AGPL, but one real,
+  completely ordinary LGPL-3.0 dependency (`sharp`'s `libvips` native
+  binding, a `next/image` optimizer dependency) -- confirming `deny-licenses`
+  should name GPL/AGPL specifically, not a broader copyleft sweep that would
+  have broken CI on that legitimate dependency. LGPL explicitly permits use
+  as a dependency without the consuming project inheriting its license,
+  unlike GPL/AGPL, which would require this MIT project to relicense to keep
+  shipping it.
