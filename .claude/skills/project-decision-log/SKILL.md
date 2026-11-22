@@ -3923,3 +3923,30 @@ critical path (the longest dependency chain a PR actually waits on) --
   `libnss3`, ...) aren't part of that cache dir, so a cache hit still runs
   `playwright install-deps chromium` (fast, no large download) rather than
   skipping browser setup entirely.
+
+**Real CI results (PR #53): the critical path, not just total cost,
+dropped sharply.** `docker-build`'s own wall-clock: 3m31s (sequential) ->
+1m30s (matrix, parallel). `e2e-smoke`: 5m50s -> 3m44s (on a Playwright
+cache *miss* -- the first run with nothing to restore yet, so the real
+number once the cache is warm should be better still). `docker-build ->
+e2e-smoke`, the actual critical path a PR waits on: roughly 9m21s -> 5m14s,
+over 40% faster.
+
+**But PR #53 blocked on merge for a while afterward -- a self-inflicted,
+predictable mistake.** `ci.yml`'s own header comment already warned
+"renaming/removing any of those job ids needs a matching update to the
+required_status_checks list... or the check a PR is waiting on simply
+never reports again" -- and then `docker-build` became a matrix in this
+exact session without that update. `main`'s required check "docker-build"
+stopped being produced by anything the instant the job became a matrix (a
+matrix job's real GitHub check name always includes its matrix values in
+parens, e.g. "docker-build (backend, ./backend, ./backend/Dockerfile)"),
+so the PR sat `BLOCKED`/waiting forever on a status that could never
+arrive. Fixed via the GitHub API (`PATCH .../branches/main/protection/
+required_status_checks`, with the 3 new per-leg names replacing the old
+"docker-build" in `contexts`) -- needed the user's own explicit
+confirmation first (branch-protection changes are flagged as a sensitive,
+Undermining-Oversight-class action, correctly). Also fixed the header
+comment itself to describe the *current* required-checks shape instead of
+the stale one, and to name this exact incident as the reason to update it
+again next time the matrix shape changes.

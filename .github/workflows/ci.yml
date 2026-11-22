@@ -8,11 +8,15 @@ on:
 permissions:
   contents: read
 
-# main's branch protection requires 4 of this workflow's jobs to pass before a PR
-# can merge: backend, frontend, docker-build, e2e-smoke. Renaming/removing any of
-# those job ids needs a matching update to the required_status_checks list
-# (Settings > Branches, or via the API), or the check a PR is waiting on simply
-# never reports again.
+# main's branch protection requires these checks before a PR can merge: backend,
+# frontend, e2e-smoke, and all 3 docker-build matrix legs ("docker-build (backend,
+# ./backend, ./backend/Dockerfile)" etc. -- a matrix job's real check name always
+# includes its matrix values in parens, not just the job id). Renaming/removing
+# any of those, or changing docker-build's matrix shape, needs a matching update
+# to the required_status_checks list (Settings > Branches, or via the API) --
+# confirmed the hard way: PR #53 blocked forever on a required "docker-build"
+# check that stopped existing the moment docker-build became a matrix, until the
+# list itself was updated to the new per-leg names.
 #
 # Cancel a superseded run on the same PR/branch (saves runner minutes on fast
 # force-pushes/rebases) -- but not on a push to main, to keep a stable trail of
