@@ -538,7 +538,16 @@ async def list_modules(
 
     sort_column = sort_columns[sort_by]
     order = sort_column.asc() if sort_dir == "asc" else sort_column.desc()
-    order_by = (ModuleDocument.doc.isnot(None).desc(), order) if prioritize_doc else (order,)
+    # Module.id as a final, always-unique tiebreaker: ties on sort_by are common
+    # (plugin_count/observer_count are 0 for most modules; a batch scan produces
+    # many equal last_scanned_at timestamps), and Postgres doesn't guarantee a
+    # stable order among ties across separate LIMIT/OFFSET pages -- without this,
+    # browsing the modules page can show a module twice or skip it between pages.
+    order_by = (
+        (ModuleDocument.doc.isnot(None).desc(), order, Module.id)
+        if prioritize_doc
+        else (order, Module.id)
+    )
 
     rows = await session.execute(
         select(Module, class_count, plugin_count, observer_count, ModuleDocument.doc)

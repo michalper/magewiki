@@ -1,5 +1,5 @@
-from collections.abc import Awaitable, Callable
-from typing import cast
+from collections.abc import Awaitable, Callable, Sequence
+from typing import Any, cast
 
 from sqlalchemy import ColumnElement, TextClause, bindparam, func, select, text
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -244,6 +244,16 @@ def _escape_like(value: str) -> str:
     return value.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
 
 
+def _split_truncated(rows: Sequence[Any], limit: int = _IDENTIFIER_MATCH_LIMIT) -> tuple[Sequence[Any], bool]:
+    """Fetch-limit+1-and-slice: tells the caller whether a capped SQL result list
+    is actually exhaustive or was clipped, without a separate COUNT(*) query.
+    CLAUDE.md routes enumeration questions through SQL specifically because top-k
+    retrieval doesn't guarantee completeness -- a capped list with no truncation
+    signal would silently reintroduce that same problem for find_by_event/find_by_class.
+    """
+    return (rows[:limit], len(rows) > limit)
+
+
 async def find_by_event(session: AsyncSession, event_name: str) -> dict:
     like = f"%{_escape_like(event_name)}%"
     rows = (
@@ -252,9 +262,10 @@ async def find_by_event(session: AsyncSession, event_name: str) -> dict:
             .join(Module, Module.id == EventObserver.module_id)
             .where(EventObserver.event_name.ilike(like))
             .order_by(EventObserver.event_name)
-            .limit(_IDENTIFIER_MATCH_LIMIT)
+            .limit(_IDENTIFIER_MATCH_LIMIT + 1)
         )
     ).all()
+    rows, truncated = _split_truncated(rows)
 
     return {
         "results": [
@@ -267,49 +278,58 @@ async def find_by_event(session: AsyncSession, event_name: str) -> dict:
                 "disabled": observer.disabled,
             }
             for observer, module_name in rows
-        ]
+        ],
+        "truncated": truncated,
     }
 
 
 async def find_by_class(session: AsyncSession, identifier: str) -> dict:
     like = f"%{_escape_like(identifier)}%"
 
-    defined_in = (
-        await session.execute(
-            select(PhpClass, Module.name)
-            .join(Module, Module.id == PhpClass.module_id)
-            .where(PhpClass.fqcn.ilike(like) | PhpClass.class_name.ilike(like))
-            .order_by(PhpClass.fqcn)
-            .limit(_IDENTIFIER_MATCH_LIMIT)
-        )
-    ).all()
-    overridden_by = (
-        await session.execute(
-            select(DiPreference, Module.name)
-            .join(Module, Module.id == DiPreference.module_id)
-            .where(DiPreference.for_type.ilike(like))
-            .order_by(DiPreference.for_type)
-            .limit(_IDENTIFIER_MATCH_LIMIT)
-        )
-    ).all()
-    plugins_targeting_it = (
-        await session.execute(
-            select(DiPlugin, Module.name)
-            .join(Module, Module.id == DiPlugin.module_id)
-            .where(DiPlugin.intercepted_type.ilike(like))
-            .order_by(DiPlugin.intercepted_type)
-            .limit(_IDENTIFIER_MATCH_LIMIT)
-        )
-    ).all()
-    is_a_plugin_for = (
-        await session.execute(
-            select(DiPlugin, Module.name)
-            .join(Module, Module.id == DiPlugin.module_id)
-            .where(DiPlugin.plugin_class.ilike(like))
-            .order_by(DiPlugin.plugin_class)
-            .limit(_IDENTIFIER_MATCH_LIMIT)
-        )
-    ).all()
+    defined_in, defined_in_truncated = _split_truncated(
+        (
+            await session.execute(
+                select(PhpClass, Module.name)
+                .join(Module, Module.id == PhpClass.module_id)
+                .where(PhpClass.fqcn.ilike(like) | PhpClass.class_name.ilike(like))
+                .order_by(PhpClass.fqcn)
+                .limit(_IDENTIFIER_MATCH_LIMIT + 1)
+            )
+        ).all()
+    )
+    overridden_by, overridden_by_truncated = _split_truncated(
+        (
+            await session.execute(
+                select(DiPreference, Module.name)
+                .join(Module, Module.id == DiPreference.module_id)
+                .where(DiPreference.for_type.ilike(like))
+                .order_by(DiPreference.for_type)
+                .limit(_IDENTIFIER_MATCH_LIMIT + 1)
+            )
+        ).all()
+    )
+    plugins_targeting_it, plugins_targeting_it_truncated = _split_truncated(
+        (
+            await session.execute(
+                select(DiPlugin, Module.name)
+                .join(Module, Module.id == DiPlugin.module_id)
+                .where(DiPlugin.intercepted_type.ilike(like))
+                .order_by(DiPlugin.intercepted_type)
+                .limit(_IDENTIFIER_MATCH_LIMIT + 1)
+            )
+        ).all()
+    )
+    is_a_plugin_for, is_a_plugin_for_truncated = _split_truncated(
+        (
+            await session.execute(
+                select(DiPlugin, Module.name)
+                .join(Module, Module.id == DiPlugin.module_id)
+                .where(DiPlugin.plugin_class.ilike(like))
+                .order_by(DiPlugin.plugin_class)
+                .limit(_IDENTIFIER_MATCH_LIMIT + 1)
+            )
+        ).all()
+    )
 
     return {
         "defined_in": [
@@ -323,18 +343,22 @@ async def find_by_class(session: AsyncSession, identifier: str) -> dict:
             }
             for c, m in defined_in
         ],
+        "defined_in_truncated": defined_in_truncated,
         "overridden_by": [
             {"module_id": p.module_id, "module_name": m, "for_type": p.for_type, "preference_type": p.preference_type}
             for p, m in overridden_by
         ],
+        "overridden_by_truncated": overridden_by_truncated,
         "plugins_targeting_it": [
             {"module_id": p.module_id, "module_name": m, "plugin_class": p.plugin_class, "plugin_name": p.plugin_name}
             for p, m in plugins_targeting_it
         ],
+        "plugins_targeting_it_truncated": plugins_targeting_it_truncated,
         "is_a_plugin_for": [
             {"module_id": p.module_id, "module_name": m, "intercepted_type": p.intercepted_type, "plugin_name": p.plugin_name}
             for p, m in is_a_plugin_for
         ],
+        "is_a_plugin_for_truncated": is_a_plugin_for_truncated,
     }
 
 
@@ -413,7 +437,11 @@ async def list_modules(
             select(Module, ModuleDocument.doc)
             .outerjoin(ModuleDocument, ModuleDocument.module_id == Module.id)
             .where(*filters)
-            .order_by(Module.name)
+            # Module.id as a tiebreaker: the same module name can repeat across
+            # repo_roots in a multi-repo fleet, and enumeration questions page
+            # through this with repeated offset/limit calls -- an unstable order
+            # among name ties could skip or duplicate a module across calls.
+            .order_by(Module.name, Module.id)
             .limit(limit)
             .offset(offset)
         )
@@ -624,8 +652,10 @@ TOOL_SCHEMAS = [
         "function": {
             "name": "find_by_event",
             "description": (
-                "Find which observers listen to a given Magento event name. Matches are capped "
-                f"at {_IDENTIFIER_MATCH_LIMIT} -- use a more specific event_name if you need a different match."
+                "Find which observers listen to a given Magento event name. Matches are capped at "
+                f"{_IDENTIFIER_MATCH_LIMIT}; check the `truncated` field in the result -- if true, this "
+                "list is incomplete and you must say so rather than presenting it as exhaustive, or ask "
+                "for a more specific event_name."
             ),
             "parameters": {
                 "type": "object",
@@ -641,7 +671,9 @@ TOOL_SCHEMAS = [
             "description": (
                 "Find where a class/interface is defined, what overrides it (di.xml preference), what plugins "
                 "intercept it, and what it is itself a plugin for. Accepts a partial FQCN or class name. Each "
-                f"result list is capped at {_IDENTIFIER_MATCH_LIMIT} -- use a more specific identifier if needed."
+                f"result list is capped at {_IDENTIFIER_MATCH_LIMIT}; check its matching `..._truncated` field -- "
+                "if true, that list is incomplete and you must say so rather than presenting it as exhaustive, "
+                "or ask for a more specific identifier."
             ),
             "parameters": {
                 "type": "object",

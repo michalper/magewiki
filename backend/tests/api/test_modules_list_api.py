@@ -1,3 +1,4 @@
+import re
 import uuid
 from datetime import UTC, datetime, timedelta
 from decimal import Decimal
@@ -65,6 +66,33 @@ async def _add_doc(db_session, module: Module, suffix: str) -> None:
 async def _cleanup(db_session, *modules: Module) -> None:
     await db_session.execute(delete(Module).where(Module.id.in_([m.id for m in modules])))
     await db_session.commit()
+
+
+def _order_by_top_level_keys(statement: str) -> list[str]:
+    """The real ORDER BY sort keys, as top-level comma-separated terms --
+    NOT a plain substring search. A naive `"modules.id" in order_by_clause`
+    check is a false positive here: class_count/plugin_count/observer_count
+    sort columns are themselves correlated subqueries
+    (`... WHERE php_classes.module_id = modules.id`), so "modules.id" shows
+    up inside the ORDER BY clause's text regardless of whether Module.id is
+    actually a sort key -- confirmed by hand, this exact test passed even
+    with the real tiebreaker reverted until the check was made paren-depth
+    aware.
+    """
+    order_by_clause = re.split(r"\bLIMIT\b", statement.split("ORDER BY", 1)[1])[0]
+    keys, depth, current = [], 0, ""
+    for char in order_by_clause:
+        if char == "(":
+            depth += 1
+        elif char == ")":
+            depth -= 1
+        if char == "," and depth == 0:
+            keys.append(current.strip())
+            current = ""
+        else:
+            current += char
+    keys.append(current.strip())
+    return keys
 
 
 @pytest.mark.asyncio
@@ -236,6 +264,73 @@ async def test_list_modules_sorts_by_class_count_and_last_scanned_at(db_session)
     assert [m["name"] for m in by_last_scanned_asc.json()["modules"]] == [older.name, newer.name]
 
     await _cleanup(db_session, older, newer)
+
+
+@pytest.mark.asyncio
+async def test_list_modules_order_by_includes_module_id_tiebreaker(db_session):
+    """White-box regression test: Postgres doesn't *guarantee* a stable order
+    among ties across separate LIMIT/OFFSET queries without an explicit
+    tiebreaker, but confirmed by hand that it also doesn't reliably show the
+    instability either -- a tiny, unmodified table with no concurrent writes
+    gets a consistent plan/scan order run to run regardless, so asserting on
+    *observed* row order (as the test below this one does) can pass whether or
+    not the tiebreaker is actually there. Assert on the real, executed SQL's
+    ORDER BY clause instead -- the one thing this can actually prove.
+    """
+    from sqlalchemy import event
+
+    from app.db import engine as db_engine
+
+    captured: list[str] = []
+
+    def _capture(conn, cursor, statement, parameters, context, executemany):
+        if "FROM modules" in statement and "ORDER BY" in statement:
+            captured.append(statement)
+
+    event.listen(db_engine.sync_engine, "before_cursor_execute", _capture)
+    try:
+        transport = ASGITransport(app=app)
+        async with AsyncClient(transport=transport, base_url="http://test") as client:
+            await client.get(
+                "/modules", params={"sort_by": "plugin_count", "sort_dir": "asc", "limit": 5, "offset": 0}
+            )
+    finally:
+        event.remove(db_engine.sync_engine, "before_cursor_execute", _capture)
+
+    assert captured, "expected a SELECT ... FROM modules ... ORDER BY statement to run"
+    assert _order_by_top_level_keys(captured[-1])[-1] == "modules.id"
+
+
+@pytest.mark.asyncio
+async def test_list_modules_breaks_sort_ties_deterministically_across_pages(db_session):
+    # Three modules tied on every sortable column (last_scanned_at equal,
+    # class/plugin/observer_count all 0). This is a behavioral sanity check
+    # (pagination doesn't crash/duplicate/skip on a static table) -- the real,
+    # reliable proof that the Module.id tiebreaker is actually in the query is
+    # the white-box SQL-inspection test above; see its own docstring for why.
+    suffix = uuid.uuid4().hex[:8]
+    tie = datetime.now(UTC)
+    first = await _make_module(db_session, f"{suffix}-1", name=f"Tie_{suffix}_1", last_scanned_at=tie)
+    second = await _make_module(db_session, f"{suffix}-2", name=f"Tie_{suffix}_2", last_scanned_at=tie)
+    third = await _make_module(db_session, f"{suffix}-3", name=f"Tie_{suffix}_3", last_scanned_at=tie)
+    await db_session.commit()
+
+    transport = ASGITransport(app=app)
+    async with AsyncClient(transport=transport, base_url="http://test") as client:
+        pages = [
+            await client.get(
+                "/modules",
+                params={"search": suffix, "sort_by": "last_scanned_at", "sort_dir": "asc", "limit": 1, "offset": offset},
+            )
+            for offset in range(3)
+        ]
+
+    names_by_offset = [page.json()["modules"][0]["name"] for page in pages]
+    assert first.id < second.id < third.id  # sequential flushes -> ascending ids
+    assert names_by_offset == [first.name, second.name, third.name]
+    assert len(set(names_by_offset)) == 3  # no duplicate across pages, nothing skipped
+
+    await _cleanup(db_session, first, second, third)
 
 
 @pytest.mark.asyncio

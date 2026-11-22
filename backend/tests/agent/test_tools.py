@@ -1,3 +1,4 @@
+import re
 import uuid
 from datetime import UTC, datetime
 from decimal import Decimal
@@ -33,6 +34,27 @@ from app.models import (
     PhpClass,
 )
 from tests.conftest import scan_demo_store
+
+
+def _order_by_top_level_keys(statement: str) -> list[str]:
+    """The real ORDER BY sort keys, as top-level comma-separated terms, not a
+    plain substring search -- see modules.py's own test of this same thing
+    for why a naive `"modules.id" in ...` check is a false positive.
+    """
+    order_by_clause = re.split(r"\bLIMIT\b", statement.split("ORDER BY", 1)[1])[0]
+    keys, depth, current = [], 0, ""
+    for char in order_by_clause:
+        if char == "(":
+            depth += 1
+        elif char == ")":
+            depth -= 1
+        if char == "," and depth == 0:
+            keys.append(current.strip())
+            current = ""
+        else:
+            current += char
+    keys.append(current.strip())
+    return keys
 
 
 def _vector(active: dict[int, float]) -> list[float]:
@@ -534,6 +556,22 @@ async def test_find_by_event_caps_a_broad_match_instead_of_returning_everything(
     result = await find_by_event(db_session, event_name=f"save_event_{suffix}")
 
     assert len(result["results"]) == _IDENTIFIER_MATCH_LIMIT
+    # Without this flag the agent can't tell a clipped list from a genuinely
+    # exhaustive one and could confidently report "these are all the observers".
+    assert result["truncated"] is True
+
+    await db_session.execute(delete(Module).where(Module.id == module.id))
+    await db_session.commit()
+
+
+@pytest.mark.asyncio
+async def test_find_by_event_reports_not_truncated_when_everything_fits(db_session):
+    module = await _make_bare_module(db_session, uuid.uuid4().hex[:8])
+
+    result = await find_by_event(db_session, event_name=module.name)  # matches nothing -> 0 rows, not truncated
+
+    assert result["results"] == []
+    assert result["truncated"] is False
 
     await db_session.execute(delete(Module).where(Module.id == module.id))
     await db_session.commit()
@@ -558,6 +596,11 @@ async def test_find_by_class_caps_a_broad_match_instead_of_returning_everything(
     result = await find_by_class(db_session, identifier=f"{suffix}\\Address")
 
     assert len(result["defined_in"]) == _IDENTIFIER_MATCH_LIMIT
+    assert result["defined_in_truncated"] is True
+    # The other three relations genuinely have zero matches here -- must stay False.
+    assert result["overridden_by_truncated"] is False
+    assert result["plugins_targeting_it_truncated"] is False
+    assert result["is_a_plugin_for_truncated"] is False
 
     await db_session.execute(delete(Module).where(Module.id == module.id))
     await db_session.commit()
@@ -634,6 +677,81 @@ async def test_list_modules_filters_by_status_and_tags(db_session):
     assert untagged.name not in names
 
     await db_session.execute(delete(Module).where(Module.id.in_([tagged.id, untagged.id])))
+    await db_session.commit()
+
+
+@pytest.mark.asyncio
+async def test_list_modules_order_by_includes_module_id_tiebreaker(db_session):
+    """White-box regression test, same reasoning as modules.py's own version
+    of this test (see its docstring): a tiny, unmodified table doesn't
+    reliably show order *instability* without a tiebreaker (confirmed by
+    hand), so this asserts on the real executed SQL's ORDER BY clause instead
+    of trying to observe a skipped/duplicated row.
+    """
+    from sqlalchemy import event
+
+    from app.db import engine as db_engine
+
+    captured: list[str] = []
+
+    def _capture(conn, cursor, statement, parameters, context, executemany):
+        if "FROM modules" in statement and "ORDER BY" in statement:
+            captured.append(statement)
+
+    event.listen(db_engine.sync_engine, "before_cursor_execute", _capture)
+    try:
+        await list_modules(db_session, limit=1, offset=0)
+    finally:
+        event.remove(db_engine.sync_engine, "before_cursor_execute", _capture)
+
+    assert captured, "expected a SELECT ... FROM modules ... ORDER BY statement to run"
+    assert _order_by_top_level_keys(captured[-1])[-1] == "modules.id"
+
+
+@pytest.mark.asyncio
+async def test_list_modules_breaks_name_ties_deterministically_across_pages(db_session):
+    # Two modules with the *same name* (realistic in a multi-repo fleet: the
+    # same vendor module installed in two repo_roots). Behavioral sanity check
+    # only -- the white-box SQL-inspection test above is the reliable proof
+    # the tiebreaker is actually in the query, see its docstring for why.
+    suffix = uuid.uuid4().hex[:8]
+    shared_name = f"Shared_{suffix}"
+    first = await _make_bare_module(db_session, f"{suffix}-a", name=shared_name)
+    second = await _make_bare_module(db_session, f"{suffix}-b", name=shared_name)
+
+    cache = AnalysisCache(
+        content_hash=f"doc-{suffix}",
+        model="seeded",
+        prompt_version=MODULE_SYNTHESIS_PROMPT_VERSION,
+        kind="module_synthesis",
+        response={},
+        tokens_in=0,
+        tokens_out=0,
+        cost_usd=Decimal(0),
+    )
+    db_session.add(cache)
+    await db_session.flush()
+    for module in (first, second):
+        db_session.add(
+            ModuleDocument(
+                module_id=module.id,
+                content_hash=f"doc-{suffix}-{module.id}",
+                model="seeded",
+                prompt_version=MODULE_SYNTHESIS_PROMPT_VERSION,
+                cache_id=cache.id,
+                doc={"tags": [{"name": "payments", "source": "ai", "confidence": 0.9}], "integrations": []},
+            )
+        )
+    await db_session.commit()
+
+    first_page = await list_modules(db_session, tags=["payments"], limit=1, offset=0)
+    second_page = await list_modules(db_session, tags=["payments"], limit=1, offset=1)
+
+    assert first.id < second.id  # sequential flushes -> ascending ids
+    assert first_page["modules"][0]["module_id"] == first.id
+    assert second_page["modules"][0]["module_id"] == second.id
+
+    await db_session.execute(delete(Module).where(Module.id.in_([first.id, second.id])))
     await db_session.commit()
 
 
