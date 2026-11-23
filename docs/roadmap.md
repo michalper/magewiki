@@ -1,6 +1,30 @@
 # Roadmap
 
-Per-phase changelog. Full detail (done-criteria, data model, RAG design, and the decision recorded behind each phase): see `CLAUDE.md`.
+## What's next (next ~12 months)
+
+This project's working method (see `CLAUDE.md`'s "Working method" section)
+is to plan and scope one phase at a time, not commit to a long fixed list
+up front — so this is a direction, not a numbered list of promised phases:
+
+- **Continued phase-based feature development** in the same shape as the
+  phases below: more rounds of cross-module conflict detection as new
+  Magento declarative-XML surfaces get covered, deeper structural fact
+  extraction, and RAG/agent quality work.
+- **CI/security hardening** in the style of this project's OpenSSF
+  Scorecard work and OpenSSF Best Practices Badge self-assessment —
+  ongoing, not a one-time pass.
+- **Evaluation and quality**: keeping the retrieval evaluation suite
+  (Phase 7) meaningful as the agent's tool surface grows.
+
+**Explicitly not planned:** turning this into a multi-tenant SaaS product
+(it's built and licensed as a self-hosted, single-operator tool — see
+`CLAUDE.md`'s "Goal and scope"), and supporting ecosystems other than
+Magento 2 (the scanner, data model, and RAG design are Magento-specific by
+design, not a generic "scan any PHP codebase" tool).
+
+## Per-phase changelog
+
+Full detail (done-criteria, data model, RAG design, and the decision recorded behind each phase): see `CLAUDE.md`.
 
 - [x] **Phase 0** — Repo skeleton, docker-compose, migrations
 - [x] **Phase 1** — Scanner: module discovery, XML/composer/PHP parsers, saved to the DB

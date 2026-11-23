@@ -57,6 +57,15 @@ design, and phase plan; `.claude/skills/project-decision-log/SKILL.md` has
 the dated history of *why* behind specific changes. Worth a skim before a
 larger change, to avoid re-litigating something already settled.
 
+## Developer Certificate of Origin
+
+By submitting a contribution, you certify that you wrote it (or otherwise
+have the right to submit it) under the terms of the
+[Developer Certificate of Origin](https://developercertificate.org/) — the
+same lightweight mechanism used by the Linux kernel and many other open
+source projects. No sign-off commit trailer or bot check is required today;
+this is a standing declaration, not an enforced gate.
+
 ## License
 
 MIT — see [LICENSE](LICENSE). By contributing, you agree your contribution
