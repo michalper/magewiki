@@ -198,6 +198,10 @@ jobs:
     # downstream job (image-quality/e2e-smoke/k8s-smoke) waits on this one
     # finishing first.
     runs-on: ubuntu-latest
+    # Backstop against GitHub's 6-hour default job ceiling silently eating
+    # runner-minutes if buildx/the cache ever wedges -- a normal build of
+    # any of these 3 images is minutes, not hours.
+    timeout-minutes: 20
     strategy:
       matrix:
         include:
@@ -320,6 +324,9 @@ jobs:
   e2e-smoke:
     needs: docker-build
     runs-on: ubuntu-latest
+    # Backstop against GitHub's 6-hour default job ceiling if docker compose
+    # or a Playwright run ever wedges instead of just failing outright.
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
       # npm install (and the playwright browser install) must run BEFORE `docker
@@ -445,6 +452,9 @@ jobs:
     # instead of shipping silently.
     needs: docker-build
     runs-on: ubuntu-latest
+    # Backstop against GitHub's 6-hour default job ceiling if the kind
+    # cluster or a kubectl wait ever wedges instead of just failing outright.
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
       # Load the same three images docker-build already built once (this
