@@ -39,7 +39,8 @@ async def get_or_create_cache_entry(
     )
     inserted = (await session.execute(insert_stmt)).first()
     if inserted is not None:
-        return inserted.id
+        inserted_id: int = inserted.id
+        return inserted_id
 
     existing_id = await session.scalar(
         select(AnalysisCache.id).where(

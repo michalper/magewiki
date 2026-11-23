@@ -3,6 +3,7 @@ import uuid
 from collections.abc import AsyncIterator
 from dataclasses import dataclass
 from decimal import Decimal
+from typing import Any
 
 import litellm
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -34,7 +35,7 @@ class Source:
     identifier_rank: int | None = None
 
 
-def _turn_cost(response, model: str) -> tuple[int, int, Decimal]:
+def _turn_cost(response: Any, model: str) -> tuple[int, int, Decimal]:
     tokens_in = response.usage.prompt_tokens
     tokens_out = response.usage.completion_tokens
     cost = resolve_llm_cost(response, model, tokens_in, tokens_out)
@@ -61,7 +62,9 @@ async def _persist_chat_cost(
     await session.commit()
 
 
-def _collect_sources(tool_name: str, args: dict, result: dict, sources: dict[tuple, Source]) -> None:
+def _collect_sources(
+    tool_name: str, args: dict[str, Any], result: dict[str, Any], sources: dict[tuple[Any, Any], Source]
+) -> None:
     """Record (module_id, relative_path) refs a tool call actually touched, deduped."""
 
     def _add(
@@ -125,7 +128,7 @@ _ENUMERATION_PHRASES = (
 )
 
 
-def _looks_like_an_enumeration_question(messages: list[dict]) -> bool:
+def _looks_like_an_enumeration_question(messages: list[dict[str, Any]]) -> bool:
     """CLAUDE.md's own routing table says counting/"show all" questions must go
     through list_modules (a real SQL count/filter), not search_modules's top-k,
     which is not guaranteed complete -- but that's only ever enforced by the
@@ -138,7 +141,9 @@ def _looks_like_an_enumeration_question(messages: list[dict]) -> bool:
     return any(phrase in lowered for phrase in _ENUMERATION_PHRASES)
 
 
-async def run_agent(session: AsyncSession, messages: list[dict], audience: str) -> AsyncIterator[dict]:
+async def run_agent(
+    session: AsyncSession, messages: list[dict[str, Any]], audience: str
+) -> AsyncIterator[dict[str, Any]]:
     """Agentic tool-calling loop over the 7 tools in app.agent.tools, then one final
     streamed turn. Yields plain dict events: {"event": "sources"|"token"|"done", ...}.
     See CLAUDE.md "RAG and the agent" for the design this implements.
@@ -154,7 +159,7 @@ async def run_agent(session: AsyncSession, messages: list[dict], audience: str) 
     llm_config = await resolve_llm_config(session)
 
     history = [{"role": "system", "content": build_system_prompt(audience)}, *messages]
-    sources: dict[tuple, Source] = {}
+    sources: dict[tuple[Any, Any], Source] = {}
     tools_called: set[str] = set()
     tokens_in_total = 0
     tokens_out_total = 0

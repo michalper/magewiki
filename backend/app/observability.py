@@ -13,7 +13,7 @@ import uuid
 from contextvars import ContextVar
 
 from prometheus_client import CONTENT_TYPE_LATEST, Counter, Gauge, Histogram, generate_latest
-from starlette.middleware.base import BaseHTTPMiddleware
+from starlette.middleware.base import BaseHTTPMiddleware, RequestResponseEndpoint
 from starlette.requests import Request
 from starlette.responses import Response
 
@@ -83,7 +83,7 @@ class RequestIdMiddleware(BaseHTTPMiddleware):
     in the path doesn't create one metric series per module ever requested.
     """
 
-    async def dispatch(self, request: Request, call_next) -> Response:
+    async def dispatch(self, request: Request, call_next: RequestResponseEndpoint) -> Response:
         request_id = request.headers.get("X-Request-ID", str(uuid.uuid4()))
         token = request_id_var.set(request_id)
         started = time.monotonic()

@@ -76,6 +76,7 @@ from app.scanner.dto import (
     MviewEntry,
     PendingAnalysisJob,
     PhpClassEntry,
+    QualityFinding,
     QueueBindingEntry,
     RouteEntry,
     WebapiRouteEntry,
@@ -297,7 +298,7 @@ async def scan_paths(path: str, session: AsyncSession) -> ScanResult:
     return result
 
 
-async def scan_paths_events(path: str, session: AsyncSession) -> AsyncIterator[dict]:
+async def scan_paths_events(path: str, session: AsyncSession) -> AsyncIterator[dict[str, Any]]:
     """Expands `path` into one or more store/module roots (find_store_roots)
     and scans each in turn — a directory containing several stores side by
     side (e.g. /sites/store-a, /sites/store-b, ...) scans all of them in one
@@ -356,7 +357,7 @@ async def scan_paths_events(path: str, session: AsyncSession) -> AsyncIterator[d
     yield {"event": "done", "result": combined}
 
 
-async def scan_repository_events(repo_root: str, session: AsyncSession) -> AsyncIterator[dict]:
+async def scan_repository_events(repo_root: str, session: AsyncSession) -> AsyncIterator[dict[str, Any]]:
     """The actual scan — a generator so a streaming caller (POST /scan/stream)
     can show live progress. Commits per module rather than once at the end
     specifically so that progress is real: a module is only visible to any
@@ -412,7 +413,7 @@ def _is_deadlock(exc: BaseException) -> bool:
     return getattr(getattr(exc, "orig", None), "sqlstate", None) == "40P01"
 
 
-async def _run_scan(root: Path, session: AsyncSession) -> AsyncIterator[dict]:
+async def _run_scan(root: Path, session: AsyncSession) -> AsyncIterator[dict[str, Any]]:
     result = ScanResult(repo_root=str(root))
 
     discovered = find_modules(root)
@@ -977,7 +978,7 @@ _ModuleChildModel = (
 
 
 async def _sync_module_children(
-    session: AsyncSession, module_id: int, model_cls: _ModuleChildModel, entries: list
+    session: AsyncSession, module_id: int, model_cls: _ModuleChildModel, entries: list[Any]
 ) -> None:
     """Replace every row of model_cls for this module — delete, then reinsert from
     freshly parsed entries. Shared by every 1:N parsed-fact table whose DTO field
@@ -1291,7 +1292,7 @@ async def _persist_module(
             )
         )
 
-    async def _session_based_checks() -> list:
+    async def _session_based_checks() -> list[QualityFinding]:
         # These three all read/write the same packagist_cache table through the
         # one shared `session` — AsyncSession doesn't support concurrent use
         # from multiple coroutines, so they must stay sequential relative to

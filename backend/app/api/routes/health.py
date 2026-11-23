@@ -1,4 +1,5 @@
 from pathlib import Path
+from typing import Any
 
 from alembic.config import Config
 from alembic.script import ScriptDirectory
@@ -20,7 +21,7 @@ _CODE_REVISION = ScriptDirectory.from_config(Config(str(_ALEMBIC_INI))).get_curr
 
 
 @router.get("/health")
-async def health(session: AsyncSession = Depends(get_session)) -> dict:
+async def health(session: AsyncSession = Depends(get_session)) -> dict[str, Any]:
     try:
         await session.execute(text("SELECT 1"))
         db_status = "ok"

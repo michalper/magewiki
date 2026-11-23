@@ -42,7 +42,7 @@ _RERANK_CANDIDATE_POOL = 20
 _IDENTIFIER_MATCH_LIMIT = 50
 
 
-def _module_tool(fn: Callable[..., Awaitable[dict]]) -> Callable[..., Awaitable[dict]]:
+def _module_tool(fn: Callable[..., Awaitable[dict[str, Any]]]) -> Callable[..., Awaitable[dict[str, Any]]]:
     """Every tool below that takes a `module_id` wants the exact same thing first:
     fetch the Module, or short-circuit with {"found": False} on a miss. Doing that
     fetch-and-check once here, instead of copy-pasted into each tool, means the
@@ -50,7 +50,7 @@ def _module_tool(fn: Callable[..., Awaitable[dict]]) -> Callable[..., Awaitable[
     """
 
     @wraps(fn)
-    async def wrapper(session: AsyncSession, module_id: int, **kwargs: Any) -> dict:
+    async def wrapper(session: AsyncSession, module_id: int, **kwargs: Any) -> dict[str, Any]:
         module = await session.get(Module, module_id)
         if module is None:
             return {"found": False}
@@ -59,7 +59,7 @@ def _module_tool(fn: Callable[..., Awaitable[dict]]) -> Callable[..., Awaitable[
     return wrapper
 
 
-async def search_modules(session: AsyncSession, query: str, limit: int = 10) -> dict:
+async def search_modules(session: AsyncSession, query: str, limit: int = 10) -> dict[str, Any]:
     # Two independent, independently-costed optimizations over the same base
     # hybrid_search call -- rewriting reformulates the query *before*
     # retrieval runs, reranking reorders what retrieval found *after*. Each
@@ -91,7 +91,7 @@ async def search_modules(session: AsyncSession, query: str, limit: int = 10) -> 
 
 
 @_module_tool
-async def get_module(session: AsyncSession, module: Module) -> dict:
+async def get_module(session: AsyncSession, module: Module) -> dict[str, Any]:
     dependencies = (
         await session.scalars(select(ModuleDependency.depends_on_name).where(ModuleDependency.module_id == module.id))
     ).all()
@@ -124,7 +124,7 @@ async def get_module(session: AsyncSession, module: Module) -> dict:
 
 
 @_module_tool
-async def get_dependencies(session: AsyncSession, module: Module) -> dict:
+async def get_dependencies(session: AsyncSession, module: Module) -> dict[str, Any]:
     depends_on = (
         await session.scalars(select(ModuleDependency.depends_on_name).where(ModuleDependency.module_id == module.id))
     ).all()
@@ -145,7 +145,7 @@ async def get_dependencies(session: AsyncSession, module: Module) -> dict:
 
 
 @_module_tool
-async def get_module_findings(session: AsyncSession, module: Module, check_type: str | None = None) -> dict:
+async def get_module_findings(session: AsyncSession, module: Module, check_type: str | None = None) -> dict[str, Any]:
     query = select(ModuleQualityFinding).where(ModuleQualityFinding.module_id == module.id)
     if check_type:
         query = query.where(ModuleQualityFinding.check_type == check_type)
@@ -168,7 +168,7 @@ async def get_module_findings(session: AsyncSession, module: Module, check_type:
 
 
 @_module_tool
-async def find_similar_modules(session: AsyncSession, module: Module, limit: int = 5) -> dict:
+async def find_similar_modules(session: AsyncSession, module: Module, limit: int = 5) -> dict[str, Any]:
     similar = await _find_similar_modules(session, module.id, limit=limit)
     return {
         "found": True,
@@ -181,7 +181,7 @@ async def find_similar_modules(session: AsyncSession, module: Module, limit: int
 
 
 @_module_tool
-async def get_module_history(session: AsyncSession, module: Module, limit: int = 10) -> dict:
+async def get_module_history(session: AsyncSession, module: Module, limit: int = 10) -> dict[str, Any]:
     rows = (
         await session.scalars(
             select(ModuleHistorySnapshot)
@@ -207,7 +207,7 @@ async def get_module_history(session: AsyncSession, module: Module, limit: int =
 
 
 @_module_tool
-async def get_module_dependency_graph(session: AsyncSession, module: Module, depth: int = 1) -> dict:
+async def get_module_dependency_graph(session: AsyncSession, module: Module, depth: int = 1) -> dict[str, Any]:
     graph = await _get_module_dependency_graph(module.id, depth, session)
     return {
         "found": True,
@@ -218,7 +218,7 @@ async def get_module_dependency_graph(session: AsyncSession, module: Module, dep
     }
 
 
-async def find_duplicate_module_pairs(session: AsyncSession, min_similarity: float = 0.5, limit: int = 20) -> dict:
+async def find_duplicate_module_pairs(session: AsyncSession, min_similarity: float = 0.5, limit: int = 20) -> dict[str, Any]:
     pairs = await _find_duplicate_module_pairs(session, min_similarity=min_similarity, limit=limit)
     return {
         "pairs": [
@@ -254,7 +254,7 @@ def _split_truncated(rows: Sequence[Any], limit: int = _IDENTIFIER_MATCH_LIMIT) 
     return (rows[:limit], len(rows) > limit)
 
 
-async def find_by_event(session: AsyncSession, event_name: str) -> dict:
+async def find_by_event(session: AsyncSession, event_name: str) -> dict[str, Any]:
     like = f"%{_escape_like(event_name)}%"
     rows = (
         await session.execute(
@@ -283,7 +283,7 @@ async def find_by_event(session: AsyncSession, event_name: str) -> dict:
     }
 
 
-async def find_by_class(session: AsyncSession, identifier: str) -> dict:
+async def find_by_class(session: AsyncSession, identifier: str) -> dict[str, Any]:
     like = f"%{_escape_like(identifier)}%"
 
     defined_in, defined_in_truncated = _split_truncated(
@@ -362,7 +362,7 @@ async def find_by_class(session: AsyncSession, identifier: str) -> dict:
     }
 
 
-async def read_file(session: AsyncSession, module_id: int, relative_path: str) -> dict:
+async def read_file(session: AsyncSession, module_id: int, relative_path: str) -> dict[str, Any]:
     chunks = (
         await session.scalars(
             select(Chunk).where(Chunk.module_id == module_id, Chunk.relative_path == relative_path)
@@ -389,7 +389,7 @@ async def list_modules(
     check_type: str | None = None,
     limit: int = 20,
     offset: int = 0,
-) -> dict:
+) -> dict[str, Any]:
     # tags/integration used to be filtered in Python after fetching every
     # matching module's full row -- on a large fleet, a single chat question
     # with either filter loaded the whole table into the agent process before
@@ -452,7 +452,7 @@ async def list_modules(
         # select(Module, ModuleDocument.doc)'s Row degenerates each element to
         # `object` under mypy (confirmed via reveal_type) — cast() is the
         # type-level fix, zero runtime effect.
-        page.append((cast(Module, row[0]), cast(dict | None, row[1]) or {}))
+        page.append((cast(Module, row[0]), cast(dict[str, Any] | None, row[1]) or {}))
 
     finding_counts: dict[int, int] = {}
     if check_type:
@@ -483,7 +483,7 @@ async def list_modules(
     }
 
 
-TOOL_FUNCTIONS: dict[str, Callable[..., Awaitable[dict]]] = {
+TOOL_FUNCTIONS: dict[str, Callable[..., Awaitable[dict[str, Any]]]] = {
     "search_modules": search_modules,
     "get_module": get_module,
     "get_dependencies": get_dependencies,

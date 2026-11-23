@@ -12,6 +12,7 @@ held, after the fact, not a runtime safeguard.
 """
 
 import json
+from typing import Any
 
 import litellm
 from pydantic import BaseModel
@@ -29,14 +30,16 @@ class FaithfulnessVerdict(BaseModel):
     reasoning: str
 
 
-async def fetch_cited_source_texts(session: AsyncSession, sources: list[dict]) -> list[tuple[str, str]]:
+async def fetch_cited_source_texts(
+    session: AsyncSession, sources: list[dict[str, Any]]
+) -> list[tuple[str, str]]:
     """Real chunk content for each source the agent cited, fetched fresh from
     the database -- the judge compares the answer against this, never against
     the agent's own (possibly already-wrong) description of what a source
     says.
     """
     texts: list[tuple[str, str]] = []
-    seen: set[tuple] = set()
+    seen: set[tuple[Any, Any]] = set()
     for source in sources:
         module_id = source.get("module_id")
         relative_path = source.get("relative_path")
@@ -89,7 +92,7 @@ async def judge_faithfulness(
     session: AsyncSession,
     question: str,
     answer: str,
-    sources: list[dict],
+    sources: list[dict[str, Any]],
     *,
     model: str,
     api_key: str | None,

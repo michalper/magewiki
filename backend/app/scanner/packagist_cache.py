@@ -1,6 +1,7 @@
 import asyncio
 from collections.abc import Awaitable, Callable
 from datetime import UTC, datetime, timedelta
+from typing import Any
 
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -13,7 +14,7 @@ from app.models import PackagistCache
 _TTL = timedelta(hours=24)
 
 
-async def get_cached(session: AsyncSession, cache_key: str) -> dict | None:
+async def get_cached(session: AsyncSession, cache_key: str) -> dict[str, Any] | None:
     row = await session.get(PackagistCache, cache_key)
     if row is None:
         return None
@@ -22,7 +23,7 @@ async def get_cached(session: AsyncSession, cache_key: str) -> dict | None:
     return row.response_json
 
 
-async def set_cached(session: AsyncSession, cache_key: str, response_json: dict) -> None:
+async def set_cached(session: AsyncSession, cache_key: str, response_json: dict[str, Any]) -> None:
     stmt = insert(PackagistCache).values(
         cache_key=cache_key, response_json=response_json, fetched_at=datetime.now(UTC)
     )
@@ -37,8 +38,8 @@ async def fetch_many_with_cache(
     session: AsyncSession,
     keys: list[str],
     cache_key: Callable[[str], str],
-    fetch_one: Callable[[str], Awaitable[dict | None]],
-) -> dict[str, dict]:
+    fetch_one: Callable[[str], Awaitable[dict[str, Any] | None]],
+) -> dict[str, dict[str, Any]]:
     """Three phases, each session-safe: (1) sequential cache reads — the only
     way to touch one shared AsyncSession from a batch of keys, (2) concurrent
     fetches for the cache misses, now off the session entirely (fetch_one must
@@ -48,7 +49,7 @@ async def fetch_many_with_cache(
     (security advisories, abandoned/outdated) so this caching/concurrency
     shape lives in one place instead of being copy-pasted per check.
     """
-    data_by_key: dict[str, dict] = {}
+    data_by_key: dict[str, dict[str, Any]] = {}
     misses: list[str] = []
     for key in keys:
         cached = await get_cached(session, cache_key(key))

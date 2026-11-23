@@ -1,6 +1,7 @@
 import json
 import logging
 import uuid
+from typing import Any
 
 import litellm
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -83,7 +84,7 @@ async def rerank_results(session: AsyncSession, query: str, results: list[Search
     return reordered[:top_k]
 
 
-async def _persist_rerank_cost(session: AsyncSession, response, model: str) -> None:
+async def _persist_rerank_cost(session: AsyncSession, response: Any, model: str) -> None:
     tokens_in = response.usage.prompt_tokens
     tokens_out = response.usage.completion_tokens
     cost = resolve_llm_cost(response, model, tokens_in, tokens_out)

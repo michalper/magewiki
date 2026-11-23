@@ -1,4 +1,5 @@
 import re
+from typing import Any
 
 import httpx
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -21,7 +22,7 @@ def _cache_key(package_name: str) -> str:
     return f"p2:{package_name}"
 
 
-async def _fetch_from_packagist(package_name: str) -> dict | None:
+async def _fetch_from_packagist(package_name: str) -> dict[str, Any] | None:
     """HTTP-only, no session — safe to run concurrently across packages, unlike
     packagist_cache.py's get_cached/set_cached which share the scan's one AsyncSession.
     """
@@ -31,13 +32,14 @@ async def _fetch_from_packagist(package_name: str) -> dict | None:
             if response.status_code == 404:
                 return None
             response.raise_for_status()
-            return response.json()
+            data: dict[str, Any] = response.json()
+            return data
     except httpx.HTTPError:
         return None
 
 
-def _latest_version_entry(package_name: str, data: dict) -> dict | None:
-    versions = data.get("packages", {}).get(package_name) or []
+def _latest_version_entry(package_name: str, data: dict[str, Any]) -> dict[str, Any] | None:
+    versions: list[dict[str, Any]] = data.get("packages", {}).get(package_name) or []
     for entry in versions:
         version = entry.get("version", "")
         if not _PRERELEASE_RE.search(version):

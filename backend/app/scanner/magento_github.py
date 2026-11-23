@@ -9,6 +9,8 @@ composer.json/composer.lock at every release tag with no authentication
 needed, which is enough to answer "what does release X require." See
 CLAUDE.md's Phase 13 decision note.
 """
+from typing import Any
+
 import httpx
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -30,11 +32,11 @@ async def resolve_latest_release(session: AsyncSession) -> str | None:
         async with httpx.AsyncClient(timeout=10.0, headers=_HEADERS) as client:
             response = await client.get(_RELEASES_LATEST_URL)
             response.raise_for_status()
-            data = response.json()
+            data: dict[str, Any] = response.json()
     except httpx.HTTPError:
         return None
 
-    tag_name = data.get("tag_name")
+    tag_name: str | None = data.get("tag_name")
     if not tag_name:
         return None
 
@@ -42,7 +44,7 @@ async def resolve_latest_release(session: AsyncSession) -> str | None:
     return tag_name
 
 
-async def _fetch_raw_json(session: AsyncSession, tag: str, filename: str) -> dict | None:
+async def _fetch_raw_json(session: AsyncSession, tag: str, filename: str) -> dict[str, Any] | None:
     cache_key = f"magento-github:{tag}:{filename}"
     cached = await get_cached(session, cache_key)
     if cached is not None:
@@ -54,7 +56,7 @@ async def _fetch_raw_json(session: AsyncSession, tag: str, filename: str) -> dic
             if response.status_code == 404:
                 return None
             response.raise_for_status()
-            data = response.json()
+            data: dict[str, Any] = response.json()
     except httpx.HTTPError:
         return None
 

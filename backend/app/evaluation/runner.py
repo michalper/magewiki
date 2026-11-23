@@ -6,9 +6,10 @@ backend/app/evaluation/metrics.py for hit_rate@k/MRR.
 """
 
 import json
-from collections.abc import Sequence
+from collections.abc import Callable, Sequence
 from dataclasses import asdict, dataclass, field
 from pathlib import Path
+from typing import Any
 
 from sqlalchemy import delete, select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -135,16 +136,31 @@ async def run_retrieval_eval(
     return {mode: aggregate(rows) for mode, rows in per_mode.items()}
 
 
-def _resolve_kwargs(tool_kwargs: dict, module_id: int) -> dict:
+def _resolve_kwargs(tool_kwargs: dict[str, Any], module_id: int) -> dict[str, Any]:
     return {k: (module_id if v == MODULE_ID_PLACEHOLDER else v) for k, v in tool_kwargs.items()}
 
 
-async def _run_tool_question(session: AsyncSession, module_id: int, q, check) -> QuestionResult:
+async def _run_tool_question(
+    session: AsyncSession,
+    module_id: int,
+    q: EnumerationQuestion | NegativeQuestion,
+    check: Callable[[dict[str, Any]], bool] | None,
+) -> QuestionResult:
     """Shared by enumeration questions and the "tool" mode of negative
     questions: both call a TOOL_FUNCTIONS entry and check its result against
     a predicate, differing only in which predicate (q.expected vs
     q.expected_empty).
+
+    tool/tool_kwargs/check are Optional only because NegativeQuestion's own
+    dataclass also covers its "agent" mode, which never reaches this
+    function -- every real caller (run_enumeration_eval always, run_negative_eval
+    only in its "tool"-mode branch) always has all three set; this asserts
+    that real invariant rather than silencing it, the same way the "agent"
+    branch right below already asserts expected_answer is set.
     """
+    assert q.tool is not None and q.tool_kwargs is not None and check is not None, (
+        f"{q.id}: a tool-mode question must set tool, tool_kwargs, and its expected-result predicate"
+    )
     kwargs = _resolve_kwargs(q.tool_kwargs, module_id)
     tool_result = await TOOL_FUNCTIONS[q.tool](session, **kwargs)
     passed = check(tool_result)
@@ -205,7 +221,7 @@ async def run_faithfulness_eval(
     results = []
     for q in questions:
         answer = ""
-        sources: list[dict] = []
+        sources: list[dict[str, Any]] = []
         agent_error: str | None = None
         async for event in run_agent(session, [{"role": "user", "content": q.query}], "dev"):
             event_type = event.get("event")
@@ -254,7 +270,7 @@ class EvalReport:
     negative_results: list[QuestionResult]
     faithfulness_results: list[FaithfulnessResult] = field(default_factory=list)
 
-    def to_dict(self) -> dict:
+    def to_dict(self) -> dict[str, Any]:
         return {
             "generated_at": self.generated_at,
             "corpus": self.corpus,

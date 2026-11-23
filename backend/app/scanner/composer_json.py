@@ -1,5 +1,6 @@
 import json
 from pathlib import Path
+from typing import Any
 
 from app.scanner.discovery import is_safe_to_read
 from app.scanner.dto import ComposerResult, QualityFinding
@@ -96,7 +97,7 @@ def _allow_plugins(raw_allow_plugins: object) -> dict[str, bool]:
     return {name: value for name, value in raw_allow_plugins.items() if isinstance(value, bool)}
 
 
-def _third_party_packages(require: dict) -> dict[str, str]:
+def _third_party_packages(require: dict[str, Any]) -> dict[str, str]:
     """Real installable packages only — excludes the "php" platform entry and
     "ext-*"/"lib-*" platform-capability pseudo-packages, which have no
     Packagist page and no version constraint worth checking for advisories.

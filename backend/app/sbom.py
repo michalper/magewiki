@@ -1,6 +1,7 @@
 import uuid
 from dataclasses import dataclass
 from datetime import UTC, datetime
+from typing import Any
 
 _CYCLONEDX_SPEC_VERSION = "1.5"
 
@@ -45,7 +46,7 @@ def build_cyclonedx_sbom(
     repo_root: str,
     modules: list[SbomComponentInput],
     requirements: list[SbomRequirementInput] | None = None,
-) -> dict:
+) -> dict[str, Any]:
     """Build a CycloneDX 1.5 JSON SBOM (Software Bill of Materials) for every
     module scanned under one repo_root. One "library" component per module —
     using data already parsed and persisted (composer name/version/license/
@@ -65,12 +66,12 @@ def build_cyclonedx_sbom(
     module's own bom-ref is skipped as a separate component — it's the same
     real thing, already present with full version/license/homepage data.
     """
-    components = []
+    components: list[dict[str, Any]] = []
     module_bom_refs: set[str] = set()
     for m in modules:
         bom_ref = m.composer_name or m.name
         module_bom_refs.add(bom_ref)
-        component: dict = {
+        component: dict[str, Any] = {
             "type": "library",
             "name": bom_ref,
             "bom-ref": bom_ref,
@@ -87,7 +88,7 @@ def build_cyclonedx_sbom(
                 component["purl"] = purl
         components.append(component)
 
-    dependencies: list[dict] = []
+    dependencies: list[dict[str, Any]] = []
     if requirements:
         depends_on: dict[str, set[str]] = {}
         package_names: set[str] = set()
@@ -104,7 +105,7 @@ def build_cyclonedx_sbom(
                 {"ref": module_bom_ref, "dependsOn": sorted(depends_on[module_bom_ref])}
             )
 
-    bom: dict = {
+    bom: dict[str, Any] = {
         "bomFormat": "CycloneDX",
         "specVersion": _CYCLONEDX_SPEC_VERSION,
         "serialNumber": f"urn:uuid:{uuid.uuid4()}",

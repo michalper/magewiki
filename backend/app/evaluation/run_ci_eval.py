@@ -12,6 +12,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 
 from sqlalchemy import delete, select
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db import async_session_factory
 from app.evaluation import isolated_retrieval
@@ -29,7 +30,7 @@ def _vector_noise_embedding(scenario: CiScenario) -> list[float]:
     return chunk.embedding
 
 
-async def _seed(session) -> Module:
+async def _seed(session: AsyncSession) -> Module:
     await session.execute(delete(Module).where(Module.repo_root == CI_MODULE_REPO_ROOT))
     await session.commit()
 
@@ -61,7 +62,7 @@ async def _seed(session) -> Module:
     return module
 
 
-async def _cleanup(session, module: Module) -> None:
+async def _cleanup(session: AsyncSession, module: Module) -> None:
     await session.execute(delete(Module).where(Module.id == module.id))
     await session.commit()
 
@@ -79,16 +80,27 @@ def _markdown(metrics: dict[str, dict[str, float]]) -> str:
     )
 
 
-async def _run_scenario(session, scenario: CiScenario) -> dict[str, list[int]]:
+async def _run_scenario(session: AsyncSession, scenario: CiScenario) -> dict[str, list[int]]:
     expected_vector = _vector_noise_embedding(scenario)
 
     async def _fake_embed(
-        query: str, *, model: str, api_key: str | None, api_base: str | None = None, session=None
+        query: str,
+        *,
+        model: str,
+        api_key: str | None,
+        api_base: str | None = None,
+        session: AsyncSession | None = None,
     ) -> list[float]:
         return expected_vector
 
-    isolated_retrieval.embed_query_text = _fake_embed
-    hybrid.embed_query_text = _fake_embed
+    # Patches the name where it's looked up (both modules `from ... import
+    # embed_query_text`, the standard monkeypatch technique), not where it's
+    # defined -- mypy's strict --no-implicit-reexport doesn't consider an
+    # imported-not-re-exported name a valid external attribute to assign to,
+    # even though this is correct, working Python; CI-eval-only, never run
+    # against production code.
+    isolated_retrieval.embed_query_text = _fake_embed  # type: ignore[attr-defined]
+    hybrid.embed_query_text = _fake_embed  # type: ignore[attr-defined]
 
     vector_results = await isolated_retrieval.vector_only_search(session, scenario.query, limit=50)
     keyword_results = await isolated_retrieval.keyword_only_search(session, scenario.query, limit=50)
