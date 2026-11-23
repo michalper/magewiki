@@ -111,6 +111,8 @@ describe("SettingsPage", () => {
 
   it("falls back to a generic message when the save fails with a non-Error value", async () => {
     fetchMock.mockImplementation(async (path: string, init?: RequestInit) => {
+      // The whole point of this test is a non-Error throw -- see its own title.
+      // eslint-disable-next-line @typescript-eslint/only-throw-error
       if (init?.method === "PATCH") throw "not an Error instance";
       return settings();
     });

@@ -39,7 +39,7 @@ test("the seeded repo shows real stats and a working SBOM download", async ({ pa
   // A real, valid CycloneDX document -- not just "a file downloaded",
   // actually the right content.
   const fs = await import("node:fs/promises");
-  const sbom = JSON.parse(await fs.readFile(path!, "utf-8"));
+  const sbom = JSON.parse(await fs.readFile(path, "utf-8"));
   expect(sbom.bomFormat).toBe("CycloneDX");
   // Component name is composer_name when present (build_cyclonedx_sbom()'s
   // own bom_ref rule), not the module's own display name.

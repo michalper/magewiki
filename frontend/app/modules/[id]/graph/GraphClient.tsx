@@ -152,7 +152,10 @@ export default function GraphClient({ id }: { id: string }) {
   const centerId = graphQuery.data ? `module:${graphQuery.data.center_module_id}` : "";
 
   const positions = useMemo(
-    () => (graphQuery.data ? layoutNodes(graphQuery.data.nodes, graphQuery.data.edges, centerId) : new Map()),
+    () =>
+      graphQuery.data
+        ? layoutNodes(graphQuery.data.nodes, graphQuery.data.edges, centerId)
+        : new Map<string, { x: number; y: number }>(),
     [graphQuery.data, centerId]
   );
   const canvas = useMemo(

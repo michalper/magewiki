@@ -26,6 +26,10 @@ function readShouldAutoOpen(): boolean {
 // to read localStorage client-side only, matching lib/use-query-param.ts's
 // same useSyncExternalStore pattern for "browser-only, never during SSR."
 function subscribeNever() {
+  // useSyncExternalStore's own contract requires subscribe to return an
+  // unsubscribe function -- nothing to ever unsubscribe from here, same as
+  // lib/use-mounted.ts's identical pattern.
+  // eslint-disable-next-line @typescript-eslint/no-empty-function
   return () => {};
 }
 

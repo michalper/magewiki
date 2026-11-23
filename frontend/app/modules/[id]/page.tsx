@@ -21,7 +21,9 @@ export async function generateMetadata({
   try {
     const res = await fetch(`${SERVER_SIDE_API_URL}/modules/${id}`, { cache: "no-store" });
     if (res.ok) {
-      const moduleData = await res.json();
+      // Only `name` is actually used here (a tab title), so a minimal local
+      // type beats pulling in the full generated ModuleDetail response shape.
+      const moduleData = (await res.json()) as { name: string };
       return { title: moduleData.name };
     }
   } catch {

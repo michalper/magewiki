@@ -148,8 +148,27 @@ export default function CompareClient() {
   const b = useQueryParam("b");
 
   const modulesQuery = useQuery({ queryKey: ["modules"], queryFn: fetchModules });
-  const aQuery = useQuery({ queryKey: ["module", a], queryFn: () => fetchModule(a!), enabled: a !== null });
-  const bQuery = useQuery({ queryKey: ["module", b], queryFn: () => fetchModule(b!), enabled: b !== null });
+  const aQuery = useQuery({
+    queryKey: ["module", a],
+    // enabled below means react-query never actually invokes this while a is
+    // null -- this is a type guard for that real runtime guarantee, not a
+    // reachable error path.
+    queryFn: () => {
+      /* v8 ignore next */
+      if (a === null) throw new Error("unreachable: query disabled when a is null");
+      return fetchModule(a);
+    },
+    enabled: a !== null,
+  });
+  const bQuery = useQuery({
+    queryKey: ["module", b],
+    queryFn: () => {
+      /* v8 ignore next */
+      if (b === null) throw new Error("unreachable: query disabled when b is null");
+      return fetchModule(b);
+    },
+    enabled: b !== null,
+  });
 
   function pick(param: "a" | "b", id: string) {
     const params = new URLSearchParams(window.location.search);

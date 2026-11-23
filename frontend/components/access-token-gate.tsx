@@ -13,7 +13,7 @@ import { setStoredAccessToken } from "@/lib/access-token";
 export function AccessTokenPrompt({ onUnlock }: { onUnlock: () => void }) {
   const [token, setToken] = useState("");
 
-  function submit(e: React.FormEvent) {
+  function submit(e: React.SubmitEvent<HTMLFormElement>) {
     e.preventDefault();
     if (!token.trim()) return;
     setStoredAccessToken(token.trim());

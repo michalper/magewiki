@@ -234,7 +234,7 @@ export default function ChatPage() {
     }
   }
 
-  async function handleSubmit(e: React.FormEvent) {
+  async function handleSubmit(e: React.SubmitEvent<HTMLFormElement>) {
     e.preventDefault();
     const question = input.trim();
     if (!question || isStreaming) return;
@@ -253,7 +253,7 @@ export default function ChatPage() {
     // always sets lastHistoryRef.current right before that call. Null here
     // in practice can't happen.
     /* v8 ignore next */
-    if (lastHistoryRef.current) runChat(lastHistoryRef.current);
+    if (lastHistoryRef.current) void runChat(lastHistoryRef.current);
   }
 
   return (
@@ -298,7 +298,7 @@ export default function ChatPage() {
 
       {needsToken && <AccessTokenPrompt onUnlock={retryAfterUnlock} />}
 
-      <form className="flex gap-2" onSubmit={handleSubmit}>
+      <form className="flex gap-2" onSubmit={(e) => void handleSubmit(e)}>
         <Input
           value={input}
           onChange={(e) => setInput(e.target.value)}

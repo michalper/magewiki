@@ -51,7 +51,7 @@ export default function ReposPage() {
       {reposQuery.isLoading && <p>Loading...</p>}
       {reposQuery.isError && <p className="text-destructive">Failed to load repos.</p>}
 
-      {reposQuery.data && reposQuery.data.length === 0 && (
+      {reposQuery.data?.length === 0 && (
         <p className="text-muted-foreground">No repos scanned yet.</p>
       )}
 

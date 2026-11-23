@@ -70,7 +70,7 @@ function simulateModulesEndpoint(modules: MockModule[], queryString: string) {
   const repoRoot = params.get("repo_root");
   const finding = params.get("finding");
   const hasDoc = params.get("has_doc");
-  const sortBy = (params.get("sort_by") ?? "name") as keyof MockModule;
+  const sortBy = (params.get("sort_by") ?? "name");
   const sortDir = params.get("sort_dir") === "desc" ? -1 : 1;
   const prioritizeDoc = params.get("prioritize_doc") === "true";
   const limit = Number(params.get("limit") ?? 25);
@@ -78,7 +78,13 @@ function simulateModulesEndpoint(modules: MockModule[], queryString: string) {
 
   const filtered = modules.filter((m) => {
     if (search) {
+      // MockModule is deliberately Record<string, unknown> (see its own
+      // definition above) to let individual tests set any field shape --
+      // String() on an unknown value is the real, intended behavior this
+      // simulates (the real API always returns a string), not a mistake.
+      // eslint-disable-next-line @typescript-eslint/no-base-to-string
       const name = String(m.name ?? "").toLowerCase();
+      // eslint-disable-next-line @typescript-eslint/no-base-to-string
       const composerName = String(m.composer_name ?? "").toLowerCase();
       if (!name.includes(search) && !composerName.includes(search)) return false;
     }
@@ -651,7 +657,7 @@ describe("ModulesPage", () => {
       // "done" refetch would follow if sent).
       await waitFor(() =>
         expect(
-          fetchMock.mock.calls.filter((c) => (c[0] as string).startsWith("/modules?")).length,
+          fetchMock.mock.calls.filter((c) => (c[0]).startsWith("/modules?")).length,
         ).toBeGreaterThanOrEqual(2),
       );
     });

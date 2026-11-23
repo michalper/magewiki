@@ -29,7 +29,7 @@ export function SimilarModulesCard({ moduleId }: { moduleId: string }) {
       <h2 className="text-lg font-semibold">Similar modules</h2>
       {similarQuery.isLoading && <p className="text-sm text-muted-foreground">Loading...</p>}
       {similarQuery.isError && <p className="text-sm text-destructive">Failed to load similar modules.</p>}
-      {similarQuery.data && similarQuery.data.length === 0 && (
+      {similarQuery.data?.length === 0 && (
         <p className="text-sm text-muted-foreground">
           Not enough analyzed modules yet to compare — this needs an AI-generated module summary
           (and an embedding key configured) for both modules.
