@@ -43,6 +43,14 @@ jobs:
           results_file: results.sarif
           results_format: sarif
           publish_results: true
+          # Classic branch protection's full settings aren't readable by the
+          # default GITHUB_TOKEN at all (a GitHub API restriction, not a
+          # permissions: block setting) -- Scorecard's own docs call for a
+          # fine-grained PAT with Administration: Read-only, stored as this
+          # repo secret. Optional: an empty secrets.SCORECARD_TOKEN here is
+          # the same empty string the action already treats as "use the
+          # default token", so this is a no-op until the secret exists.
+          repo_token: ${{ secrets.SCORECARD_TOKEN }}
 
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
