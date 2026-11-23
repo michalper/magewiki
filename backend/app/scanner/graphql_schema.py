@@ -9,6 +9,7 @@ from graphql.language import (
     StringValueNode,
 )
 
+from app.scanner.discovery import is_safe_to_read
 from app.scanner.dto import GraphQlFieldEntry
 
 _OPERATION_TYPES = {"Query", "Mutation", "Subscription"}
@@ -31,7 +32,7 @@ def parse_graphql_schema(path: Path) -> list[GraphQlFieldEntry]:
     convention when present. Same role lxml plays for di.xml/events.xml: facts come
     from the parser, not the LLM.
     """
-    if not path.is_file():
+    if not path.is_file() or not is_safe_to_read(path):
         return []
 
     try:

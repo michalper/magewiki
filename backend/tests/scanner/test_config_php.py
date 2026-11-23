@@ -13,6 +13,17 @@ def test_parse_config_php_missing_file(tmp_path: Path):
     assert parse_config_php(tmp_path / "config.php") is None
 
 
+def test_parse_config_php_returns_none_for_a_symlink(tmp_path: Path):
+    """Security regression: a real symlink to a file outside the module
+    root must never have its content parsed as config.php."""
+    outside = tmp_path.parent / "outside_config.php"
+    outside.write_text("<?php\nreturn ['modules' => ['Evil_Module' => 1]];\n")
+    link = tmp_path / "config.php"
+    link.symlink_to(outside)
+
+    assert parse_config_php(link) is None
+
+
 def test_strip_quotes_returns_unquoted_text_unchanged():
     assert _strip_quotes("already_bare") == "already_bare"
 

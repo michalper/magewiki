@@ -2,7 +2,12 @@ import json
 import shutil
 from pathlib import Path
 
-from app.scanner.discovery import find_modules, read_module_source_files, walk_module_source_files
+from app.scanner.discovery import (
+    find_modules,
+    is_safe_to_read,
+    read_module_source_files,
+    walk_module_source_files,
+)
 
 
 def test_find_modules_in_store_root(demo_store_path: Path):
@@ -168,6 +173,36 @@ def test_read_module_source_files_returns_every_files_bytes_keyed_by_relative_pa
     assert set(sources) == {str(f.relative_to(demo_module_path)) for f in walk_module_source_files(demo_module_path)}
     plugin_path = next(rp for rp in sources if rp.endswith("SampleCheckoutPlugin.php"))
     assert sources[plugin_path] == (demo_module_path / plugin_path).read_bytes()
+
+
+def test_is_safe_to_read_rejects_a_symlink_but_accepts_a_regular_file(tmp_path: Path):
+    real = tmp_path / "real.txt"
+    real.write_text("content")
+    link = tmp_path / "link.txt"
+    link.symlink_to(real)
+
+    assert is_safe_to_read(real) is True
+    assert is_safe_to_read(link) is False
+
+
+def test_walk_module_source_files_excludes_a_symlinked_php_file(tmp_path: Path):
+    """Security regression: a scanned module is untrusted input (CLAUDE.md).
+    A module shipping a symlink named e.g. Evil.php -> /etc/passwd (or any
+    host path outside the scanned tree) must never have its *target*'s
+    bytes hashed, parsed, or sent to the LLM as "file content to summarize"
+    -- confirmed with a real symlink, not a mock, both to a file outside
+    the module root and to one of its own real files.
+    """
+    real = tmp_path / "Real.php"
+    real.write_text("<?php\nclass Real {}\n")
+    outside_secret = tmp_path.parent / "outside_secret.php"
+    outside_secret.write_text("<?php\n// SECRET_API_KEY=supersecret\n")
+    (tmp_path / "Evil.php").symlink_to(outside_secret)
+    (tmp_path / "SelfLink.php").symlink_to(real)
+
+    files = walk_module_source_files(tmp_path)
+
+    assert files == [real]
 
 
 def test_read_module_source_files_skips_a_file_that_vanishes_before_it_can_be_read(tmp_path: Path, monkeypatch):

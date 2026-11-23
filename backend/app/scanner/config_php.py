@@ -2,6 +2,7 @@ from pathlib import Path
 
 from tree_sitter import Node
 
+from app.scanner.discovery import is_safe_to_read
 from app.scanner.php_parser import find_all, node_text, parse_php
 
 
@@ -27,7 +28,7 @@ def parse_config_php(path: Path) -> dict[str, bool] | None:
     Returns None if the file is missing or doesn't contain a parseable
     'modules' array — callers should treat that the same as "file absent".
     """
-    if not path.is_file():
+    if not path.is_file() or not is_safe_to_read(path):
         return None
 
     source = path.read_bytes()

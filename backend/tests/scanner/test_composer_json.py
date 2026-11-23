@@ -25,6 +25,17 @@ def test_parse_composer_json_missing_file(tmp_path: Path):
     assert parse_composer_json(tmp_path / "composer.json") is None
 
 
+def test_parse_composer_json_returns_none_for_a_symlink(tmp_path: Path):
+    """Security regression: a real symlink to a file outside the module
+    root must never have its content read as composer.json."""
+    outside = tmp_path.parent / "outside_composer.json"
+    outside.write_text('{"name": "evil/evil"}', encoding="utf-8")
+    link = tmp_path / "composer.json"
+    link.symlink_to(outside)
+
+    assert parse_composer_json(link) is None
+
+
 def test_parse_composer_json_with_a_string_license(tmp_path: Path):
     (tmp_path / "composer.json").write_text('{"license": "MIT"}', encoding="utf-8")
     result = parse_composer_json(tmp_path / "composer.json")

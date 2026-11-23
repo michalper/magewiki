@@ -3990,3 +3990,65 @@ further -- this project ships via `docker compose`, with no binary/package/
 container artifact attached to any release for Sigstore/cosign to sign, so
 chasing that specific Scorecard point would mean inventing an artifact to
 publish and sign purely for the score, not because the project needs one.
+
+**Security fix: arbitrary file read + secret exfiltration via a symlinked
+file inside a scanned module (recorded 2026-11-23).** A whole-project
+security-review agent found this at High severity and it's fixed. Root
+cause: `os.walk()`'s `followlinks=False` (the default, used throughout this
+scanner) only stops *descending into* a symlinked directory -- it does not
+stop a symlinked *file* from being listed in `filenames` and then read.
+Nothing in the codebase ever checked `path.is_symlink()` before reading a
+discovered file. A scanned module (exactly the untrusted input this
+project's whole design assumes, per CLAUDE.md) could ship a file like
+`Plugin/Evil.php` that's actually a symlink to `/proc/self/environ` or any
+other host path the backend process can read (a `.env` file under the
+`./backend:/app` bind mount, another mounted scan root). The practical
+exploit chain: `app/tasks/jobs.py`'s `analyze_file` re-reads the file
+straight from disk a second time and sends the content to the configured
+external LLM as "file content to summarize" -- outright exfiltration to a
+third party -- and the same content (via `embed_chunks`'s method-chunk
+extraction) becomes an embedded, agent-citable chunk, so **any** chat user
+could then retrieve the secret through `search_modules`/`read_file`.
+
+Fixed at the root: added `is_safe_to_read(path)` (`app/scanner/
+discovery.py`, false for any symlink) and applied it at every file-read
+entry point discovered during this pass -- `walk_module_source_files`
+(the single shared source of every `.php`/`.phtml` file this scanner ever
+reads, used by hashing, tree-sitter class cataloging, and the secrets/
+deprecated-annotation scanners), `xml_parse_utils.py`'s `parse_xml_root`
+(the shared helper behind all 14 declarative-XML parsers: acl/cache/
+crontab/di/events/system/webapi/db_schema/indexer/menu/mview/routes/
+widget/queue_config), `module_xml.py`, `hashing.py`'s `_FIXED_FILES` loop,
+and the independent `composer.json`/`config.php`/`schema.graphqls`
+readers. Also re-checked, not just relied on upstream filtering, at the
+two highest-value sites that read straight from disk a *second* time,
+independently of discovery: `jobs.py`'s `analyze_file` (the LLM-exfiltration
+site -- raises and fails the module rather than silently reading) and
+`embed_chunks`'s method-chunk extraction (falls back to an empty chunk,
+same as its existing `OSError` handling for a vanished file). Not fixed
+(judged out of the realistic threat model, not attacker-controlled):
+`installed_versions.py`'s `vendor/composer/installed.json` (Composer's own
+generated metadata, not something an individual untrusted package
+controls) and `composer_repositories.py`'s root `composer.json` (the
+scanning operator's own file, not a third-party module's).
+
+Every fix verified with a *real* symlink in a test (`Path.symlink_to`),
+never a mock -- including two integration-level regression tests
+(`test_analyze_file_refuses_a_symlinked_file`, `test_embed_chunks_treats_
+a_symlinked_method_file_as_unreadable`) that redirect a real scanned
+module's `repo_root` to a `tmp_path` mirroring its layout, with one file
+replaced by a symlink to a secret outside the module. Those two tests
+initially broke 8 *other*, unrelated tests across two files in a way that
+briefly cost significant debugging time: redirecting `Module.repo_root`
+without restoring/deleting it afterward broke `scan_demo_store`'s own
+`delete_module_if_present` lookup (by the *real* repo_root) for every
+later test sharing the same demo-store fixture, leaving orphaned
+`AnalysisCache`/`FileAnalysis` rows that a later test's own cache-reset
+`DELETE` then collided with (`file_analyses_cache_id_fkey` violation).
+Fixed by explicitly deleting the `Module` row at the end of both tests,
+matching every other test in these files that creates a module of its
+own. A concurrently-running `/simplify` whole-project pass (same session,
+separate background agent, see its own entry below) independently
+diagnosed the same 8 failures down to this exact root cause and flagged
+it back -- confirming it from the other side before this was traced and
+fixed.

@@ -2,7 +2,7 @@ import hashlib
 from dataclasses import dataclass, field
 from pathlib import Path
 
-from app.scanner.discovery import walk_module_source_files
+from app.scanner.discovery import is_safe_to_read, walk_module_source_files
 
 # Every relative path orchestrator.py's Phase A parses into a structural fact
 # (ConfigField, CronJob, WebapiRoute, DbTable, AclResource, Indexer, Mview,
@@ -57,7 +57,7 @@ def compute_module_file_hashes(module_root: Path, php_sources: dict[str, bytes] 
 
     for relative in _FIXED_FILES:
         path = module_root / relative
-        if path.is_file():
+        if path.is_file() and is_safe_to_read(path):
             hashes[relative] = _sha256_file(path)
 
     if php_sources is not None:

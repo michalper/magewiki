@@ -121,6 +121,50 @@ async def test_analyze_file_failure_does_not_clobber_a_newer_scan_generations_st
 
 
 @pytest.mark.asyncio
+async def test_analyze_file_refuses_a_symlinked_file(demo_store_path: Path, db_session, monkeypatch, tmp_path: Path):
+    """Security regression: analyze_file re-reads straight from disk and
+    sends the content to an external LLM -- it must refuse a symlink even
+    if discovery-time filtering was somehow bypassed (a real symlink to a
+    file outside the module, not a mock). Redirects module.repo_root to a
+    tmp_path that mirrors the real demo-store module's relative layout for
+    one file, replaced here with a symlink.
+    """
+    module = await scan_demo_store(demo_store_path, db_session)
+    file_hash = await db_session.scalar(
+        select(FileHash).where(FileHash.module_id == module.id, FileHash.relative_path == "etc/module.xml")
+    )
+    await db_session.execute(delete(AnalysisCache).where(AnalysisCache.content_hash == file_hash.content_hash))
+    await db_session.commit()
+
+    (tmp_path / "etc").mkdir()
+    secret = tmp_path.parent / "secret_outside_module.xml"
+    secret.write_text("<!-- SECRET -->")
+    (tmp_path / "etc" / "module.xml").symlink_to(secret)
+    await db_session.execute(update(Module).where(Module.id == module.id).values(repo_root=str(tmp_path), path="."))
+    await db_session.commit()
+
+    async def _never_exceeded(session):
+        return False
+
+    monkeypatch.setattr("app.tasks.jobs.is_budget_exceeded", _never_exceeded)
+
+    with pytest.raises(ValueError, match="symlink"):
+        await analyze_file(None, module.id, "etc/module.xml", file_hash.content_hash, module.current_hash)
+
+    await db_session.refresh(module)
+    assert module.state == "failed"
+    assert "symlink" in module.last_error
+
+    # This test redirected the shared demo-store module's own repo_root to
+    # tmp_path above -- left in place, the next test's scan_demo_store()
+    # can no longer find this row by the *real* demo-store repo_root to
+    # clean it up first, leaving it (and its cache-linked children) behind
+    # to collide with a later test's own cleanup.
+    await db_session.execute(delete(Module).where(Module.id == module.id))
+    await db_session.commit()
+
+
+@pytest.mark.asyncio
 async def test_analyze_file_noop_on_stale_scan_generation(demo_store_path: Path, db_session):
     module = await scan_demo_store(demo_store_path, db_session)
 

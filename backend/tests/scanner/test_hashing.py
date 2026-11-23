@@ -33,6 +33,20 @@ def test_compute_module_file_hashes_skips_a_fixed_file_that_does_not_exist(demo_
     assert "etc/schema.graphqls" not in hashes
 
 
+def test_compute_module_file_hashes_skips_a_symlinked_fixed_file(tmp_path: Path):
+    """Security regression: a module could ship etc/di.xml as a symlink to
+    an arbitrary host path -- must never have the *target*'s bytes hashed
+    (confirmed with a real symlink to a file outside the module root)."""
+    (tmp_path / "etc").mkdir()
+    outside = tmp_path.parent / "outside_di.xml"
+    outside.write_text("<config/>")
+    (tmp_path / "etc" / "di.xml").symlink_to(outside)
+
+    hashes = compute_module_file_hashes(tmp_path)
+
+    assert "etc/di.xml" not in hashes
+
+
 def test_compute_module_file_hashes_matches_a_direct_sha256_of_the_file_content(demo_module_path: Path):
     hashes = compute_module_file_hashes(demo_module_path)
 
