@@ -13,6 +13,13 @@ on:
 permissions:
   contents: read
 
+# A superseded run (an older commit on the same ref) is cancelled outright --
+# its result would never matter once a newer commit's run exists for the same
+# ref, so letting it keep consuming a runner is pure waste.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   typos:
     runs-on: ubuntu-latest

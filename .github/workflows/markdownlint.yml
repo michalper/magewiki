@@ -1,0 +1,47 @@
+name: Markdown lint
+
+# Free formatting/structure check for README.md/CLAUDE.md/docs/**/*.md.
+# Deliberately non-blocking (continue-on-error): CLAUDE.md is long,
+# prose-dense, and written in a style (long paragraphs, deliberate
+# em-dashes, wide tables, inline-code-heavy sentences) markdownlint's
+# default ruleset isn't tuned for - .markdownlint-cli2.yaml disables the
+# noisiest/least-relevant default rules (line length, table column
+# alignment) rather than fighting the existing prose style, but this is a
+# first pass - expect to tune further once real findings come in.
+#
+# .claude/skills/**/*.md excluded entirely (not just rule-tuned): those are
+# Claude Code skill definitions, not docs for a human reader - they open
+# with YAML frontmatter (name/description) by that tool's own convention,
+# never a markdown H1, so MD041 would always fire there for a structural
+# reason that has nothing to do with this repo's actual prose quality.
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "**/*.md"
+  pull_request:
+    paths:
+      - "**/*.md"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  markdownlint:
+    runs-on: ubuntu-latest
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+
+      - uses: DavidAnson/markdownlint-cli2-action@3ce8f712b5d8f31acd8e201be6d97e3d2bb23eb7 # v25.1.0
+        with:
+          globs: |
+            **/*.md
+            !node_modules/**
+            !.claude/skills/**

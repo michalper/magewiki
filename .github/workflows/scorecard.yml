@@ -16,6 +16,7 @@ on:
     - cron: "20 14 * * 1"
   push:
     branches: [main]
+  workflow_dispatch:
 
 # Minimal top-level default; the analysis job below sets its own real,
 # broader needs explicitly. Scorecard's own Token-Permissions check flagged
@@ -24,6 +25,13 @@ on:
 # doesn't change what `analysis` can actually do.
 permissions:
   contents: read
+
+# A superseded run (an older commit on the same ref) is cancelled outright --
+# its result would never matter once a newer commit's run exists for the same
+# ref, so letting it keep consuming a runner is pure waste.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
   analysis:
@@ -43,6 +51,14 @@ jobs:
           results_file: results.sarif
           results_format: sarif
           publish_results: true
+          # A pin to an annotated tag OBJECT's own SHA instead of the commit
+          # it points to makes the publish step silently reject results as
+          # an "imposter commit" -- ordo's #425 hit exactly this. Not an
+          # issue for the pin below today (verified: `commits/{tag}` already
+          # dereferences to the real commit, unlike `git ls-remote`), but
+          # cheap defense-in-depth against a future hand-edited pin doing
+          # the same thing silently instead of loudly.
+          fail_on_publish_error: true
           # Classic branch protection's full settings aren't readable by the
           # default GITHUB_TOKEN at all (a GitHub API restriction, not a
           # permissions: block setting) -- Scorecard's own docs call for a

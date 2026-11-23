@@ -31,3 +31,27 @@ documented soft-limit race).
 
 Only the latest release and `main` are supported. This project does not
 maintain long-term support branches for older tags.
+
+## Verifying a release
+
+Every GitHub Release from `v1.12.0` onward includes a source archive
+(`magewiki-vX.Y.Z.tar.gz`) and a Sigstore bundle
+(`magewiki-vX.Y.Z.tar.gz.sigstore.json`) signed keylessly with
+[cosign](https://docs.sigstore.dev/cosign/installation/) — there is no
+long-lived private signing key anywhere; the certificate is short-lived and
+tied to the identity that signed it (this repo's own `release.yml` workflow
+run, via GitHub Actions' own OIDC token).
+
+To verify a downloaded archive:
+
+```sh
+cosign verify-blob \
+  --bundle magewiki-vX.Y.Z.tar.gz.sigstore.json \
+  --certificate-identity-regexp 'https://github\.com/michalper/magewiki/' \
+  --certificate-oidc-issuer https://token.actions.githubusercontent.com \
+  magewiki-vX.Y.Z.tar.gz
+```
+
+`cosign` reports the exact signing identity from the certificate if you'd
+rather confirm it by eye than match a regexp — open
+`magewiki-vX.Y.Z.tar.gz.sigstore.json` and inspect the embedded certificate.
