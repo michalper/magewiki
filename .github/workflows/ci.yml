@@ -151,6 +151,17 @@ jobs:
       - uses: SonarSource/sonarqube-scan-action@70bad232163b09d998ea0707ee80c0ec80798c16 # v8
         env:
           SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
+      # The scan step above only submits the analysis -- it doesn't itself fail
+      # if the quality gate comes back red, so a real regression (e.g. new
+      # code below the coverage threshold, a new blocker/critical issue) was
+      # invisible here, only visible by clicking through to the SonarCloud
+      # dashboard. This polls report-task.txt (written by the scan step into
+      # the shared checkout) for the gate result and fails the job on
+      # anything but "OK".
+      - uses: SonarSource/sonarqube-quality-gate-action@7a5fffe8e523c40e0c740b6bc2712ab503e52efa # v1.2.1
+        timeout-minutes: 5
+        env:
+          SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
 
   dockerfile-lint:
     # One job looping over all 3 Dockerfiles, not 3 matrix jobs -- hadolint
