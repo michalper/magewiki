@@ -40,6 +40,22 @@ def test_parse_module_xml_invalid_bytes_in_the_declared_encoding(tmp_path: Path)
         parse_module_xml(bad_xml)
 
 
+def test_parse_module_xml_does_not_expand_an_xxe_entity(tmp_path: Path):
+    """Same defense-in-depth regression as test_xml_parse_utils.py's
+    equivalent test, for module_xml.py's own separate etree.parse() call."""
+    secret = tmp_path.parent / "xxe_secret_module.txt"
+    secret.write_text("super-secret-host-content")
+    bad_xml = tmp_path / "module.xml"
+    bad_xml.write_text(
+        '<?xml version="1.0"?>'
+        f'<!DOCTYPE module [ <!ENTITY xxe SYSTEM "file://{secret}"> ]>'
+        '<config><module name="&xxe;"/></config>'
+    )
+
+    with pytest.raises(InvalidModuleXmlError, match="malformed module.xml"):
+        parse_module_xml(bad_xml)
+
+
 def test_parse_module_xml_refuses_a_symlink(tmp_path: Path):
     """Security regression: must never follow a symlinked module.xml to
     read an arbitrary host path (a real symlink, not a mock)."""

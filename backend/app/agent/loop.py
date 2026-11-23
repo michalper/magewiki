@@ -303,8 +303,11 @@ async def run_agent(session: AsyncSession, messages: list[dict], audience: str) 
             tokens_in_total += usage.prompt_tokens
             tokens_out_total += usage.completion_tokens
             raw_cost = getattr(usage, "cost", None)
-            stream_cost: Decimal | None = Decimal(str(raw_cost)) if raw_cost else None
-            if not stream_cost:
+            # A legitimately reported cost of exactly 0 (free-tier/cached) must
+            # not be treated as "no cost info" -- see pricing.py's identical fix
+            # for the full-response path; `if raw_cost` here had the same bug.
+            stream_cost: Decimal | None = Decimal(str(raw_cost)) if raw_cost is not None else None
+            if stream_cost is None or stream_cost < 0:
                 stream_cost = compute_cost_usd(llm_config.model, usage.prompt_tokens, usage.completion_tokens)
             cost_total += stream_cost
 

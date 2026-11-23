@@ -4,7 +4,7 @@ from decimal import Decimal
 import pytest
 from sqlalchemy import select
 
-from app.analyzer.cache import get_or_create_cache_entry, lookup_cache
+from app.analyzer.cache import create_cache_entries_bulk, get_or_create_cache_entry, lookup_cache
 from app.analyzer.client import LlmCallResult
 from app.models import AnalysisCache
 
@@ -49,6 +49,55 @@ async def test_get_or_create_cache_entry_returns_the_existing_id_on_conflict(db_
     ).all()
     assert len(rows) == 1
     assert rows[0].tokens_in == 10  # the first (winning) insert's data, not the second's
+
+
+@pytest.mark.asyncio
+async def test_create_cache_entries_bulk_inserts_every_row_in_one_statement(db_session):
+    """embed_chunks' batched sibling of get_or_create_cache_entry() -- found
+    worth adding by a whole-project code review that flagged the per-row
+    loop it replaced."""
+    prefix = f"cache-bulk-{uuid.uuid4().hex[:8]}"
+    entries = [
+        (f"{prefix}-a", LlmCallResult(response_json={"embedding": [0.1]}, tokens_in=1, tokens_out=0, cost_usd=Decimal("0.0001"))),
+        (f"{prefix}-b", LlmCallResult(response_json={"embedding": [0.2]}, tokens_in=2, tokens_out=0, cost_usd=Decimal("0.0002"))),
+    ]
+
+    await create_cache_entries_bulk(db_session, "m", "v1", "embedding", entries)
+    await db_session.commit()
+
+    rows = (
+        await db_session.scalars(
+            select(AnalysisCache).where(AnalysisCache.content_hash.in_([h for h, _r in entries]))
+        )
+    ).all()
+    assert {r.content_hash for r in rows} == {f"{prefix}-a", f"{prefix}-b"}
+
+
+@pytest.mark.asyncio
+async def test_create_cache_entries_bulk_skips_a_row_that_already_exists(db_session):
+    """on_conflict_do_nothing per row, same as get_or_create_cache_entry --
+    one of the batch's hashes already being cached (e.g. a retried batch
+    after a partial failure) must not raise or duplicate it."""
+    content_hash = f"cache-bulk-conflict-{uuid.uuid4().hex[:8]}"
+    first = LlmCallResult(response_json={"embedding": [0.1]}, tokens_in=1, tokens_out=0, cost_usd=Decimal("0.0001"))
+    await get_or_create_cache_entry(db_session, content_hash, "m", "v1", "embedding", first)
+    await db_session.commit()
+
+    second = LlmCallResult(response_json={"embedding": [0.9]}, tokens_in=9, tokens_out=0, cost_usd=Decimal("0.0009"))
+    await create_cache_entries_bulk(db_session, "m", "v1", "embedding", [(content_hash, second)])
+    await db_session.commit()
+
+    rows = (
+        await db_session.scalars(select(AnalysisCache).where(AnalysisCache.content_hash == content_hash))
+    ).all()
+    assert len(rows) == 1
+    assert rows[0].tokens_in == 1  # the first (winning) insert's data, not the second's
+
+
+@pytest.mark.asyncio
+async def test_create_cache_entries_bulk_is_a_no_op_for_an_empty_list(db_session):
+    await create_cache_entries_bulk(db_session, "m", "v1", "embedding", [])
+    await db_session.commit()
 
 
 @pytest.mark.asyncio

@@ -91,6 +91,17 @@ def test_secret_fields_reject_a_too_short_secret(field):
         Settings(**{field: "short"})
 
 
+@pytest.mark.parametrize("bad_path", [123, ["x"], {"a": 1}, None])
+def test_is_within_scan_roots_fails_closed_for_a_non_string_path(tmp_path: Path, bad_path):
+    """POST /webhooks/scan's `path` comes from untrusted JSON, not a
+    Pydantic-validated field -- a non-string value reaches here as-is, and
+    Path() raises TypeError for it, not OSError. Found by a whole-project
+    code review: must fail closed (return False), not propagate as an
+    unhandled 500."""
+    s = Settings(magewiki_scan_root_1=str(tmp_path), magewiki_scan_root_2="", magewiki_scan_root_3="")
+    assert s.is_within_scan_roots(bad_path) is False
+
+
 def test_is_within_scan_roots_fails_closed_when_resolve_raises_oserror(tmp_path: Path, monkeypatch):
     """Path.resolve() can raise OSError for a real, pathological input (e.g. a
     component exceeding the filesystem's max name length) -- must fail closed

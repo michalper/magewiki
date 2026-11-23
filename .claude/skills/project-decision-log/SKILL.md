@@ -4358,3 +4358,130 @@ is still pending, not yet an active second maintainer to document), and
 nikic/php-fuzzer (PHP-specific; magewiki's own Atheris/ClusterFuzzLite setup
 added earlier in this same pass already covers the equivalent ground for its
 own Python parsers).
+
+**Whole-project `/code-review` findings, fixed (recorded 2026-11-23):**
+user-directed whole-project (not diff-scoped) `/code-review`, run as a
+background agent in parallel with a whole-project `/security-review` and
+`/simplify` (that pair's own findings: `/security-review` found nothing at
+confidence >=8; `/simplify` found the diff already clean on all four
+angles — both recorded only here since they had nothing to fix). 8 findings
+came back from `/code-review`, all verified and fixed, each with a real
+regression test confirmed red-without/green-with the fix via `git stash`
+(same discipline as this session's earlier fixes):
+
+- **XXE claim in `xml_parse_utils.py`/`module_xml.py` (reported High) —
+  verified as a false positive, not fixed as a live vulnerability.** The
+  finding's exploit scenario claimed lxml's default parser resolves
+  internal-DTD-subset external entities. Checked directly against the
+  pinned lxml/libxml2 (6.1.3 / 2.14.6) with a real XXE payload rather than
+  trusting the claim: every combination of `load_dtd`/`no_network`/
+  `resolve_entities` already rejects external-entity expansion outright
+  (`<!ENTITY x SYSTEM "file://...">` referenced in an attribute raises
+  "Attribute references external entity" per the XML spec itself, not an
+  lxml security feature; referenced in text content it's silently dropped,
+  even with every flag at its most permissive) — this was never
+  exploitable against the version actually in use. Added
+  `HARDENED_XML_PARSER` (`resolve_entities=False, no_network=True,
+  load_dtd=False`) anyway as cheap, correct defense-in-depth against a
+  future lxml/libxml2 downgrade, shared by both files' `etree.parse()`
+  calls (previously each had its own, now centralized in
+  `xml_parse_utils.py`). Regression tests use a real local file (not a
+  mock) outside the module directory, asserting its content never leaks
+  into the parse result regardless of which layer blocks it.
+- **`webhooks.py`'s untrusted `path` crashing `is_within_scan_roots` with
+  an unhandled `TypeError` instead of failing closed (real, fixed)** —
+  `POST /webhooks/scan`'s `path` comes from untrusted JSON, not a
+  Pydantic-validated field like `POST /scan`'s own `request.path`; a
+  non-string JSON value (`123`, `["x"]`, `null`) reaches `Path(path)` as-is
+  and raises `TypeError`, not `OSError`, propagating past
+  `_validate_scan_path` as an unhandled 500 instead of the documented
+  clean 400. `is_within_scan_roots`'s own docstring already promises
+  "fails closed" — widened `except OSError` to `except (OSError,
+  TypeError)`, same pattern as this session's earlier `OSError` widening
+  in `xml_parse_utils.py` (found by fuzzing) and `module_xml.py`.
+- **`agent/loop.py`/`pricing.py`'s `resolve_llm_cost` treating a real $0
+  cost the same as "no cost info" (real, fixed, two call sites)** — `if
+  raw_cost else None` is falsy for a legitimate `0` (free-tier/cached
+  completion), silently discarding it and substituting a recomputed,
+  possibly nonzero cost from `compute_cost_usd`, inflating `cost_total`
+  and the budget ledger `is_budget_exceeded()` reads. Fixed in both
+  `resolve_llm_cost` (the shared helper five call sites use) and
+  `agent/loop.py`'s separate streaming-chunk accumulation (a different
+  code shape -- `usage.cost` off a stream chunk, not
+  `litellm.completion_cost()` off a full response -- so not simply
+  "call the shared helper instead"), both now keyed on `is not None`
+  instead of truthiness. Three existing tests had encoded the bug as
+  intended behavior (asserting the fallback value, not the real zero) --
+  corrected them to assert `Decimal(0)`, not just added new ones:
+  `test_turn_cost_falls_back_when_litellm_returns_zero` ->
+  `..._respects_a_real_zero_cost_from_litellm`,
+  `test_embed_text_falls_back_to_computed_cost_when_litellm_returns_zero` ->
+  `..._respects_a_real_zero_cost_from_litellm`, and the batch-embedding
+  equivalent.
+- **`analyzer/tags.py`'s `filter_tags` not enforcing its own documented
+  "never trust self-reported source" contract (real, fixed)** — the
+  docstring already said a tag reaching this function can't legitimately
+  carry `source="parser"`, but the code only ever checked `tag.name`
+  against `ALLOWED_TAGS`, leaving `tag.source` untouched -- an LLM could
+  self-declare `source="parser"` on a hallucinated, in-vocabulary tag and
+  have that spoofed provenance survive `merge_tags`' `setdefault` into
+  `doc.tags` unchanged, undermining CLAUDE.md's "tags carry `source` and
+  `confidence`" guarantee. The existing test for this function
+  (`test_filter_tags_does_not_trust_a_self_claimed_parser_source`) only
+  covered an *out*-of-vocabulary spoofed tag, which was already rejected
+  by the name check regardless -- didn't cover the real gap (an
+  *in*-vocabulary name with a spoofed source). Fixed by forcing every kept
+  tag's source to `"ai"` via `model_copy`.
+- **`agent/tools.py`'s `find_by_class` running 4 sequential SELECTs,
+  explicitly left unfixed** — the suggested single `UNION ALL` would mean
+  normalizing 4 genuinely different row shapes (`PhpClass` vs
+  `DiPreference` vs `DiPlugin`x2 on different columns) into one common
+  column set, meaningfully increasing the complexity and bug surface of a
+  query that feeds the public chat agent, for a rarely-hit tool-call path
+  (not a hot path) -- same "flag, don't force" precedent this file
+  already has for `agent/loop.py`'s own sequential tool dispatch.
+- **`jobs.py`'s `embed_chunks` writing one cache row per chunk instead of
+  batched (real, fixed)** — new `create_cache_entries_bulk` in
+  `analyzer/cache.py`, a batched sibling of `get_or_create_cache_entry`
+  for the one caller that writes several rows per call and never reads
+  any id back (unlike jobs.py's other two `get_or_create_cache_entry`
+  call sites, which do and keep using it) -- one multi-row
+  `INSERT ... ON CONFLICT DO NOTHING` per batch instead of one round trip
+  per chunk.
+- **`jobs.py`'s `nightly_scan_all` scanning repos one at a time despite
+  each having its own independent advisory lock and DB session (real,
+  fixed)** — now `asyncio.gather`'d, capped at `_NIGHTLY_SCAN_CONCURRENCY
+  = 5` rather than fully unbounded (the engine's default connection pool,
+  `app/db.py`, has no explicit `pool_size`/`max_overflow`, so an unbounded
+  gather over a large fleet could starve every other concurrent
+  request/job of a connection while the nightly cron runs). New test
+  verifies genuine overlap (`max_in_flight > 1`) up to the cap, not just
+  that every repo eventually gets scanned.
+- **`indexer_conflicts.py`/`mview_conflicts.py`/`widget_conflicts.py`/
+  `menu_conflicts.py`/`acl_conflicts.py`: byte-for-byte identical
+  "group-by-id, flag groups spanning 2+ modules" algorithm, copied 5
+  times (real, fixed)** — their own docstrings already cross-reference
+  each other as having "identical reasoning," confirming the duplication
+  was noticed and repeated anyway across 5 rounds of conflict detection
+  (CLAUDE.md phases 19-25). Extracted to a new
+  `scanner/duplicate_id_conflict.py`'s `detect_duplicate_id_conflict(rows,
+  id_attr, check_type, message)`, using `getattr(row, id_attr)` rather
+  than a shared base class -- each of the 5 row dataclasses
+  (`IndexerRow`/`MviewRow`/`WidgetRow`/`MenuItemRow`/`AclResourceRow`) is
+  constructed positionally from a raw DB row in `orchestrator.py` and
+  deliberately keeps its own differently-named id field for clarity at
+  that call site, so the shared function reaches into whichever one by
+  name instead of forcing a rename across every caller. Each of the 5
+  files' own public dataclass, function name, signature, docstring,
+  `check_type`, and message wording are all unchanged -- `orchestrator.py`
+  needed zero changes. All 30 pre-existing tests across the 5 files (plus
+  their own `orchestrator.py` integration tests) pass unmodified, proving
+  the refactor is behavior-preserving; a new
+  `test_duplicate_id_conflict.py` covers the shared algorithm directly.
+  `webapi_conflicts.py` was checked and correctly left out of this
+  refactor -- it groups by a composite `(url, http_method)` key, a
+  genuinely different shape, not more of the same duplication.
+
+Verified after all 8: full backend suite at 938/938 real tests (same 5
+environment-only failures as every other `docker compose run --rm api
+pytest` invocation in this session), `ruff check`/`mypy app` both clean.

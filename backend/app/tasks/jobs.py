@@ -1,3 +1,4 @@
+import asyncio
 import logging
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
@@ -8,7 +9,7 @@ from sqlalchemy import delete, func, select, update
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 
 from app.analyzer.budget import is_budget_exceeded, pause_module_for_budget
-from app.analyzer.cache import get_or_create_cache_entry, lookup_cache
+from app.analyzer.cache import create_cache_entries_bulk, get_or_create_cache_entry, lookup_cache
 from app.analyzer.client import summarize_file, synthesize_module_doc
 from app.analyzer.embeddings import (
     build_file_chunk_text,
@@ -64,6 +65,15 @@ logger = logging.getLogger(__name__)
 # against a local Ollama server, which doesn't necessarily handle as large a
 # batch gracefully.
 _EMBED_BATCH_SIZE = 64
+
+# How many repos nightly_scan_all scans concurrently. Each scan_repository_job
+# holds its own DB connection (own async_session_factory()) for the whole scan
+# duration, and the engine's default pool (app/db.py: create_async_engine with
+# no explicit pool_size/max_overflow) caps out around 15 connections total --
+# capped well under that, rather than unbounded asyncio.gather over every
+# repo_root, so this doesn't starve the pool for every other concurrent
+# request/job while a large fleet's nightly scan is running.
+_NIGHTLY_SCAN_CONCURRENCY = 5
 
 
 @asynccontextmanager
@@ -378,11 +388,17 @@ async def embed_chunks(ctx: dict | None, module_id: int, module_current_hash: st
                         api_key=embed_config.api_key,
                         api_base=embed_config.api_base,
                     )
+                    cache_entries = []
                     for (_ct, _rp, _mid, _txt, h), (vector, result) in zip(batch, embedded, strict=True):
-                        await get_or_create_cache_entry(
-                            session, h, embed_config.model, EMBEDDING_PROMPT_VERSION, "embedding", result
-                        )
+                        cache_entries.append((h, result))
                         embedding_by_hash[h] = vector
+                    # One multi-row INSERT for the whole batch instead of one round
+                    # trip per chunk -- found by a whole-project code review. No id
+                    # is read back here (unlike the per-file/module-doc cache writes
+                    # elsewhere in this function), so the batched sibling applies.
+                    await create_cache_entries_bulk(
+                        session, embed_config.model, EMBEDDING_PROMPT_VERSION, "embedding", cache_entries
+                    )
 
             await session.execute(delete(Chunk).where(Chunk.module_id == module_id))
             for ct, rp, mid, txt, h in hashed_specs:
@@ -425,15 +441,27 @@ async def nightly_scan_all(ctx: dict) -> None:
     repo_root already known to the DB, so drift since the last scan/webhook gets
     caught even if nothing ever pinged us. One repo failing (e.g. its path no
     longer exists) must not stop the rest.
+
+    Repos are scanned up to _NIGHTLY_SCAN_CONCURRENCY at a time rather than one
+    at a time -- each repo already has its own independent advisory lock and
+    its own DB session (scan_repository_job), so there's no shared state a
+    sequential loop was protecting; it just made every repo wait behind the
+    slowest one before its own scan even started. Found by a whole-project
+    code review.
     """
     async with async_session_factory() as session:
         repo_roots = (await session.scalars(select(Module.repo_root).distinct())).all()
 
-    for repo_root in repo_roots:
-        try:
-            await scan_repository_job(ctx, repo_root)
-        except Exception:
-            logger.exception("nightly_scan_all: scan failed for %s", repo_root)
+    semaphore = asyncio.Semaphore(_NIGHTLY_SCAN_CONCURRENCY)
+
+    async def _scan_one(repo_root: str) -> None:
+        async with semaphore:
+            try:
+                await scan_repository_job(ctx, repo_root)
+            except Exception:
+                logger.exception("nightly_scan_all: scan failed for %s", repo_root)
+
+    await asyncio.gather(*(_scan_one(repo_root) for repo_root in repo_roots))
 
 
 async def refresh_magento_release_cache(ctx: dict) -> None:

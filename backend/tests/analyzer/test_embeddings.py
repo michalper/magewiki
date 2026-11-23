@@ -76,7 +76,10 @@ async def test_embed_text_falls_back_to_computed_cost_when_litellm_raises(monkey
 
 
 @pytest.mark.asyncio
-async def test_embed_text_falls_back_to_computed_cost_when_litellm_returns_zero(monkeypatch):
+async def test_embed_text_respects_a_real_zero_cost_from_litellm(monkeypatch):
+    """A legitimately reported cost of exactly 0 (free-tier/cached) must not
+    be treated as "no cost info" and silently replaced with a recomputed,
+    possibly nonzero cost -- found by a whole-project code review."""
     async def fake_aembedding(**kwargs):
         return _fake_response([0.3])
 
@@ -86,7 +89,7 @@ async def test_embed_text_falls_back_to_computed_cost_when_litellm_returns_zero(
 
     _vector, result = await embed_text("some text", model="m", api_key="k")
 
-    assert result.cost_usd == Decimal("0.0002")
+    assert result.cost_usd == Decimal(0)
 
 
 @pytest.mark.asyncio
@@ -180,7 +183,9 @@ async def test_embed_texts_batch_falls_back_to_computed_cost_when_litellm_raises
 
 
 @pytest.mark.asyncio
-async def test_embed_texts_batch_falls_back_to_computed_cost_when_litellm_returns_zero(monkeypatch):
+async def test_embed_texts_batch_respects_a_real_zero_cost_from_litellm(monkeypatch):
+    """Same fix as test_embed_text_respects_a_real_zero_cost_from_litellm,
+    for the batch path."""
     async def fake_aembedding(**kwargs):
         return _fake_batch_response([[0.1], [0.2]], prompt_tokens=20)
 
@@ -190,7 +195,7 @@ async def test_embed_texts_batch_falls_back_to_computed_cost_when_litellm_return
 
     results = await embed_texts_batch(["aa", "bb"], model="m", api_key="k")
 
-    assert sum(r.cost_usd for _v, r in results) == Decimal("0.0002")
+    assert sum(r.cost_usd for _v, r in results) == Decimal(0)
 
 
 @pytest.mark.asyncio

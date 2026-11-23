@@ -31,14 +31,19 @@ def test_turn_cost_falls_back_when_litellm_raises(monkeypatch):
     assert cost == Decimal("0.0005")
 
 
-def test_turn_cost_falls_back_when_litellm_returns_zero(monkeypatch):
+def test_turn_cost_respects_a_real_zero_cost_from_litellm(monkeypatch):
+    """A legitimately reported cost of exactly 0 (free-tier/cached completion)
+    must not be treated as "no cost info" and silently replaced with a
+    recomputed, possibly nonzero cost -- found by a whole-project code
+    review. Only a missing/negative value should fall back to the price
+    table (covered by test_turn_cost_falls_back_when_litellm_raises above)."""
     monkeypatch.setattr("app.analyzer.pricing.litellm.completion_cost", lambda **k: 0)
     monkeypatch.setattr("app.analyzer.pricing.compute_cost_usd", lambda model, tin, tout: Decimal("0.0006"))
 
     response = SimpleNamespace(usage=_usage())
     _tin, _tout, cost = _turn_cost(response, "m")
 
-    assert cost == Decimal("0.0006")
+    assert cost == Decimal(0)
 
 
 def test_collect_sources_ignores_a_result_with_no_module_id():

@@ -124,7 +124,13 @@ class Settings(BaseSettings):
         """
         try:
             resolved = Path(path).resolve()
-        except OSError:
+        except (OSError, TypeError):
+            # TypeError: POST /webhooks/scan's `path` comes from untrusted JSON,
+            # not a Pydantic-validated field like POST /scan's own request.path --
+            # a non-string JSON value (e.g. a bare number or a list) reaches here
+            # as-is, and Path() raises TypeError for it, not OSError. Found by a
+            # whole-project code review. Fails closed the same as a malformed
+            # path string, instead of propagating as an unhandled 500.
             return False
         for root in self.scan_roots:
             resolved_root = Path(root).resolve()

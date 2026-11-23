@@ -4,6 +4,20 @@ from lxml import etree
 
 from app.scanner.discovery import is_safe_to_read
 
+# Shared by every lxml etree.parse() call in this project (here and in
+# module_xml.py). A code-review pass flagged XXE (a scanned module's
+# module.xml declaring `<!ENTITY x SYSTEM "file:///etc/passwd">` and
+# expanding it into a persisted attribute) as a possible local-file-read --
+# checked directly against the pinned lxml/libxml2 (6.1.3 / 2.14.6) rather
+# than assumed: every combination of load_dtd/no_network/resolve_entities
+# already rejects external-entity expansion outright (libxml2 itself raises
+# "Attribute references external entity" / silently drops it in text
+# content, even with every flag at its most permissive) -- this was never a
+# live vulnerability against the version actually in use. Set explicitly
+# anyway as cheap, correct defense-in-depth against a future lxml/libxml2
+# downgrade or version where the library's own default differs.
+HARDENED_XML_PARSER = etree.XMLParser(resolve_entities=False, no_network=True, load_dtd=False)
+
 
 def parse_xml_root(path: Path) -> etree._Element | None:
     """The is_file()/XMLSyntaxError guard shared by every one of this
@@ -25,7 +39,7 @@ def parse_xml_root(path: Path) -> etree._Element | None:
         return None
 
     try:
-        return etree.parse(str(path)).getroot()
+        return etree.parse(str(path), parser=HARDENED_XML_PARSER).getroot()
     except (etree.XMLSyntaxError, OSError):
         # lxml raises OSError, not XMLSyntaxError, for some malformed
         # encoding declarations (e.g. a <?xml encoding=...?> that doesn't

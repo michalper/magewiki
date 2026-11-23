@@ -1,3 +1,4 @@
+import asyncio
 import uuid
 from datetime import UTC, datetime
 
@@ -6,7 +7,7 @@ from sqlalchemy import delete
 
 from app.models import Module
 from app.tasks import jobs as jobs_module
-from app.tasks.jobs import nightly_scan_all
+from app.tasks.jobs import _NIGHTLY_SCAN_CONCURRENCY, nightly_scan_all
 
 
 async def _make_module(session, repo_root: str, name: str) -> Module:
@@ -76,4 +77,41 @@ async def test_nightly_scan_all_continues_after_one_repo_fails(db_session, monke
     assert good_repo in calls
 
     await db_session.execute(delete(Module).where(Module.repo_root.in_([bad_repo, good_repo])))
+    await db_session.commit()
+
+
+@pytest.mark.asyncio
+async def test_nightly_scan_all_runs_repos_concurrently_up_to_the_cap(db_session, monkeypatch):
+    """Found by a whole-project code review: repos used to be scanned one at a
+    time despite each having its own independent advisory lock and DB
+    session -- verify real overlap in flight, not just that every repo
+    eventually gets called, and that it never exceeds the configured cap."""
+    suffix = uuid.uuid4().hex[:8]
+    repo_count = _NIGHTLY_SCAN_CONCURRENCY + 2
+    repos = [f"/tmp/nightly-test-concurrency-{suffix}-{i}" for i in range(repo_count)]
+    for i, repo in enumerate(repos):
+        await _make_module(db_session, repo, f"ConcurrencyModule_{suffix}_{i}")
+    await db_session.commit()
+
+    in_flight = 0
+    max_in_flight = 0
+    lock = asyncio.Lock()
+
+    async def fake_scan_repository_job(ctx, repo_root):
+        nonlocal in_flight, max_in_flight
+        async with lock:
+            in_flight += 1
+            max_in_flight = max(max_in_flight, in_flight)
+        await asyncio.sleep(0)  # yield so other scheduled scans can actually overlap
+        async with lock:
+            in_flight -= 1
+
+    monkeypatch.setattr(jobs_module, "scan_repository_job", fake_scan_repository_job)
+
+    await nightly_scan_all({})
+
+    assert max_in_flight > 1  # genuine overlap, not a sequential loop
+    assert max_in_flight <= _NIGHTLY_SCAN_CONCURRENCY
+
+    await db_session.execute(delete(Module).where(Module.repo_root.in_(repos)))
     await db_session.commit()
