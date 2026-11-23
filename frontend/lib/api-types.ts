@@ -879,7 +879,7 @@ export interface components {
          * ModuleListResponse
          * @description GET /modules' response -- `total` is the count of modules matching every
          *     filter *before* limit/offset, so a paginated caller (the modules browser
-         *     page) can render "X–Y of total" and a page count without a second request.
+         *     page) can render "X-Y of total" and a page count without a second request.
          */
         ModuleListResponse: {
             /** Total */
