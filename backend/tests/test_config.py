@@ -1,5 +1,8 @@
 from pathlib import Path
 
+import pytest
+from pydantic import ValidationError
+
 from app.config import Settings
 
 
@@ -65,6 +68,27 @@ def test_license_risk_prefix_tuple_uppercases_and_strips_whitespace():
 def test_license_risk_prefix_tuple_empty_when_unconfigured():
     s = Settings(license_risk_prefixes="")
     assert s.license_risk_prefix_tuple == ()
+
+
+@pytest.mark.parametrize("field", ["webhook_hmac_secret", "write_access_token"])
+def test_secret_fields_accept_empty_disabled_value(field):
+    s = Settings(**{field: ""})
+    assert getattr(s, field) == ""
+
+
+@pytest.mark.parametrize("field", ["webhook_hmac_secret", "write_access_token"])
+def test_secret_fields_accept_a_16_character_secret(field):
+    s = Settings(**{field: "a" * 16})
+    assert getattr(s, field) == "a" * 16
+
+
+@pytest.mark.parametrize("field", ["webhook_hmac_secret", "write_access_token"])
+def test_secret_fields_reject_a_too_short_secret(field):
+    """OpenSSF Best Practices Badge's crypto_keylength criterion: a configured
+    secret must meet a minimum length, not just "non-empty" -- empty (disabled)
+    stays allowed, matching this project's own established convention."""
+    with pytest.raises(ValidationError, match=f"{field} must be empty"):
+        Settings(**{field: "short"})
 
 
 def test_is_within_scan_roots_fails_closed_when_resolve_raises_oserror(tmp_path: Path, monkeypatch):

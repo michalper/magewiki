@@ -1,6 +1,15 @@
 from pathlib import Path
 
+from pydantic import ValidationInfo, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
+
+# OpenSSF Best Practices Badge's crypto_keylength criterion: a user-settable
+# secret must support at least 112 bits; 128 bits (16 ASCII bytes) is the
+# conventional round minimum and comfortably clears that floor. Applies only
+# to a secret that's actually set -- empty is this project's own established
+# "feature disabled" convention (see webhook_hmac_secret/write_access_token's
+# own docstrings below), not a weak secret to reject.
+_MIN_SECRET_LENGTH = 16
 
 
 class Settings(BaseSettings):
@@ -76,6 +85,16 @@ class Settings(BaseSettings):
     # not routine PHPStan/PHPMD churn, which would make this noisy enough
     # to ignore. An operator can widen or narrow this list freely.
     alert_check_types: str = "hardcoded_secret,security_advisory"
+
+    @field_validator("webhook_hmac_secret", "write_access_token")
+    @classmethod
+    def _secret_meets_minimum_length(cls, value: str, info: ValidationInfo) -> str:
+        if value and len(value) < _MIN_SECRET_LENGTH:
+            raise ValueError(
+                f"{info.field_name} must be empty (disabled) or at least "
+                f"{_MIN_SECRET_LENGTH} characters, got {len(value)}"
+            )
+        return value
 
     @property
     def cors_origin_list(self) -> list[str]:
