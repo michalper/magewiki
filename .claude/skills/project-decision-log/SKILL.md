@@ -4282,3 +4282,79 @@ _traversal_ helpers via `parse_php_source`/`parse_config_php` above is the
 part actually worth exercising) and `discovery.py`'s filesystem-walking
 logic (needs a real directory tree as input, not a byte blob -- a
 structurally different, not yet attempted, harness shape).
+
+**Ported CI hardening from `projects/ordo` (recorded 2026-11-23):** `ordo`
+(`/Users/michalper/Projects/ordo`) is a sibling project by the same author --
+a Magento 2 PHP extension product, not this project's Python/FastAPI+Next.js
+scanner -- that's considerably further along on OpenSSF-style CI hardening.
+User-directed survey of what's portable despite the stack difference; a
+background agent read ordo's recent git log, its `.github/workflows/`, and
+its `docs/ASSURANCE_CASE.md`/`SECURITY.md`, and separated what generalizes
+from what's Magento-specific. Two things had already been built earlier in
+this same pass by directly copying ordo's proven mechanism rather than
+inventing a parallel one: `release.yml`'s cosign-keyless-signing (mirrors
+`ordo/scripts/sign-release.sh` exactly -- same `sigstore/cosign-installer`
+pin, same `<repo>-<version>.tar.gz(.sigstore.json)` naming) and the
+`SCORECARD_TOKEN` fine-grained-PAT wiring for the Branch-Protection check
+(same mechanism ordo's `scorecard.yml` already used, under the name
+`SCORECARD_READ_TOKEN` there -- kept magewiki's own `SCORECARD_TOKEN` name
+since that's what was already wired and matches the literal name
+Scorecard's own fine-grained-auth-token.md doc uses as its example).
+
+Ported from that survey, all confirmed to fit (not blindly copied):
+
+- `scorecard.yml`: `fail_on_publish_error: true` -- defense-in-depth against
+  the exact incident ordo hit in its own #425 (a GitHub Action pinned to an
+  *annotated tag object's* own SHA instead of the commit it points to made
+  Scorecard's publish step silently reject results as an "imposter commit").
+  Checked magewiki isn't already affected before porting this as pure
+  insurance, not a fix for a live bug: every one of magewiki's own SHA pins
+  was resolved via `gh api repos/{owner}/{repo}/commits/{tag}`, confirmed
+  live against `ossf/scorecard-action@v2.5.0` itself to already dereference
+  the tag to the real commit (`46dc3187...` the tag object vs `fa7117db...`
+  the actual commit magewiki has pinned) -- `git ls-remote`, the method that
+  bit ordo, wasn't used here. `workflow_dispatch` (manual re-run without
+  waiting on the weekly cron) and a `concurrency` group ported too.
+- The same `concurrency` group (cancel a superseded run on the same ref,
+  `cancel-in-progress: true`) added to `actionlint.yml`,
+  `dependency-review.yml`, `link-check.yml`, `typos.yml` -- `ci.yml`/
+  `codeql.yml` already had one; pure CI-cost hygiene, zero behavior change.
+- New `markdownlint.yml` + `.markdownlint-cli2.yaml`, adapted rather than
+  copied verbatim: ordo's config disables MD033 (inline HTML)/MD036
+  (emphasis-as-heading) for its own README hero image and `**B2B**`-as-divider
+  patterns that don't exist in magewiki's docs (checked via grep before
+  deciding not to port those two) -- magewiki's config only disables MD013
+  (line-length, for CLAUDE.md's prose and wide Phase-plan table) and MD060
+  (table-column-style, same table). Verified locally (`npx
+  markdownlint-cli2@0.18.1`, not just assumed from reading the config) against
+  the real tree: the only real finding is a handful of bare `localhost` URLs
+  in README.md, left as-is since the job is `continue-on-error: true` by
+  design (same "first pass, tune later" posture ordo's own version documents)
+  -- `php-analyzer/vendor/**` noise seen in that local run doesn't reach the
+  real CI job at all, confirmed via `git check-ignore`, since that directory
+  is gitignored (only `composer.lock` is committed) and never exists in a
+  fresh checkout.
+- `SECURITY.md`: new "Verifying a release" section (`cosign verify-blob`
+  usage, `--certificate-identity-regexp` pinned to this repo), adapted from
+  ordo's own equivalent section now that `release.yml` actually produces
+  the same `<repo>-<version>.tar.gz` + `.sigstore.json` pair ordo's section
+  already documents how to check.
+
+Explicitly not ported, and why: ordo's CHANGELOG-driven auto-cut-on-green-CI
+release automation (`scripts/tag-and-release.sh`/`is-tagged.sh`/`ci-green.sh`,
+fired via `workflow_call` from ordo's own CI workflows) -- magewiki's
+releases are curated prose per merged PR, not CHANGELOG-section-driven, and
+adopting ordo's flow would force a process change nobody asked for, same
+reasoning already recorded for `release.yml` itself above. Also not ported:
+ordo's `update-site` job (WIF-authenticated Claude API call that rewrites a
+release's notes for a public marketing site and auto-merges a PR onto
+`ordo-site` -- no equivalent site exists for magewiki), composer-cache/
+docs-only-skip/PHP-8.6-preview-matrix/`packages.sury.org` CI tuning and the
+MFTF/ZAP/debug-wif workflows (all Magento-PHP-stack-specific; magewiki's
+`php-analyzer` sidecar doesn't run a PHP test suite or Magento integration
+tests), GOVERNANCE.md/a documented backup-maintainer arrangement (real
+OpenSSF-adjacent hardening, but premature -- `moston`'s collaborator invite
+is still pending, not yet an active second maintainer to document), and
+nikic/php-fuzzer (PHP-specific; magewiki's own Atheris/ClusterFuzzLite setup
+added earlier in this same pass already covers the equivalent ground for its
+own Python parsers).
