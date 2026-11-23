@@ -25,11 +25,20 @@ outside contributions.
 | Role | Who | Responsibilities |
 |---|---|---|
 | Maintainer | Michał Per | Final say on direction, code review, merging PRs, cutting releases, triaging issues, responding to security reports (see [SECURITY.md](SECURITY.md)) |
+| Collaborator | [moston](https://github.com/moston) | Write access to the repository — can accept pull requests, triage and close issues, and cut a release if the maintainer is unavailable. Not involved in project direction/decisions. |
 
-This project doesn't yet have a second maintainer with commit access and
-release authority, so it currently has a bus factor of 1 — if the
-maintainer becomes unavailable, nobody else can create releases, accept
-PRs, or respond to a vulnerability report until that's resolved.
+### Continuity
+
+The collaborator above has repository `push` access (confirmed: not
+restricted by branch protection beyond the same required status checks
+everyone, including the maintainer, goes through), which is enough to keep
+the three things that matter most running if the maintainer becomes
+unavailable: accepting pull requests, triaging/closing issues, and cutting
+a release. What they don't have: admin access to repository settings or
+secrets (CI tokens, deployment credentials), and no decision-making
+authority over project direction — that stays with the maintainer. This is
+a real, if partial, answer to bus-factor risk, not a claim of a fully
+redundant second maintainer.
 
 ## How this changes
 

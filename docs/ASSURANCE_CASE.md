@@ -128,8 +128,12 @@ closed (not raising) for a malformed or wrong-typed value.
   distrusted, which is handled) is a known, generally-unsolved class of
   risk for any LLM-backed tool and isn't specifically mitigated beyond the
   anti-hallucination/fact-separation design above.
-- **Solo maintainer, bus factor 1** — see `GOVERNANCE.md`. A security fix
-  depends on the one maintainer being available.
+- **Decision authority is still solo** — see `GOVERNANCE.md`. A second
+  collaborator has write access and can keep PRs/issues/releases moving if
+  the maintainer is unavailable, but has no admin access to CI
+  secrets/repository settings and no say over project direction; a
+  security *fix* for anything beyond the publicly documented process still
+  depends on the maintainer being available.
 
 ## How this is kept current
 
