@@ -37,7 +37,7 @@ maintain long-term support branches for older tags.
 Every GitHub Release from `v1.12.0` onward includes a source archive
 (`magewiki-vX.Y.Z.tar.gz`) and a Sigstore bundle
 (`magewiki-vX.Y.Z.tar.gz.sigstore.json`) signed keylessly with
-[cosign](https://docs.sigstore.dev/cosign/installation/) — there is no
+[cosign](https://docs.sigstore.dev/cosign/system_config/installation/) — there is no
 long-lived private signing key anywhere; the certificate is short-lived and
 tied to the identity that signed it (this repo's own `release.yml` workflow
 run, via GitHub Actions' own OIDC token).
