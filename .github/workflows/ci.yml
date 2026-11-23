@@ -30,6 +30,32 @@ env:
   REDIS_URL: redis://localhost:6379/0
 
 jobs:
+  changes:
+    # Detects whether this push/PR could actually affect k8s-smoke's own
+    # result, so that job (the single slowest in this workflow -- a real
+    # `kind` cluster bring-up, ~5 minutes) only runs when something it
+    # actually exercises changed, instead of on every single push
+    # regardless of diff. Not a required status check (see the note on
+    # concurrency above), so skipping it changes nothing about what's
+    # required to merge -- it still runs for real whenever k8s/ or any of
+    # the 3 Dockerfiles/docker-compose.yml change, same coverage as before
+    # for the changes that could actually break it.
+    runs-on: ubuntu-latest
+    outputs:
+      k8s: ${{ steps.filter.outputs.k8s }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+      - uses: dorny/paths-filter@ceb8a2b8f2d89434be7ff52d3de7ec3738c5cc9d # v4.0.3
+        id: filter
+        with:
+          filters: |
+            k8s:
+              - 'k8s/**'
+              - 'docker-compose.yml'
+              - 'backend/Dockerfile'
+              - 'frontend/Dockerfile'
+              - 'php-analyzer/Dockerfile'
+
   backend:
     runs-on: ubuntu-latest
     services:
@@ -446,11 +472,16 @@ jobs:
   k8s-smoke:
     # Phase 8's own "done when" bar is "full stack runs on a local cluster" --
     # until now that was only ever checked by hand (README's own kind recipe).
-    # This job runs that exact recipe for real on every push/PR, so a broken
-    # Kustomize manifest (bad YAML, a configmap key renamed in api.yaml but not
-    # configmap.yaml, a Service/Deployment selector mismatch, etc.) fails CI
-    # instead of shipping silently.
-    needs: docker-build
+    # This job runs that exact recipe for real whenever something it actually
+    # exercises changes (see the `changes` job above -- k8s/, the 3
+    # Dockerfiles, or docker-compose.yml), so a broken Kustomize manifest (bad
+    # YAML, a configmap key renamed in api.yaml but not configmap.yaml, a
+    # Service/Deployment selector mismatch, etc.) fails CI instead of shipping
+    # silently. Skipped (not removed) on a push/PR that can't have touched any
+    # of that -- the single slowest job in this workflow, not worth paying on
+    # every unrelated change.
+    needs: [docker-build, changes]
+    if: needs.changes.outputs.k8s == 'true'
     runs-on: ubuntu-latest
     # Backstop against GitHub's 6-hour default job ceiling if the kind
     # cluster or a kubectl wait ever wedges instead of just failing outright.
