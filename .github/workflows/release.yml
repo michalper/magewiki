@@ -1,52 +1,57 @@
-name: Release
+name: Sign release
 
-# Cuts a signed GitHub Release from a pushed vX.Y.Z tag: a source archive plus
-# its SLSA/Sigstore build-provenance attestation, satisfying OpenSSF
-# Scorecard's Signed-Releases check (it matches release assets by filename
-# pattern only -- *.sigstore.json is one of its accepted patterns -- not by
-# verifying the signature itself).
+# This repo's releases (v1.0.0 -> ...) are cut by hand/by a Claude session
+# after each merged PR, each with its own hand-written changelog body --
+# not by tag-push automation, and deliberately not replaced by one here (a
+# generic auto-generated body would be a real regression from the curated
+# per-release changelogs this project already has). This workflow only
+# attaches a signed source archive to a release that already exists: it
+# fires once that release is published, builds a source archive of its tag,
+# and signs it with cosign's keyless flow (Sigstore -- Fulcio issues a
+# short-lived certificate bound to this workflow run's own GitHub OIDC
+# identity, no persistent private key anywhere), then uploads the archive
+# and its Sigstore bundle (signature + certificate + Rekor transparency-log
+# entry, all in one file) onto that same release. Mirrors
+# projects/ordo's scripts/sign-release.sh exactly (same cosign invocation,
+# same <repo>-<version>.tar.gz(.sigstore.json) naming) -- a proven pattern
+# in a sibling project by the same author, not a new one invented here.
+# Satisfies OpenSSF Scorecard's Signed-Releases check, which matches
+# release assets by filename pattern (*.sigstore.json is one of its
+# accepted patterns) rather than verifying the signature itself.
 
 on:
-  push:
-    tags:
-      - "v*"
+  release:
+    types: [published]
 
 permissions:
   contents: read
 
 jobs:
-  release:
+  sign:
     runs-on: ubuntu-latest
     permissions:
       contents: write
-      id-token: write
-      attestations: write
+      id-token: write # cosign's keyless signing exchanges this for a short-lived Sigstore cert
+    env:
+      # The release event's own ref/GITHUB_REF_NAME isn't reliably the tag
+      # (unlike a tag-push trigger) -- github.event.release.tag_name is the
+      # one field this event actually guarantees, so every step below uses
+      # this instead.
+      TAG: ${{ github.event.release.tag_name }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
-
-      - name: Build source archive
-        run: |
-          mkdir -p dist
-          git archive --format=tar.gz \
-            --prefix="magewiki-${GITHUB_REF_NAME#v}/" \
-            -o "dist/magewiki-${GITHUB_REF_NAME}.tar.gz" \
-            HEAD
-
-      - name: Generate SLSA build provenance attestation
-        id: attest
-        uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
         with:
-          subject-path: dist/magewiki-${{ github.ref_name }}.tar.gz
+          ref: ${{ github.event.release.tag_name }}
 
-      - name: Name the attestation bundle for Scorecard's Signed-Releases check
-        run: cp "${{ steps.attest.outputs.bundle-path }}" "dist/magewiki-${GITHUB_REF_NAME}.tar.gz.sigstore.json"
+      - uses: sigstore/cosign-installer@756fe2d284c7292c4e9b62c8a28f1e5629c59532 # v4.1.3
 
-      - name: Create GitHub Release
+      - name: Build, sign, and upload the source archive
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          gh release create "$GITHUB_REF_NAME" \
-            "dist/magewiki-${GITHUB_REF_NAME}.tar.gz" \
-            "dist/magewiki-${GITHUB_REF_NAME}.tar.gz.sigstore.json" \
-            --title "$GITHUB_REF_NAME" \
-            --generate-notes
+          archive="magewiki-${TAG}.tar.gz"
+          bundle="$archive.sigstore.json"
+
+          git archive --format=tar.gz --prefix="magewiki-${TAG#v}/" -o "$archive" HEAD
+          cosign sign-blob --yes --bundle "$bundle" "$archive"
+          gh release upload "$TAG" "$archive" "$bundle"
