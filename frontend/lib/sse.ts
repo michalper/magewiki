@@ -1,4 +1,4 @@
-import { AccessTokenRequiredError, getStoredAccessToken } from "@/lib/access-token";
+import { throwIfAccessTokenRequired, withAccessToken } from "@/lib/access-token";
 
 export function parseSseBlock<T extends { event: string }>(block: string): T | null {
   const lines = block.split("\n");
@@ -29,8 +29,7 @@ export async function streamSse<T extends { event: string }>(
   signal?: AbortSignal,
 ): Promise<void> {
   const headers = new Headers({ "Content-Type": "application/json" });
-  const token = getStoredAccessToken();
-  if (token) headers.set("X-Access-Token", token);
+  withAccessToken(headers);
 
   const res = await fetch(url, {
     method: "POST",
@@ -38,7 +37,7 @@ export async function streamSse<T extends { event: string }>(
     body: JSON.stringify(body),
     signal,
   });
-  if (res.status === 401) throw new AccessTokenRequiredError();
+  throwIfAccessTokenRequired(res);
   if (!res.ok || !res.body) {
     throw new Error(`API responded with ${res.status}`);
   }

@@ -1,9 +1,7 @@
 import re
-from pathlib import Path
 
 from tree_sitter import Node
 
-from app.scanner.discovery import walk_module_source_files
 from app.scanner.dto import QualityFinding
 from app.scanner.php_parser import node_text, parse_php
 
@@ -26,8 +24,7 @@ def _symbol_name(node: Node, source: bytes) -> str:
     return node_text(name_node, source) if name_node is not None else node.type
 
 
-def _scan_file(path: Path, relative_file_path: str) -> list[QualityFinding]:
-    source = path.read_bytes()
+def _scan_source(source: bytes, relative_file_path: str) -> list[QualityFinding]:
     tree = parse_php(source)
     findings: list[QualityFinding] = []
 
@@ -55,12 +52,19 @@ def _scan_file(path: Path, relative_file_path: str) -> list[QualityFinding]:
     return findings
 
 
-def scan_deprecated_annotations(module_root: Path) -> list[QualityFinding]:
+def scan_deprecated_annotations(php_sources: dict[str, bytes]) -> list[QualityFinding]:
+    """Takes the module's already-read file bytes (see discovery.py's
+    read_module_source_files, the single place every file is read from disk
+    per scan) instead of re-walking and re-reading every file itself. No
+    try/except here, unlike the old disk-reading version: tree-sitter is
+    error-tolerant by construction (malformed syntax becomes an ERROR node,
+    never an exception) and node_text() decodes with errors="replace", so
+    there's nothing left for _scan_source() to raise on already-in-memory
+    bytes -- the only exception the old code actually caught was a disk-level
+    OSError for a file that vanished mid-walk, which can't happen here since
+    nothing in this function touches disk anymore.
+    """
     findings: list[QualityFinding] = []
-    for php_file in walk_module_source_files(module_root):
-        relative_file_path = str(php_file.relative_to(module_root))
-        try:
-            findings.extend(_scan_file(php_file, relative_file_path))
-        except (SyntaxError, UnicodeDecodeError, OSError):
-            continue
+    for relative_file_path, source in php_sources.items():
+        findings.extend(_scan_source(source, relative_file_path))
     return findings

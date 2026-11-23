@@ -1,13 +1,12 @@
 import json
 import logging
 import uuid
-from decimal import Decimal
 
 import litellm
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.analyzer.budget import is_budget_exceeded
-from app.analyzer.pricing import compute_cost_usd
+from app.analyzer.pricing import resolve_llm_cost
 from app.analyzer.prompts import QUERY_REWRITE_PROMPT_VERSION, build_query_rewrite_prompt
 from app.models import AnalysisCache
 from app.observability import LLM_CALL_COST_USD, LLM_CALLS_TOTAL
@@ -72,14 +71,7 @@ async def rewrite_query(session: AsyncSession, query: str) -> str:
 async def _persist_query_rewrite_cost(session: AsyncSession, response, model: str) -> None:
     tokens_in = response.usage.prompt_tokens
     tokens_out = response.usage.completion_tokens
-    cost: Decimal | None = None
-    try:
-        raw_cost = litellm.completion_cost(completion_response=response)
-        cost = Decimal(str(raw_cost)) if raw_cost else None
-    except Exception:  # noqa: BLE001 - cost computation must never block search
-        cost = None
-    if not cost or cost <= 0:
-        cost = compute_cost_usd(model, tokens_in, tokens_out)
+    cost = resolve_llm_cost(response, model, tokens_in, tokens_out)
 
     LLM_CALLS_TOTAL.labels(model, "query_rewrite").inc()
     LLM_CALL_COST_USD.labels(model, "query_rewrite").observe(float(cost))

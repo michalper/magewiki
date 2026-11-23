@@ -7,7 +7,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.analyzer.budget import BudgetExceededError, is_budget_exceeded
 from app.analyzer.cache import get_or_create_cache_entry, lookup_cache
 from app.analyzer.client import LlmCallResult
-from app.analyzer.pricing import compute_cost_usd
+from app.analyzer.pricing import resolve_llm_cost
 from app.analyzer.prompts import EMBEDDING_PROMPT_VERSION
 from app.analyzer.schemas import ModuleDoc
 from app.observability import LLM_CALL_COST_USD, LLM_CALLS_TOTAL
@@ -23,15 +23,7 @@ async def embed_text(
     response = await litellm.aembedding(model=model, api_key=api_key, api_base=api_base, input=[text])
     vector = response.data[0]["embedding"]
     tokens_in = response.usage.prompt_tokens
-
-    cost: Decimal | None = None
-    try:
-        raw_cost = litellm.completion_cost(completion_response=response)
-        cost = Decimal(str(raw_cost)) if raw_cost else None
-    except Exception:  # noqa: BLE001 - cost computation must never block embedding
-        cost = None
-    if not cost or cost <= 0:
-        cost = compute_cost_usd(model, tokens_in, 0)
+    cost = resolve_llm_cost(response, model, tokens_in, 0)
 
     LLM_CALLS_TOTAL.labels(model, "embedding").inc()
     LLM_CALL_COST_USD.labels(model, "embedding").observe(float(cost))
@@ -73,14 +65,7 @@ async def embed_texts_batch(
     vectors = [item["embedding"] for _i, item in ordered]
 
     total_tokens = response.usage.prompt_tokens
-    total_cost: Decimal | None = None
-    try:
-        raw_cost = litellm.completion_cost(completion_response=response)
-        total_cost = Decimal(str(raw_cost)) if raw_cost else None
-    except Exception:  # noqa: BLE001 - cost computation must never block embedding
-        total_cost = None
-    if not total_cost or total_cost <= 0:
-        total_cost = compute_cost_usd(model, total_tokens, 0)
+    total_cost = resolve_llm_cost(response, model, total_tokens, 0)
 
     LLM_CALLS_TOTAL.labels(model, "embedding").inc()
     LLM_CALL_COST_USD.labels(model, "embedding").observe(float(total_cost))

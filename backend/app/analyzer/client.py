@@ -9,7 +9,7 @@ import litellm
 from pydantic import ValidationError
 
 from app.analyzer.facts import ModuleFacts
-from app.analyzer.pricing import compute_cost_usd
+from app.analyzer.pricing import resolve_llm_cost
 from app.analyzer.prompts import build_file_summary_prompt, build_module_synthesis_prompt
 from app.analyzer.schemas import FileSummary, ModuleDoc
 from app.observability import LLM_CALL_COST_USD, LLM_CALLS_TOTAL
@@ -45,14 +45,7 @@ def _result_from_response(response, response_json: dict, model: str) -> LlmCallR
     tokens_in = response.usage.prompt_tokens
     tokens_out = response.usage.completion_tokens
 
-    cost: Decimal | None = None
-    try:
-        raw_cost = litellm.completion_cost(completion_response=response)
-        cost = Decimal(str(raw_cost)) if raw_cost else None
-    except Exception:  # noqa: BLE001 - cost computation must never block analysis
-        cost = None
-    if not cost or cost <= 0:
-        cost = compute_cost_usd(model, tokens_in, tokens_out)
+    cost = resolve_llm_cost(response, model, tokens_in, tokens_out)
 
     LLM_CALLS_TOTAL.labels(model, "completion").inc()
     LLM_CALL_COST_USD.labels(model, "completion").observe(float(cost))

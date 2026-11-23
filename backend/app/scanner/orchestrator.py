@@ -214,6 +214,64 @@ class _ParsedModule:
     cache_types: list[CacheTypeEntry]
 
 
+def _parse_module(d: DiscoveredModule) -> _ParsedModule:
+    """Phase A's per-module parsing: module.xml/composer.json/di.xml/etc., all
+    synchronous lxml parses and small file reads. Run via asyncio.to_thread by
+    the caller so one module's disk I/O doesn't stall every other concurrent
+    coroutine (other modules' DB work, SSE progress streaming) -- the same
+    reasoning Phase B already applies to its own blocking calls further down.
+    """
+    module_xml = parse_module_xml(d.root / "etc" / "module.xml")
+    composer = parse_composer_json(d.root / "composer.json")
+    di = parse_di_xml(d.root / "etc" / "di.xml")
+    events = parse_events_xml(d.root / "etc" / "events.xml")
+    graphql = parse_graphql_schema(d.root / "etc" / "schema.graphqls")
+    cron_jobs = parse_crontab_xml(d.root / "etc" / "crontab.xml")
+    webapi_routes = parse_webapi_xml(d.root / "etc" / "webapi.xml")
+    config_fields = parse_system_xml(d.root / "etc" / "adminhtml" / "system.xml")
+    db_tables, db_columns = parse_db_schema_xml(d.root / "etc" / "db_schema.xml")
+    queue_bindings = parse_queue_config(
+        d.root / "etc" / "communication.xml",
+        d.root / "etc" / "queue_topology.xml",
+        d.root / "etc" / "queue_consumer.xml",
+    )
+    acl_resources = parse_acl_xml(d.root / "etc" / "acl.xml")
+    indexers = parse_indexer_xml(d.root / "etc" / "indexer.xml")
+    mviews = parse_mview_xml(d.root / "etc" / "mview.xml")
+    routes = [
+        *parse_routes_xml(d.root / "etc" / "frontend" / "routes.xml", "frontend"),
+        *parse_routes_xml(d.root / "etc" / "adminhtml" / "routes.xml", "adminhtml"),
+    ]
+    widgets = [
+        *parse_widget_xml(d.root / "view" / "base" / "widget.xml"),
+        *parse_widget_xml(d.root / "view" / "frontend" / "widget.xml"),
+        *parse_widget_xml(d.root / "view" / "adminhtml" / "widget.xml"),
+    ]
+    menu_items = parse_menu_xml(d.root / "etc" / "adminhtml" / "menu.xml")
+    cache_types = parse_cache_xml(d.root / "etc" / "cache.xml")
+    return _ParsedModule(
+        discovered=d,
+        module_xml=module_xml,
+        composer=composer,
+        di=di,
+        events=events,
+        graphql=graphql,
+        cron_jobs=cron_jobs,
+        webapi_routes=webapi_routes,
+        config_fields=config_fields,
+        db_tables=db_tables,
+        db_columns=db_columns,
+        queue_bindings=queue_bindings,
+        acl_resources=acl_resources,
+        indexers=indexers,
+        mviews=mviews,
+        routes=routes,
+        widgets=widgets,
+        menu_items=menu_items,
+        cache_types=cache_types,
+    )
+
+
 async def scan_repository(repo_root: str, session: AsyncSession) -> ScanResult:
     """Non-streaming callers (cron, webhook, CLI, evaluation) — drains
     scan_repository_events() and returns just the final result, same contract
@@ -376,8 +434,15 @@ async def _run_scan(root: Path, session: AsyncSession) -> AsyncIterator[dict]:
 
     for d in discovered:
         try:
-            module_xml = parse_module_xml(d.root / "etc" / "module.xml")
-        except InvalidModuleXmlError as exc:
+            # Off the event loop: ~20 lxml parses and file reads per module,
+            # strictly more blocking I/O than Phase B's single to_thread call
+            # below, so it gets the same treatment for the same reason.
+            pm = await asyncio.to_thread(_parse_module, d)
+        except (InvalidModuleXmlError, OSError) as exc:
+            # OSError: each parser already checks .is_file() before reading, but a
+            # permission error or a race (file removed/replaced between that check
+            # and the read) still raises OSError uncaught — without this, it would
+            # abort scanning every remaining module in the store, not just this one.
             message = f"{d.relative_path}: {exc}"
             result.warnings.append(message)
             processed += 1
@@ -391,79 +456,9 @@ async def _run_scan(root: Path, session: AsyncSession) -> AsyncIterator[dict]:
             }
             continue
 
-        try:
-            composer = parse_composer_json(d.root / "composer.json")
-            di = parse_di_xml(d.root / "etc" / "di.xml")
-            events = parse_events_xml(d.root / "etc" / "events.xml")
-            graphql = parse_graphql_schema(d.root / "etc" / "schema.graphqls")
-            cron_jobs = parse_crontab_xml(d.root / "etc" / "crontab.xml")
-            webapi_routes = parse_webapi_xml(d.root / "etc" / "webapi.xml")
-            config_fields = parse_system_xml(d.root / "etc" / "adminhtml" / "system.xml")
-            db_tables, db_columns = parse_db_schema_xml(d.root / "etc" / "db_schema.xml")
-            queue_bindings = parse_queue_config(
-                d.root / "etc" / "communication.xml",
-                d.root / "etc" / "queue_topology.xml",
-                d.root / "etc" / "queue_consumer.xml",
-            )
-            acl_resources = parse_acl_xml(d.root / "etc" / "acl.xml")
-            indexers = parse_indexer_xml(d.root / "etc" / "indexer.xml")
-            mviews = parse_mview_xml(d.root / "etc" / "mview.xml")
-            routes = [
-                *parse_routes_xml(d.root / "etc" / "frontend" / "routes.xml", "frontend"),
-                *parse_routes_xml(d.root / "etc" / "adminhtml" / "routes.xml", "adminhtml"),
-            ]
-            widgets = [
-                *parse_widget_xml(d.root / "view" / "base" / "widget.xml"),
-                *parse_widget_xml(d.root / "view" / "frontend" / "widget.xml"),
-                *parse_widget_xml(d.root / "view" / "adminhtml" / "widget.xml"),
-            ]
-            menu_items = parse_menu_xml(d.root / "etc" / "adminhtml" / "menu.xml")
-            cache_types = parse_cache_xml(d.root / "etc" / "cache.xml")
-        except OSError as exc:
-            # Each parser already checks .is_file() before reading, but a
-            # permission error or a race (file removed/replaced between that
-            # check and the read) still raises OSError uncaught — without this,
-            # it would abort scanning every remaining module in the store, not
-            # just this one (unlike module_xml's own try/except above, scoped
-            # per-module from the start).
-            message = f"{d.relative_path}: {exc}"
-            result.warnings.append(message)
-            processed += 1
-            yield {
-                "event": "module",
-                "name": str(d.relative_path),
-                "status": "error",
-                "index": processed,
-                "total": len(discovered),
-                "warning": message,
-            }
-            continue
-
-        parsed.append(
-            _ParsedModule(
-                discovered=d,
-                module_xml=module_xml,
-                composer=composer,
-                di=di,
-                events=events,
-                graphql=graphql,
-                cron_jobs=cron_jobs,
-                webapi_routes=webapi_routes,
-                config_fields=config_fields,
-                db_tables=db_tables,
-                db_columns=db_columns,
-                queue_bindings=queue_bindings,
-                acl_resources=acl_resources,
-                indexers=indexers,
-                mviews=mviews,
-                routes=routes,
-                widgets=widgets,
-                menu_items=menu_items,
-                cache_types=cache_types,
-            )
-        )
-        all_plugin_classes.update(p.plugin_class for p in di.plugins)
-        all_observer_classes.update(e.observer_class for e in events)
+        parsed.append(pm)
+        all_plugin_classes.update(p.plugin_class for p in pm.di.plugins)
+        all_observer_classes.update(e.observer_class for e in pm.events)
 
     # Phase B: catalog PHP classes, diff file hashes, and persist each module in
     # its own savepoint, committing immediately after — so it's visible to any
@@ -1338,8 +1333,8 @@ async def _persist_module(
             *check_license_risk(
                 pm.composer.license if pm.composer else None, settings.license_risk_prefix_tuple
             ),
-            *scan_deprecated_annotations(pm.discovered.root),
-            *scan_hardcoded_secrets(pm.discovered.root),
+            *scan_deprecated_annotations(php_sources),
+            *scan_hardcoded_secrets(php_sources),
             *find_missing_acl(classes),
             *session_findings,
             *php_static_findings,

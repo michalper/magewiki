@@ -1,11 +1,11 @@
 import hashlib
 import hmac
 import json
-import os
 
 from fastapi import APIRouter, HTTPException, Request
 from pydantic import BaseModel
 
+from app.api.routes.modules import _validate_scan_path
 from app.config import settings
 from app.tasks.queue import get_arq_pool
 
@@ -40,10 +40,15 @@ async def webhook_scan(request: Request) -> WebhookScanResponse:
         raise HTTPException(status_code=400, detail="invalid JSON body") from exc
 
     path = payload.get("path")
-    # Same real access-control gate as POST /scan[/stream] — settings.scan_roots was
-    # previously only surfaced as UI text, never actually enforced here either.
-    if not path or not settings.is_within_scan_roots(path) or not os.path.isdir(path):
+    # Untrusted JSON, unlike POST /scan[/stream]'s validated Pydantic field -- path
+    # may be missing/empty/not a string, which _validate_scan_path below doesn't
+    # itself guard against. The containment+isdir check past that point is the
+    # same real access-control gate as POST /scan[/stream] (_validate_scan_path),
+    # kept in one place after a past incident where it drifted between two
+    # independent copies — see the project-decision-log skill.
+    if not path:
         raise HTTPException(status_code=400, detail=f"not a directory: {path}")
+    _validate_scan_path(path)
 
     pool = await get_arq_pool()
     # arq's _job_id dedup covers both a still-queued/in-progress job AND one whose

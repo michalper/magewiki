@@ -1,4 +1,5 @@
 from collections.abc import Awaitable, Callable, Sequence
+from functools import wraps
 from typing import Any, cast
 
 from sqlalchemy import ColumnElement, TextClause, bindparam, func, select, text
@@ -41,6 +42,23 @@ _RERANK_CANDIDATE_POOL = 20
 _IDENTIFIER_MATCH_LIMIT = 50
 
 
+def _module_tool(fn: Callable[..., Awaitable[dict]]) -> Callable[..., Awaitable[dict]]:
+    """Every tool below that takes a `module_id` wants the exact same thing first:
+    fetch the Module, or short-circuit with {"found": False} on a miss. Doing that
+    fetch-and-check once here, instead of copy-pasted into each tool, means the
+    wrapped function receives an already-resolved `module` instead of `module_id`.
+    """
+
+    @wraps(fn)
+    async def wrapper(session: AsyncSession, module_id: int, **kwargs: Any) -> dict:
+        module = await session.get(Module, module_id)
+        if module is None:
+            return {"found": False}
+        return await fn(session, module, **kwargs)
+
+    return wrapper
+
+
 async def search_modules(session: AsyncSession, query: str, limit: int = 10) -> dict:
     # Two independent, independently-costed optimizations over the same base
     # hybrid_search call -- rewriting reformulates the query *before*
@@ -72,13 +90,10 @@ async def search_modules(session: AsyncSession, query: str, limit: int = 10) -> 
     }
 
 
-async def get_module(session: AsyncSession, module_id: int) -> dict:
-    module = await session.get(Module, module_id)
-    if module is None:
-        return {"found": False}
-
+@_module_tool
+async def get_module(session: AsyncSession, module: Module) -> dict:
     dependencies = (
-        await session.scalars(select(ModuleDependency.depends_on_name).where(ModuleDependency.module_id == module_id))
+        await session.scalars(select(ModuleDependency.depends_on_name).where(ModuleDependency.module_id == module.id))
     ).all()
 
     result = {
@@ -92,7 +107,7 @@ async def get_module(session: AsyncSession, module_id: int) -> dict:
         "analyzed": False,
     }
 
-    doc_row = await session.scalar(select(ModuleDocument).where(ModuleDocument.module_id == module_id))
+    doc_row = await session.scalar(select(ModuleDocument).where(ModuleDocument.module_id == module.id))
     if doc_row is not None:
         doc = doc_row.doc
         result["analyzed"] = True
@@ -108,13 +123,10 @@ async def get_module(session: AsyncSession, module_id: int) -> dict:
     return result
 
 
-async def get_dependencies(session: AsyncSession, module_id: int) -> dict:
-    module = await session.get(Module, module_id)
-    if module is None:
-        return {"found": False}
-
+@_module_tool
+async def get_dependencies(session: AsyncSession, module: Module) -> dict:
     depends_on = (
-        await session.scalars(select(ModuleDependency.depends_on_name).where(ModuleDependency.module_id == module_id))
+        await session.scalars(select(ModuleDependency.depends_on_name).where(ModuleDependency.module_id == module.id))
     ).all()
     used_by = (
         await session.scalars(
@@ -132,12 +144,9 @@ async def get_dependencies(session: AsyncSession, module_id: int) -> dict:
     }
 
 
-async def get_module_findings(session: AsyncSession, module_id: int, check_type: str | None = None) -> dict:
-    module = await session.get(Module, module_id)
-    if module is None:
-        return {"found": False}
-
-    query = select(ModuleQualityFinding).where(ModuleQualityFinding.module_id == module_id)
+@_module_tool
+async def get_module_findings(session: AsyncSession, module: Module, check_type: str | None = None) -> dict:
+    query = select(ModuleQualityFinding).where(ModuleQualityFinding.module_id == module.id)
     if check_type:
         query = query.where(ModuleQualityFinding.check_type == check_type)
 
@@ -158,12 +167,9 @@ async def get_module_findings(session: AsyncSession, module_id: int, check_type:
     }
 
 
-async def find_similar_modules(session: AsyncSession, module_id: int, limit: int = 5) -> dict:
-    module = await session.get(Module, module_id)
-    if module is None:
-        return {"found": False}
-
-    similar = await _find_similar_modules(session, module_id, limit=limit)
+@_module_tool
+async def find_similar_modules(session: AsyncSession, module: Module, limit: int = 5) -> dict:
+    similar = await _find_similar_modules(session, module.id, limit=limit)
     return {
         "found": True,
         "module_name": module.name,
@@ -174,15 +180,12 @@ async def find_similar_modules(session: AsyncSession, module_id: int, limit: int
     }
 
 
-async def get_module_history(session: AsyncSession, module_id: int, limit: int = 10) -> dict:
-    module = await session.get(Module, module_id)
-    if module is None:
-        return {"found": False}
-
+@_module_tool
+async def get_module_history(session: AsyncSession, module: Module, limit: int = 10) -> dict:
     rows = (
         await session.scalars(
             select(ModuleHistorySnapshot)
-            .where(ModuleHistorySnapshot.module_id == module_id)
+            .where(ModuleHistorySnapshot.module_id == module.id)
             .order_by(ModuleHistorySnapshot.scanned_at.desc())
             .limit(limit)
         )
@@ -203,12 +206,9 @@ async def get_module_history(session: AsyncSession, module_id: int, limit: int =
     }
 
 
-async def get_module_dependency_graph(session: AsyncSession, module_id: int, depth: int = 1) -> dict:
-    module = await session.get(Module, module_id)
-    if module is None:
-        return {"found": False}
-
-    graph = await _get_module_dependency_graph(module_id, depth, session)
+@_module_tool
+async def get_module_dependency_graph(session: AsyncSession, module: Module, depth: int = 1) -> dict:
+    graph = await _get_module_dependency_graph(module.id, depth, session)
     return {
         "found": True,
         "center_label": graph.center_label,

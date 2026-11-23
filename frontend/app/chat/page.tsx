@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { memo, useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { Info } from "lucide-react";
 import ReactMarkdown, { type Components } from "react-markdown";
@@ -117,6 +117,42 @@ function SourceChips({ sources }: { sources: Source[] }) {
     </div>
   );
 }
+
+// Memoized so the SSE token stream's frequent setMessages calls -- one per
+// raw LLM chunk, see app/agent/loop.py's own streaming loop -- only re-render
+// the one bubble whose content actually changed (the last, still-streaming
+// message) instead of re-mounting every past turn's ReactMarkdown on every
+// tick. Earlier messages keep the same object reference across updates (see
+// runChat's setMessages reducer below), so React.memo's default shallow prop
+// comparison already bails out correctly for them.
+const MessageBubble = memo(function MessageBubble({ message }: { message: DisplayMessage }) {
+  return (
+    <div
+      className={
+        message.role === "user"
+          ? "self-end bg-primary text-primary-foreground rounded-2xl px-4 py-2 max-w-[80%]"
+          : "self-start bg-muted text-foreground rounded-2xl px-4 py-2 max-w-full"
+      }
+    >
+      {message.role === "assistant" ? (
+        <div className="text-sm">
+          <ReactMarkdown remarkPlugins={[remarkGfm]} components={CHAT_MARKDOWN_COMPONENTS}>
+            {message.content}
+          </ReactMarkdown>
+        </div>
+      ) : (
+        <p className="whitespace-pre-wrap text-sm">{message.content}</p>
+      )}
+      {message.error && <p className="text-destructive text-sm mt-1">{message.error}</p>}
+      {message.sources && <SourceChips sources={message.sources} />}
+      {message.usage && (
+        <p className="text-muted-foreground/70 text-xs mt-1">
+          {message.usage.tokensIn + message.usage.tokensOut} tokens · {formatCostUsd(message.usage.costUsd)}
+        </p>
+      )}
+    </div>
+  );
+});
 
 export default function ChatPage() {
   useDocumentTitle("Chat");
@@ -256,31 +292,7 @@ export default function ChatPage() {
           </p>
         )}
         {messages.map((m, i) => (
-          <div
-            key={i}
-            className={
-              m.role === "user"
-                ? "self-end bg-primary text-primary-foreground rounded-2xl px-4 py-2 max-w-[80%]"
-                : "self-start bg-muted text-foreground rounded-2xl px-4 py-2 max-w-full"
-            }
-          >
-            {m.role === "assistant" ? (
-              <div className="text-sm">
-                <ReactMarkdown remarkPlugins={[remarkGfm]} components={CHAT_MARKDOWN_COMPONENTS}>
-                  {m.content}
-                </ReactMarkdown>
-              </div>
-            ) : (
-              <p className="whitespace-pre-wrap text-sm">{m.content}</p>
-            )}
-            {m.error && <p className="text-destructive text-sm mt-1">{m.error}</p>}
-            {m.sources && <SourceChips sources={m.sources} />}
-            {m.usage && (
-              <p className="text-muted-foreground/70 text-xs mt-1">
-                {m.usage.tokensIn + m.usage.tokensOut} tokens · {formatCostUsd(m.usage.costUsd)}
-              </p>
-            )}
-          </div>
+          <MessageBubble key={i} message={m} />
         ))}
       </div>
 

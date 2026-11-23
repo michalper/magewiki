@@ -68,7 +68,7 @@ async def test_embed_text_falls_back_to_computed_cost_when_litellm_raises(monkey
 
     monkeypatch.setattr("app.analyzer.embeddings.litellm.aembedding", fake_aembedding)
     monkeypatch.setattr("app.analyzer.embeddings.litellm.completion_cost", raising_cost)
-    monkeypatch.setattr("app.analyzer.embeddings.compute_cost_usd", lambda model, tin, tout: Decimal("0.0001"))
+    monkeypatch.setattr("app.analyzer.pricing.compute_cost_usd", lambda model, tin, tout: Decimal("0.0001"))
 
     _vector, result = await embed_text("some text", model="openai/text-embedding-3-small", api_key="k")
 
@@ -82,7 +82,7 @@ async def test_embed_text_falls_back_to_computed_cost_when_litellm_returns_zero(
 
     monkeypatch.setattr("app.analyzer.embeddings.litellm.aembedding", fake_aembedding)
     monkeypatch.setattr("app.analyzer.embeddings.litellm.completion_cost", lambda **k: 0)
-    monkeypatch.setattr("app.analyzer.embeddings.compute_cost_usd", lambda model, tin, tout: Decimal("0.0002"))
+    monkeypatch.setattr("app.analyzer.pricing.compute_cost_usd", lambda model, tin, tout: Decimal("0.0002"))
 
     _vector, result = await embed_text("some text", model="m", api_key="k")
 
@@ -172,7 +172,7 @@ async def test_embed_texts_batch_falls_back_to_computed_cost_when_litellm_raises
 
     monkeypatch.setattr("app.analyzer.embeddings.litellm.aembedding", fake_aembedding)
     monkeypatch.setattr("app.analyzer.embeddings.litellm.completion_cost", raising_cost)
-    monkeypatch.setattr("app.analyzer.embeddings.compute_cost_usd", lambda model, tin, tout: Decimal("0.0001"))
+    monkeypatch.setattr("app.analyzer.pricing.compute_cost_usd", lambda model, tin, tout: Decimal("0.0001"))
 
     results = await embed_texts_batch(["aa", "bb"], model="m", api_key="k")
 
@@ -186,7 +186,7 @@ async def test_embed_texts_batch_falls_back_to_computed_cost_when_litellm_return
 
     monkeypatch.setattr("app.analyzer.embeddings.litellm.aembedding", fake_aembedding)
     monkeypatch.setattr("app.analyzer.embeddings.litellm.completion_cost", lambda **k: 0)
-    monkeypatch.setattr("app.analyzer.embeddings.compute_cost_usd", lambda model, tin, tout: Decimal("0.0002"))
+    monkeypatch.setattr("app.analyzer.pricing.compute_cost_usd", lambda model, tin, tout: Decimal("0.0002"))
 
     results = await embed_texts_batch(["aa", "bb"], model="m", api_key="k")
 

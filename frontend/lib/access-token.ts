@@ -28,3 +28,17 @@ export class AccessTokenRequiredError extends Error {
     this.name = "AccessTokenRequiredError";
   }
 }
+
+// Shared by apiFetch and streamSse — the stored token, if any, goes on every
+// request the same way; harmless to send on the read-only endpoints that
+// never check it (see apiFetch's own comment on why).
+export function withAccessToken(headers: Headers): void {
+  const token = getStoredAccessToken();
+  if (token) headers.set("X-Access-Token", token);
+}
+
+// Shared by apiFetch and streamSse — a 401 always means the same thing here:
+// the deployment has a write-access gate and no/the wrong token is stored.
+export function throwIfAccessTokenRequired(res: Response): void {
+  if (res.status === 401) throw new AccessTokenRequiredError();
+}

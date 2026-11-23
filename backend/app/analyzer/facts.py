@@ -24,7 +24,6 @@ from app.models import (
     ModuleRoute,
     ModuleWidget,
     PhpClass,
-    PhpClassMethod,
     QueueBinding,
     WebapiRoute,
 )
@@ -40,7 +39,6 @@ class PhpClassFact:
     is_observer: bool
     extends: list[str]
     implements: list[str]
-    methods: list[str]
 
 
 @dataclass
@@ -83,6 +81,28 @@ class ModuleFacts:
     file_analyses: list[FileAnalysisFact] = field(default_factory=list)
 
 
+async def gather_file_analyses(session: AsyncSession, module_id: int) -> list[FileAnalysisFact]:
+    """Just the per-file AI summaries, for callers (embed_chunks) that only need
+    those -- gather_module_facts below pulls ~20 other fact tables a caller that
+    only wants file summaries would otherwise fetch and discard.
+    """
+    file_analysis_rows = (
+        await session.execute(
+            select(FileAnalysis, AnalysisCache)
+            .join(AnalysisCache, FileAnalysis.cache_id == AnalysisCache.id)
+            .where(FileAnalysis.module_id == module_id)
+        )
+    ).all()
+    return [
+        FileAnalysisFact(
+            relative_path=fa.relative_path,
+            file_summary=cache.response.get("file_summary", ""),
+            notable_behavior=cache.response.get("notable_behavior"),
+        )
+        for fa, cache in file_analysis_rows
+    ]
+
+
 async def gather_module_facts(session: AsyncSession, module_id: int) -> ModuleFacts:
     module = await session.get(Module, module_id)
     if module is None:
@@ -93,24 +113,19 @@ async def gather_module_facts(session: AsyncSession, module_id: int) -> ModuleFa
     ).all()
 
     php_classes = (await session.scalars(select(PhpClass).where(PhpClass.module_id == module_id))).all()
-    php_class_facts = []
-    for c in php_classes:
-        methods = (
-            await session.scalars(select(PhpClassMethod).where(PhpClassMethod.class_id == c.id))
-        ).all()
-        php_class_facts.append(
-            PhpClassFact(
-                fqcn=c.fqcn,
-                class_name=c.class_name,
-                kind=c.kind,
-                file_path=c.file_path,
-                is_plugin=c.is_plugin,
-                is_observer=c.is_observer,
-                extends=c.extends or [],
-                implements=c.implements or [],
-                methods=[m.name for m in methods],
-            )
+    php_class_facts = [
+        PhpClassFact(
+            fqcn=c.fqcn,
+            class_name=c.class_name,
+            kind=c.kind,
+            file_path=c.file_path,
+            is_plugin=c.is_plugin,
+            is_observer=c.is_observer,
+            extends=c.extends or [],
+            implements=c.implements or [],
         )
+        for c in php_classes
+    ]
 
     preferences = (
         await session.scalars(select(DiPreference).where(DiPreference.module_id == module_id))
@@ -152,21 +167,7 @@ async def gather_module_facts(session: AsyncSession, module_id: int) -> ModuleFa
         await session.scalars(select(ModuleCacheType).where(ModuleCacheType.module_id == module_id))
     ).all()
 
-    file_analysis_rows = (
-        await session.execute(
-            select(FileAnalysis, AnalysisCache)
-            .join(AnalysisCache, FileAnalysis.cache_id == AnalysisCache.id)
-            .where(FileAnalysis.module_id == module_id)
-        )
-    ).all()
-    file_analyses = [
-        FileAnalysisFact(
-            relative_path=fa.relative_path,
-            file_summary=cache.response.get("file_summary", ""),
-            notable_behavior=cache.response.get("notable_behavior"),
-        )
-        for fa, cache in file_analysis_rows
-    ]
+    file_analyses = await gather_file_analyses(session, module_id)
 
     return ModuleFacts(
         name=module.name,

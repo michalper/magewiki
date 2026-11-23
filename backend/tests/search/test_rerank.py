@@ -140,8 +140,8 @@ async def test_rerank_results_falls_back_to_computed_cost_when_litellm_cost_fail
         raise RuntimeError("no pricing data for this model")
 
     monkeypatch.setattr("app.search.rerank.litellm.acompletion", fake_acompletion)
-    monkeypatch.setattr("app.search.rerank.litellm.completion_cost", _raising_cost)
-    monkeypatch.setattr("app.search.rerank.compute_cost_usd", lambda model, tin, tout: Decimal("0.0009"))
+    monkeypatch.setattr("app.analyzer.pricing.litellm.completion_cost", _raising_cost)
+    monkeypatch.setattr("app.analyzer.pricing.compute_cost_usd", lambda model, tin, tout: Decimal("0.0009"))
 
     await rerank_results(db_session, "some query", results, top_k=2)
 

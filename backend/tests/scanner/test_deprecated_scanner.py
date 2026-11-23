@@ -1,22 +1,20 @@
-from pathlib import Path
-
 from app.scanner.deprecated_scanner import scan_deprecated_annotations
 
 
-def test_scan_deprecated_annotations_flags_only_the_annotated_declaration(tmp_path: Path):
-    (tmp_path / "Bar.php").write_text(
-        "<?php\n"
-        "namespace A;\n"
-        "\n"
-        "/**\n"
-        " * @deprecated use Foo instead\n"
-        " */\n"
-        "class Bar {}\n"
-        "\n"
-        "class Baz {}\n"
+def test_scan_deprecated_annotations_flags_only_the_annotated_declaration():
+    source = (
+        b"<?php\n"
+        b"namespace A;\n"
+        b"\n"
+        b"/**\n"
+        b" * @deprecated use Foo instead\n"
+        b" */\n"
+        b"class Bar {}\n"
+        b"\n"
+        b"class Baz {}\n"
     )
 
-    findings = scan_deprecated_annotations(tmp_path)
+    findings = scan_deprecated_annotations({"Bar.php": source})
 
     assert len(findings) == 1
     assert findings[0].check_type == "deprecated_annotation"
@@ -25,35 +23,24 @@ def test_scan_deprecated_annotations_flags_only_the_annotated_declaration(tmp_pa
     assert "Bar" in findings[0].message
 
 
-def test_scan_deprecated_annotations_flags_a_deprecated_method(tmp_path: Path):
-    (tmp_path / "Bar.php").write_text(
-        "<?php\n"
-        "class Bar {\n"
-        "    /**\n"
-        "     * @deprecated since 2.0\n"
-        "     */\n"
-        "    public function oldMethod() {}\n"
-        "\n"
-        "    public function newMethod() {}\n"
-        "}\n"
+def test_scan_deprecated_annotations_flags_a_deprecated_method():
+    source = (
+        b"<?php\n"
+        b"class Bar {\n"
+        b"    /**\n"
+        b"     * @deprecated since 2.0\n"
+        b"     */\n"
+        b"    public function oldMethod() {}\n"
+        b"\n"
+        b"    public function newMethod() {}\n"
+        b"}\n"
     )
 
-    findings = scan_deprecated_annotations(tmp_path)
+    findings = scan_deprecated_annotations({"Bar.php": source})
 
     assert len(findings) == 1
     assert "oldMethod" in findings[0].message
 
 
-def test_scan_deprecated_annotations_with_no_annotations(tmp_path: Path):
-    (tmp_path / "Clean.php").write_text("<?php\nclass Clean {}\n")
-    assert scan_deprecated_annotations(tmp_path) == []
-
-
-def test_scan_deprecated_annotations_skips_a_file_that_vanishes_before_it_can_be_read(tmp_path: Path, monkeypatch):
-    clean = tmp_path / "Clean.php"
-    clean.write_text("<?php\nclass Clean {}\n")
-    vanished = tmp_path / "Vanished.php"
-
-    monkeypatch.setattr("app.scanner.deprecated_scanner.walk_module_source_files", lambda root: [clean, vanished])
-
-    assert scan_deprecated_annotations(tmp_path) == []
+def test_scan_deprecated_annotations_with_no_annotations():
+    assert scan_deprecated_annotations({"Clean.php": b"<?php\nclass Clean {}\n"}) == []

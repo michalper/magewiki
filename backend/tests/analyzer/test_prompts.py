@@ -95,12 +95,12 @@ def test_build_module_synthesis_prompt_includes_every_fact_category_when_populat
             PhpClassFact(
                 fqcn="Vendor\\Module\\Plugin\\SamplePlugin", class_name="SamplePlugin", kind="class",
                 file_path="Plugin/SamplePlugin.php", is_plugin=True, is_observer=False,
-                extends=[], implements=[], methods=["beforeSave"],
+                extends=[], implements=[],
             ),
             PhpClassFact(
                 fqcn="Vendor\\Module\\Model\\Plain", class_name="Plain", kind="class",
                 file_path="Model/Plain.php", is_plugin=False, is_observer=False,
-                extends=[], implements=[], methods=[],
+                extends=[], implements=[],
             ),
         ],
         file_analyses=[
@@ -153,7 +153,7 @@ def test_build_module_synthesis_prompt_marks_an_observer_role_too():
             PhpClassFact(
                 fqcn="Vendor\\Module\\Observer\\Both", class_name="Both", kind="class",
                 file_path="Observer/Both.php", is_plugin=True, is_observer=True,
-                extends=[], implements=[], methods=[],
+                extends=[], implements=[],
             )
         ]
     )

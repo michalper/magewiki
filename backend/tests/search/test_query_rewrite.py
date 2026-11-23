@@ -106,8 +106,8 @@ async def test_rewrite_query_falls_back_to_computed_cost_when_litellm_cost_fails
         raise RuntimeError("no pricing data for this model")
 
     monkeypatch.setattr("app.search.query_rewrite.litellm.acompletion", fake_acompletion)
-    monkeypatch.setattr("app.search.query_rewrite.litellm.completion_cost", _raising_cost)
-    monkeypatch.setattr("app.search.query_rewrite.compute_cost_usd", lambda model, tin, tout: Decimal("0.0004"))
+    monkeypatch.setattr("app.analyzer.pricing.litellm.completion_cost", _raising_cost)
+    monkeypatch.setattr("app.analyzer.pricing.compute_cost_usd", lambda model, tin, tout: Decimal("0.0004"))
 
     await rewrite_query(db_session, "original query")
 
