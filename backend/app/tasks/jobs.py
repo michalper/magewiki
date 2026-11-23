@@ -18,7 +18,6 @@ from app.analyzer.embeddings import (
     hash_text,
 )
 from app.analyzer.facts import (
-    gather_file_analyses,
     gather_module_facts,
     known_config_paths,
     known_sources,
@@ -300,14 +299,14 @@ async def embed_chunks(ctx: dict | None, module_id: int, module_current_hash: st
             if doc_row is None:
                 return  # synthesize_module hasn't written its doc yet — shouldn't happen, defensive no-op
 
-            file_analyses = await gather_file_analyses(session, module_id)
+            facts = await gather_module_facts(session, module_id)
             module_doc = ModuleDoc.model_validate(doc_row.doc)
 
             # Build the full target chunk set for this generation: (chunk_type, relative_path, method_id, text).
             specs: list[tuple[str, str | None, int | None, str]] = [
                 ("module", None, None, build_module_chunk_text(module_doc))
             ]
-            for fa in file_analyses:
+            for fa in facts.file_analyses:
                 specs.append(
                     ("file", fa.relative_path, None, build_file_chunk_text(fa.file_summary, fa.notable_behavior))
                 )
