@@ -1,0 +1,32 @@
+name: CIFuzz
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  schedule:
+    - cron: "0 4 * * *" # nightly batch fuzzing, same spirit as the scan cron in the app itself
+
+permissions:
+  contents: read
+
+jobs:
+  fuzzing:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+      - name: Build fuzzers
+        id: build
+        uses: google/clusterfuzzlite/actions/build_fuzzers@884713a6c30a92e5e8544c39945cd7cb630abcd1 # v1
+        with:
+          language: python
+      - name: Run fuzzers
+        uses: google/clusterfuzzlite/actions/run_fuzzers@884713a6c30a92e5e8544c39945cd7cb630abcd1 # v1
+        with:
+          fuzz-seconds: 300
+          mode: "code-change"
+          output-sarif: true
+      - uses: github/codeql-action/upload-sarif@1bd86f2fdb4b86187fa4059f16f31a3202acc9ea # v4
+        if: always()
+        with:
+          sarif_file: cifuzz-sarif/results.sarif

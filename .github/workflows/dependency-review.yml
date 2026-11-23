@@ -12,12 +12,19 @@ on:
 permissions:
   contents: read
 
+# A superseded run (an older commit on the same PR) is cancelled outright --
+# its result would never matter once a newer commit's run exists for the same
+# PR, so letting it keep consuming a runner is pure waste.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   dependency-review:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v7
-      - uses: actions/dependency-review-action@v5
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+      - uses: actions/dependency-review-action@bbc44d14a204704ccc493733616cd1e93a0321ec # v5
         with:
           # Matches this project's own pip-audit/npm-audit continue-on-error
           # posture for CVEs with no upstream fix yet (see CLAUDE.md and the

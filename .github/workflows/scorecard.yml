@@ -16,6 +16,7 @@ on:
     - cron: "20 14 * * 1"
   push:
     branches: [main]
+  workflow_dispatch:
 
 # Minimal top-level default; the analysis job below sets its own real,
 # broader needs explicitly. Scorecard's own Token-Permissions check flagged
@@ -24,6 +25,13 @@ on:
 # doesn't change what `analysis` can actually do.
 permissions:
   contents: read
+
+# A superseded run (an older commit on the same ref) is cancelled outright --
+# its result would never matter once a newer commit's run exists for the same
+# ref, so letting it keep consuming a runner is pure waste.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
   analysis:
@@ -34,22 +42,38 @@ jobs:
       contents: read
       actions: read
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
           persist-credentials: false
 
-      - uses: ossf/scorecard-action@v2.5.0
+      - uses: ossf/scorecard-action@fa7117db83c52d787ae5a89f350999701505d78e # v2.5.0
         with:
           results_file: results.sarif
           results_format: sarif
           publish_results: true
+          # A pin to an annotated tag OBJECT's own SHA instead of the commit
+          # it points to makes the publish step silently reject results as
+          # an "imposter commit" -- ordo's #425 hit exactly this. Not an
+          # issue for the pin below today (verified: `commits/{tag}` already
+          # dereferences to the real commit, unlike `git ls-remote`), but
+          # cheap defense-in-depth against a future hand-edited pin doing
+          # the same thing silently instead of loudly.
+          fail_on_publish_error: true
+          # Classic branch protection's full settings aren't readable by the
+          # default GITHUB_TOKEN at all (a GitHub API restriction, not a
+          # permissions: block setting) -- Scorecard's own docs call for a
+          # fine-grained PAT with Administration: Read-only, stored as this
+          # repo secret. Optional: an empty secrets.SCORECARD_TOKEN here is
+          # the same empty string the action already treats as "use the
+          # default token", so this is a no-op until the secret exists.
+          repo_token: ${{ secrets.SCORECARD_TOKEN }}
 
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: SARIF file
           path: results.sarif
           retention-days: 5
 
-      - uses: github/codeql-action/upload-sarif@v4
+      - uses: github/codeql-action/upload-sarif@1bd86f2fdb4b86187fa4059f16f31a3202acc9ea # v4
         with:
           sarif_file: results.sarif

@@ -1,0 +1,12 @@
+# Config for the markdownlint.yml workflow (DavidAnson/markdownlint-cli2-action). Disables rules
+# that fight this repo's own established prose style rather than catching real formatting mistakes.
+config:
+  # MD013 (line-length): CLAUDE.md, README.md, and docs/*.md are hand-wrapped prose and wide
+  # tables (e.g. CLAUDE.md's Phase plan table), not a fixed 80-col format - enforcing a line-length
+  # limit would flag nearly every paragraph and every table row in the repo.
+  MD013: false
+  # MD060 (table-column-style): CLAUDE.md's Phase plan and Architecture tables are
+  # hand-maintained with long, information-dense cells - enforcing pixel-perfect pipe alignment
+  # would mean realigning every row's pipes on every edit to any cell, for a purely cosmetic
+  # property with no effect on how the table renders.
+  MD060: false

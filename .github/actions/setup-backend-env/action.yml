@@ -15,7 +15,7 @@ runs:
     # directly, "Unable to locate executable file: poetry" on the first real run.
     - run: pipx install poetry==1.8.3
       shell: bash
-    - uses: actions/setup-python@v5
+    - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
       with:
         python-version: "3.13"
         cache: poetry

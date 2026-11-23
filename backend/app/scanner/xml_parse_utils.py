@@ -26,5 +26,9 @@ def parse_xml_root(path: Path) -> etree._Element | None:
 
     try:
         return etree.parse(str(path)).getroot()
-    except etree.XMLSyntaxError:
+    except (etree.XMLSyntaxError, OSError):
+        # lxml raises OSError, not XMLSyntaxError, for some malformed
+        # encoding declarations (e.g. a <?xml encoding=...?> that doesn't
+        # match the file's actual bytes) when parsing from a file path --
+        # found by fuzzing, not by any XML sample written by hand.
         return None

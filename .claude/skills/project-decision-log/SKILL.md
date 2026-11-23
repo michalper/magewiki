@@ -4152,3 +4152,209 @@ across branches with a different base is not proof nothing was lost --
 diff against the actual intended change set to confirm, the same
 discipline this project already applies to verifying a fix actually
 fixes something rather than trusting that a test passing means it does.
+
+**OpenSSF Scorecard follow-up (recorded 2026-11-23):** triggered by actually
+reading `https://scorecard.dev/viewer/?uri=github.com/michalper/magewiki`
+(the viewer page itself renders no data client-side; the JSON API at
+`api.securityscorecards.dev/projects/github.com/michalper/magewiki` has the
+real per-check scores) rather than assuming the badge already added to the
+README meant everything under it was fine. Overall score was 5/10 at commit
+`13989fea`. Two findings were real and fixable without touching GitHub repo
+settings:
+
+- **Vulnerabilities (scored 0, "13 known vulnerabilities")** was exactly the
+  already-tracked "Still open: filelock override removal" item above --
+  confirmed by cross-referencing the GHSA IDs Scorecard's OSV-based scan
+  reported against `gh api repos/michalper/magewiki/dependabot/alerts`: the
+  same 13 `filelock` CVEs, all already `dismissed` on GitHub's side (per the
+  `backend/Dockerfile` force-install workaround's own reasoning) but
+  Scorecard's OSV scan reads `poetry.lock` directly and doesn't know about
+  Dependabot dismissals, so the lockfile still showing `filelock==3.32.7`
+  kept scoring as vulnerable regardless. Re-checked PyPI directly rather than
+  trusting the old note that no newer litellm existed: `litellm` 1.110.2 (up
+  from the installed 1.109.1) relaxed its own pin to `filelock<5,>=3.16.1`,
+  unblocking a real `poetry update filelock` (`3.32.7` -> `4.3.0`) instead of
+  another out-of-band force-install. `backend/pyproject.toml`'s `litellm`
+  constraint bumped `^1.108` -> `^1.110`; the `backend/Dockerfile` force-install
+  step removed entirely now that `poetry install` alone resolves the fixed
+  version. Verified before considering this safe: `litellm`'s only consumers
+  in this codebase are `litellm.acompletion`/`aembedding`/`completion_cost`
+  (grepped `app/`, same high-level surface checked before the 1.108 bump
+  too), full backend suite green (913/913 real tests; the other 5 failures
+  seen in one `docker compose run --rm api pytest` pass were pre-existing
+  environment artifacts of running tests against the `api` image's own build
+  context rather than the full repo checkout -- `REPO_ROOT`-relative
+  `.env.example`/`k8s/.env.k8s.example` paths and the host-only Ordo fixture
+  path don't exist inside that image -- not a regression from this change),
+  `ruff check`/`mypy app` both clean on the real built image.
+- **Token-Permissions (scored 0)** flagged `.github/workflows/
+  dependabot-auto-merge.yml` for setting `contents: write` at the
+  *workflow* level. Fixed by moving the `permissions:` block down onto the
+  one `auto-merge` job itself (`permissions: {}` at the top, the actual
+  grants under the job) -- same effective permissions for this workflow's
+  only job, but scoped so a job added later wouldn't silently inherit
+  write access.
+
+Also fixed, not a Scorecard line item on its own but a known precondition
+for the **Pinned-Dependencies** check (scored 0, "no GitHub Actions ... pinned
+by hash"): every `uses:` line across all 8 `.github/workflows/*.yml` files
+plus `.github/actions/setup-backend-env/action.yml` (24 unique actions) now
+pins to a commit SHA with a `# vX.Y.Z` trailing comment for readability,
+resolved via `gh api repos/{owner}/{repo}/commits/{tag}`. Confirmed safe to
+maintain going forward, not a one-off: `.github/dependabot.yml` already runs
+a weekly `github-actions` ecosystem update, which tracks and bumps SHA pins
+(with the same `# vX.Y.Z` comment convention) same as it would version tags,
+and `dependabot-auto-merge.yml` already auto-merges patch/minor bumps once
+CI is green. Verified with `actionlint` (clean, exit 0) after the rewrite,
+not just visually. Explicitly left unpinned, on purpose: `alpine:edge` in
+`php-analyzer/Dockerfile` (per that file's own existing comment, `edge` is a
+rolling tag relied on specifically *because* it floats -- it's the only
+Alpine base carrying php83/84/85 side by side; digest-pinning it would
+silently freeze out exactly the packages it's chosen for) -- digest-pinning
+the other base images (`python:3.13-slim`, `node:26-slim`,
+`pgvector/pgvector:pg16`, `redis:7-alpine`) was considered but not done in
+this pass: `dependabot.yml` has no `docker` ecosystem entry, so a digest pin
+there would silently go stale with no bump mechanism, unlike the Actions
+pins above -- left as a separate decision for whoever adds that ecosystem
+entry.
+
+Two more Scorecard findings are real but are GitHub repo-settings changes,
+not code changes, and were left for the user to decide rather than applied
+silently: **Code-Review** (0/21 merged changesets approved by someone other
+than the author -- expected for a solo-maintained repo, and "fixing" it
+would mean requiring a second approver who doesn't exist) and
+**Branch-Protection** (unscored, `-1`, because Scorecard's own token can't
+read classic branch-protection rules -- not necessarily meaning none exist).
+**Maintained** (0, "created within the last 90 days") and **Contributors**
+(0, "0 contributing companies") aren't fixable by any change at all -- they
+resolve with time and real outside contributors, respectively.
+
+**Fuzzing check, added despite thin expected value for a memory-safe stack
+(recorded 2026-11-23):** the last fixable Scorecard finding from the same
+pass above, done only after flagging the real tradeoff to the user first --
+OSS-Fuzz/ClusterFuzzLite is designed around catching memory corruption in
+native code, and this project is pure Python/TypeScript, where the realistic
+payoff is "an uncaught exception on malformed input," not a new bug class.
+Added anyway (user's call) via `.clusterfuzzlite/` (Dockerfile + build.sh +
+three Atheris harnesses) and `.github/workflows/cifuzz.yml`
+(`google/clusterfuzzlite/actions/{build_fuzzers,run_fuzzers}`, SHA-pinned
+same as every other action per the pass above), targeting the parsers that
+read a scanned module's own untrusted files: `fuzz_xml_parsers.py` (every
+`parse_xml_root`-based lxml parser plus `module.xml`/`routes.xml`/
+`queue_config`), `fuzz_php_classes.py` (`parse_php_source`'s tree-sitter-php
+class/method extraction, plus `config_php`'s own tree-sitter-based array
+parser), `fuzz_graphql_schema.py` (`parse_graphql_schema`'s graphql-core
+usage). `build.sh` installs `backend/app` as a real package (`pyproject.toml`
+already declares `packages = [{ include = "app" }]`) rather than wiring
+PYTHONPATH by hand, so the harnesses import `app.scanner.*` exactly as the
+real app does.
+
+Not theoretical: the very first local `docker build -f .clusterfuzzlite/
+Dockerfile . && docker run ... bash /src/build.sh` + a 30-second fuzz run of
+`fuzz_xml_parsers` found a real bug before any CI run ever did. `lxml`
+raises `OSError` ("Invalid bytes in character encoding"), not
+`etree.XMLSyntaxError`, for some malformed encoding declarations when
+parsing from a file path -- `xml_parse_utils.parse_xml_root` and
+`module_xml.parse_module_xml` each have their own `etree.parse(str(path))`
+call and each only caught `XMLSyntaxError`, so a scanned module's XML file
+with this specific kind of corruption crashed the whole scan instead of
+failing open like every other malformed-XML case these two functions
+otherwise handle identically. Fixed by adding `OSError` to both `except`
+clauses (minimal, scoped change -- not a broad `except Exception`). Verified
+rigorously, matching this log's own established discipline for "a test
+passing isn't proof a fix fixes something": `git stash`ed just the two
+source fixes, confirmed the two new regression tests
+(`test_parse_xml_root_returns_none_for_invalid_bytes_in_the_declared_encoding`,
+`test_parse_module_xml_invalid_bytes_in_the_declared_encoding`, using a
+hand-written minimal reproducer -- `<config>\xff\xfe</config>` after a valid
+`<?xml encoding="UTF-8"?>` prolog -- confirmed byte-for-byte against the
+real fuzzer-found crash, not a guess) go red without the fix, then
+`stash pop`ped to restore it and confirmed green; full backend suite
+re-verified at 915/915 (the same 5 environment-only failures as every other
+`docker compose run --rm api pytest` invocation in this session -- missing
+repo-root-relative `.env.example`/Ordo-fixture paths inside the `api`
+image's own build context, unrelated to this change) plus clean
+`ruff`/`mypy`, and all three harnesses re-run clean for 60 real seconds each
+(190k-250k executions) after the fix. Deliberately out of scope for this
+first pass: `php_parser.py`'s raw tree-sitter-php call itself (tree-sitter
+is designed to never crash on arbitrary byte input -- fuzzing its own
+_traversal_ helpers via `parse_php_source`/`parse_config_php` above is the
+part actually worth exercising) and `discovery.py`'s filesystem-walking
+logic (needs a real directory tree as input, not a byte blob -- a
+structurally different, not yet attempted, harness shape).
+
+**Ported CI hardening from `projects/ordo` (recorded 2026-11-23):** `ordo`
+(`/Users/michalper/Projects/ordo`) is a sibling project by the same author --
+a Magento 2 PHP extension product, not this project's Python/FastAPI+Next.js
+scanner -- that's considerably further along on OpenSSF-style CI hardening.
+User-directed survey of what's portable despite the stack difference; a
+background agent read ordo's recent git log, its `.github/workflows/`, and
+its `docs/ASSURANCE_CASE.md`/`SECURITY.md`, and separated what generalizes
+from what's Magento-specific. Two things had already been built earlier in
+this same pass by directly copying ordo's proven mechanism rather than
+inventing a parallel one: `release.yml`'s cosign-keyless-signing (mirrors
+`ordo/scripts/sign-release.sh` exactly -- same `sigstore/cosign-installer`
+pin, same `<repo>-<version>.tar.gz(.sigstore.json)` naming) and the
+`SCORECARD_TOKEN` fine-grained-PAT wiring for the Branch-Protection check
+(same mechanism ordo's `scorecard.yml` already used, under the name
+`SCORECARD_READ_TOKEN` there -- kept magewiki's own `SCORECARD_TOKEN` name
+since that's what was already wired and matches the literal name
+Scorecard's own fine-grained-auth-token.md doc uses as its example).
+
+Ported from that survey, all confirmed to fit (not blindly copied):
+
+- `scorecard.yml`: `fail_on_publish_error: true` -- defense-in-depth against
+  the exact incident ordo hit in its own #425 (a GitHub Action pinned to an
+  *annotated tag object's* own SHA instead of the commit it points to made
+  Scorecard's publish step silently reject results as an "imposter commit").
+  Checked magewiki isn't already affected before porting this as pure
+  insurance, not a fix for a live bug: every one of magewiki's own SHA pins
+  was resolved via `gh api repos/{owner}/{repo}/commits/{tag}`, confirmed
+  live against `ossf/scorecard-action@v2.5.0` itself to already dereference
+  the tag to the real commit (`46dc3187...` the tag object vs `fa7117db...`
+  the actual commit magewiki has pinned) -- `git ls-remote`, the method that
+  bit ordo, wasn't used here. `workflow_dispatch` (manual re-run without
+  waiting on the weekly cron) and a `concurrency` group ported too.
+- The same `concurrency` group (cancel a superseded run on the same ref,
+  `cancel-in-progress: true`) added to `actionlint.yml`,
+  `dependency-review.yml`, `link-check.yml`, `typos.yml` -- `ci.yml`/
+  `codeql.yml` already had one; pure CI-cost hygiene, zero behavior change.
+- New `markdownlint.yml` + `.markdownlint-cli2.yaml`, adapted rather than
+  copied verbatim: ordo's config disables MD033 (inline HTML)/MD036
+  (emphasis-as-heading) for its own README hero image and `**B2B**`-as-divider
+  patterns that don't exist in magewiki's docs (checked via grep before
+  deciding not to port those two) -- magewiki's config only disables MD013
+  (line-length, for CLAUDE.md's prose and wide Phase-plan table) and MD060
+  (table-column-style, same table). Verified locally (`npx
+  markdownlint-cli2@0.18.1`, not just assumed from reading the config) against
+  the real tree: the only real finding is a handful of bare `localhost` URLs
+  in README.md, left as-is since the job is `continue-on-error: true` by
+  design (same "first pass, tune later" posture ordo's own version documents)
+  -- `php-analyzer/vendor/**` noise seen in that local run doesn't reach the
+  real CI job at all, confirmed via `git check-ignore`, since that directory
+  is gitignored (only `composer.lock` is committed) and never exists in a
+  fresh checkout.
+- `SECURITY.md`: new "Verifying a release" section (`cosign verify-blob`
+  usage, `--certificate-identity-regexp` pinned to this repo), adapted from
+  ordo's own equivalent section now that `release.yml` actually produces
+  the same `<repo>-<version>.tar.gz` + `.sigstore.json` pair ordo's section
+  already documents how to check.
+
+Explicitly not ported, and why: ordo's CHANGELOG-driven auto-cut-on-green-CI
+release automation (`scripts/tag-and-release.sh`/`is-tagged.sh`/`ci-green.sh`,
+fired via `workflow_call` from ordo's own CI workflows) -- magewiki's
+releases are curated prose per merged PR, not CHANGELOG-section-driven, and
+adopting ordo's flow would force a process change nobody asked for, same
+reasoning already recorded for `release.yml` itself above. Also not ported:
+ordo's `update-site` job (WIF-authenticated Claude API call that rewrites a
+release's notes for a public marketing site and auto-merges a PR onto
+`ordo-site` -- no equivalent site exists for magewiki), composer-cache/
+docs-only-skip/PHP-8.6-preview-matrix/`packages.sury.org` CI tuning and the
+MFTF/ZAP/debug-wif workflows (all Magento-PHP-stack-specific; magewiki's
+`php-analyzer` sidecar doesn't run a PHP test suite or Magento integration
+tests), GOVERNANCE.md/a documented backup-maintainer arrangement (real
+OpenSSF-adjacent hardening, but premature -- `moston`'s collaborator invite
+is still pending, not yet an active second maintainer to document), and
+nikic/php-fuzzer (PHP-specific; magewiki's own Atheris/ClusterFuzzLite setup
+added earlier in this same pass already covers the equivalent ground for its
+own Python parsers).

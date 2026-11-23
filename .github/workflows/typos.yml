@@ -13,9 +13,16 @@ on:
 permissions:
   contents: read
 
+# A superseded run (an older commit on the same ref) is cancelled outright --
+# its result would never matter once a newer commit's run exists for the same
+# ref, so letting it keep consuming a runner is pure waste.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   typos:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v7
-      - uses: crate-ci/typos@v1.51.1
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+      - uses: crate-ci/typos@7f9d0819ca1c008ade73f4b41fa9d258d48f605b # v1.51.1

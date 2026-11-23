@@ -20,11 +20,18 @@ on:
 permissions:
   contents: read
 
+# A superseded run (an older commit on the same ref) is cancelled outright --
+# its result would never matter once a newer commit's run exists for the same
+# ref, so letting it keep consuming a runner is pure waste.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   actionlint:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
       - name: Download actionlint
         run: bash <(curl -sf https://raw.githubusercontent.com/rhysd/actionlint/v1.7.12/scripts/download-actionlint.bash) 1.7.12
         shell: bash
