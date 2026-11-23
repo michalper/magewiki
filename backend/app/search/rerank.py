@@ -77,9 +77,7 @@ async def rerank_results(session: AsyncSession, query: str, results: list[Search
         if result is not None and chunk_id not in seen:
             reordered.append(result)
             seen.add(chunk_id)
-    for result in results:
-        if result.chunk_id not in seen:
-            reordered.append(result)
+    reordered.extend(result for result in results if result.chunk_id not in seen)
 
     return reordered[:top_k]
 

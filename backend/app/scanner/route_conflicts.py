@@ -42,19 +42,19 @@ def detect_route_id_conflicts(routes: list[RouteRow]) -> list[tuple[int, Quality
             "with reverse-URL generation (getUrl) silently resolving to whichever module's "
             "declaration wins depending on compilation order."
         )
-        for module_id in module_ids:
-            findings.append(
-                (
-                    module_id,
-                    QualityFinding(
-                        check_type="route_id_conflict",
-                        severity="warning",
-                        file_path=None,
-                        line=None,
-                        message=message,
-                    ),
-                )
+        findings.extend(
+            (
+                module_id,
+                QualityFinding(
+                    check_type="route_id_conflict",
+                    severity="warning",
+                    file_path=None,
+                    line=None,
+                    message=message,
+                ),
             )
+            for module_id in module_ids
+        )
 
     return findings
 
@@ -87,18 +87,18 @@ def detect_frontname_conflicts(routes: list[RouteRow]) -> list[tuple[int, Qualit
             "Magento dispatches URLs by (area, frontName); an exact duplicate is ambiguous, "
             "with one module's controllers silently winning depending on compilation order."
         )
-        for module_id in module_ids:
-            findings.append(
-                (
-                    module_id,
-                    QualityFinding(
-                        check_type="frontname_conflict",
-                        severity="warning",
-                        file_path=None,
-                        line=None,
-                        message=message,
-                    ),
-                )
+        findings.extend(
+            (
+                module_id,
+                QualityFinding(
+                    check_type="frontname_conflict",
+                    severity="warning",
+                    file_path=None,
+                    line=None,
+                    message=message,
+                ),
             )
+            for module_id in module_ids
+        )
 
     return findings

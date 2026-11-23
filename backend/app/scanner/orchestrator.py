@@ -282,7 +282,7 @@ async def scan_repository(repo_root: str, session: AsyncSession) -> ScanResult:
     async for event in scan_repository_events(repo_root, session):
         if event["event"] == "done":
             result = event["result"]
-    assert result is not None  # "done" is always the generator's last event
+    assert result is not None  # "done" is always the generator's last event  # noqa: S101
     return result
 
 
@@ -294,7 +294,7 @@ async def scan_paths(path: str, session: AsyncSession) -> ScanResult:
     async for event in scan_paths_events(path, session):
         if event["event"] == "done":
             result = event["result"]
-    assert result is not None  # "done" is always the generator's last event
+    assert result is not None  # "done" is always the generator's last event  # noqa: S101
     return result
 
 
@@ -1151,15 +1151,15 @@ async def _persist_module(
             )
         )
 
-    for relative_path in diff.added + diff.changed:
-        job_specs.append(
-            PendingAnalysisJob(
-                module_id=module.id,
-                relative_path=relative_path,
-                content_hash=new_hashes[relative_path],
-                module_current_hash=new_current_hash,
-            )
+    job_specs.extend(
+        PendingAnalysisJob(
+            module_id=module.id,
+            relative_path=relative_path,
+            content_hash=new_hashes[relative_path],
+            module_current_hash=new_current_hash,
         )
+        for relative_path in diff.added + diff.changed
+    )
 
     for dep_name in pm.module_xml.sequence:
         session.add(ModuleDependency(module_id=module.id, depends_on_name=dep_name))

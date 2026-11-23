@@ -51,18 +51,18 @@ def detect_cron_job_conflicts(jobs: list[CronJobRow]) -> list[tuple[int, Quality
             "Magento merges every module's crontab.xml by job code into one schedule; one module's "
             "job silently wins and the other's own job under this code never actually runs."
         )
-        for module_id in module_ids:
-            findings.append(
-                (
-                    module_id,
-                    QualityFinding(
-                        check_type="cron_job_conflict",
-                        severity="warning",
-                        file_path=None,
-                        line=None,
-                        message=message,
-                    ),
-                )
+        findings.extend(
+            (
+                module_id,
+                QualityFinding(
+                    check_type="cron_job_conflict",
+                    severity="warning",
+                    file_path=None,
+                    line=None,
+                    message=message,
+                ),
             )
+            for module_id in module_ids
+        )
 
     return findings

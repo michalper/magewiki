@@ -46,13 +46,13 @@ def parse_graphql_schema(path: Path) -> list[GraphQlFieldEntry]:
             continue
         type_name = definition.name.value
         operation_type = type_name if type_name in _OPERATION_TYPES else "type"
-        for field in definition.fields or ():
-            entries.append(
-                GraphQlFieldEntry(
-                    operation_type=operation_type,
-                    type_name=type_name,
-                    field_name=field.name.value,
-                    resolver_class=_resolver_class(field),
-                )
+        entries.extend(
+            GraphQlFieldEntry(
+                operation_type=operation_type,
+                type_name=type_name,
+                field_name=field.name.value,
+                resolver_class=_resolver_class(field),
             )
+            for field in definition.fields or ()
+        )
     return entries

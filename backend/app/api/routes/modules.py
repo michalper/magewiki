@@ -1,5 +1,4 @@
 import logging
-import os
 import time
 from collections import Counter
 from collections.abc import AsyncIterator
@@ -121,7 +120,7 @@ class ModuleSummary(BaseModel):
 class ModuleListResponse(BaseModel):
     """GET /modules' response -- `total` is the count of modules matching every
     filter *before* limit/offset, so a paginated caller (the modules browser
-    page) can render "X–Y of total" and a page count without a second request.
+    page) can render "X-Y of total" and a page count without a second request.
     """
 
     total: int
@@ -315,7 +314,7 @@ def _validate_scan_path(path: str) -> None:
     share one 400 response/message so a caller can't distinguish "not a directory"
     from "outside the allowed roots" and use that to probe the host filesystem.
     """
-    if not settings.is_within_scan_roots(path) or not os.path.isdir(path):
+    if not settings.is_within_scan_roots(path) or not Path(path).is_dir():
         raise HTTPException(status_code=400, detail=_not_a_directory_detail(path))
 
 

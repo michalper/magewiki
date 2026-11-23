@@ -32,8 +32,8 @@ def find_path_repository_globs(composer_json_path: Path) -> list[str]:
     else:
         return []
 
-    globs: list[str] = []
-    for entry in entries:
-        if isinstance(entry, dict) and entry.get("type") == "path" and isinstance(entry.get("url"), str):
-            globs.append(entry["url"])
-    return globs
+    return [
+        entry["url"]
+        for entry in entries
+        if isinstance(entry, dict) and entry.get("type") == "path" and isinstance(entry.get("url"), str)
+    ]

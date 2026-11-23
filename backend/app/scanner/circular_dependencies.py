@@ -97,18 +97,18 @@ def detect_circular_dependencies(deps: list[ModuleDependencyRow]) -> list[tuple[
             "fails outright on a circular sequence; the store can't be installed or upgraded "
             "until this cycle is broken."
         )
-        for module_id in involved_ids:
-            findings.append(
-                (
-                    module_id,
-                    QualityFinding(
-                        check_type="circular_dependency",
-                        severity="warning",
-                        file_path=None,
-                        line=None,
-                        message=message,
-                    ),
-                )
+        findings.extend(
+            (
+                module_id,
+                QualityFinding(
+                    check_type="circular_dependency",
+                    severity="warning",
+                    file_path=None,
+                    line=None,
+                    message=message,
+                ),
             )
+            for module_id in involved_ids
+        )
 
     return findings

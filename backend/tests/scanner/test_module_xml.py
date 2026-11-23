@@ -1,3 +1,4 @@
+import re
 from pathlib import Path
 
 import pytest
@@ -25,7 +26,7 @@ def test_parse_module_xml_malformed_xml(tmp_path: Path):
     bad_xml = tmp_path / "module.xml"
     bad_xml.write_text("<config><unclosed>")
 
-    with pytest.raises(InvalidModuleXmlError, match="malformed module.xml"):
+    with pytest.raises(InvalidModuleXmlError, match=re.escape("malformed module.xml")):
         parse_module_xml(bad_xml)
 
 
@@ -36,7 +37,7 @@ def test_parse_module_xml_invalid_bytes_in_the_declared_encoding(tmp_path: Path)
     bad_xml = tmp_path / "module.xml"
     bad_xml.write_bytes(b'<?xml version="1.0" encoding="UTF-8"?><config>\xff\xfe</config>')
 
-    with pytest.raises(InvalidModuleXmlError, match="malformed module.xml"):
+    with pytest.raises(InvalidModuleXmlError, match=re.escape("malformed module.xml")):
         parse_module_xml(bad_xml)
 
 
@@ -52,7 +53,7 @@ def test_parse_module_xml_does_not_expand_an_xxe_entity(tmp_path: Path):
         '<config><module name="&xxe;"/></config>'
     )
 
-    with pytest.raises(InvalidModuleXmlError, match="malformed module.xml"):
+    with pytest.raises(InvalidModuleXmlError, match=re.escape("malformed module.xml")):
         parse_module_xml(bad_xml)
 
 

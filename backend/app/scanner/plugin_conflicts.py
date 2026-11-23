@@ -158,10 +158,10 @@ def detect_plugin_conflicts(
                 f"relative execution order is ambiguous."
             )
 
-        for message in messages:
-            for module_id in module_ids:
-                findings.append(
-                    (module_id, QualityFinding(check_type="plugin_conflict", severity="warning", file_path=None, line=None, message=message))
-                )
+        findings.extend(
+            (module_id, QualityFinding(check_type="plugin_conflict", severity="warning", file_path=None, line=None, message=message))
+            for message in messages
+            for module_id in module_ids
+        )
 
     return findings

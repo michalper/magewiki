@@ -55,7 +55,7 @@ async def test_check_abandoned_outdated_handles_multiple_cache_misses_concurrent
         "app.scanner.abandoned_dependencies.httpx.AsyncClient", lambda *a, **k: _FakeAsyncClient(data)
     )
 
-    findings = await check_abandoned_outdated(db_session, {p: "^1.0" for p in packages})
+    findings = await check_abandoned_outdated(db_session, dict.fromkeys(packages, "^1.0"))
 
     by_type = {f.check_type: f.message for f in findings}
     assert "vendor/successor" in by_type["abandoned_dependency"]

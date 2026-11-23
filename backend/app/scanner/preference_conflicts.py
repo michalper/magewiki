@@ -51,18 +51,18 @@ def detect_preference_conflicts(preferences: list[PreferenceRow]) -> list[tuple[
             "Magento resolves each interface to exactly one preference by module-sequence order; "
             "one module's implementation silently wins and the other's is never actually used."
         )
-        for module_id in module_ids:
-            findings.append(
-                (
-                    module_id,
-                    QualityFinding(
-                        check_type="preference_conflict",
-                        severity="warning",
-                        file_path=None,
-                        line=None,
-                        message=message,
-                    ),
-                )
+        findings.extend(
+            (
+                module_id,
+                QualityFinding(
+                    check_type="preference_conflict",
+                    severity="warning",
+                    file_path=None,
+                    line=None,
+                    message=message,
+                ),
             )
+            for module_id in module_ids
+        )
 
     return findings

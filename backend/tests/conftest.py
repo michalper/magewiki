@@ -69,7 +69,9 @@ def _ollama_reachable() -> bool:
     if not settings.ollama_base_url:
         return False
     try:
-        urllib.request.urlopen(f"{settings.ollama_base_url}/api/tags", timeout=2)
+        # settings.ollama_base_url is operator-configured (BaseSettings, same
+        # trust level as any other env var), never attacker-influenced input.
+        urllib.request.urlopen(f"{settings.ollama_base_url}/api/tags", timeout=2)  # noqa: S310
         return True
     except OSError:
         return False
@@ -80,12 +82,12 @@ ORDO_FIXTURE_ENV = "MAGEWIKI_ORDO_FIXTURE_PATH"
 MAGENTO_FIXTURE_ENV = "MAGEWIKI_MAGENTO_FIXTURE_PATH"
 
 requires_ordo_fixture = pytest.mark.skipif(
-    not os.environ.get(ORDO_FIXTURE_ENV) or not os.path.isdir(os.environ.get(ORDO_FIXTURE_ENV, "")),
+    not os.environ.get(ORDO_FIXTURE_ENV) or not Path(os.environ.get(ORDO_FIXTURE_ENV, "")).is_dir(),
     reason=f"set {ORDO_FIXTURE_ENV} to a real Ordo_Automation checkout to run this test",
 )
 
 requires_magento_fixture = pytest.mark.skipif(
-    not os.environ.get(MAGENTO_FIXTURE_ENV) or not os.path.isdir(os.environ.get(MAGENTO_FIXTURE_ENV, "")),
+    not os.environ.get(MAGENTO_FIXTURE_ENV) or not Path(os.environ.get(MAGENTO_FIXTURE_ENV, "")).is_dir(),
     reason=f"set {MAGENTO_FIXTURE_ENV} to a real magento/magento2 checkout to run this test",
 )
 
@@ -172,7 +174,7 @@ async def _test_database():
     # Blocking by design: this is a one-time, session-scoped setup step that runs
     # before any concurrent async test work starts, so there's no event loop to
     # block for anyone but this fixture itself.
-    subprocess.run(["alembic", "upgrade", "head"], check=True, env=os.environ)  # noqa: ASYNC221
+    subprocess.run(["alembic", "upgrade", "head"], check=True, env=os.environ)
 
     from app.tasks.queue import get_arq_pool
 

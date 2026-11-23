@@ -48,18 +48,18 @@ def detect_webapi_route_conflicts(routes: list[WebapiRouteRow]) -> list[tuple[in
             "Magento merges every module's route table by (url, method); an exact duplicate is "
             "ambiguous, with one module's service silently winning depending on compilation order."
         )
-        for module_id in module_ids:
-            findings.append(
-                (
-                    module_id,
-                    QualityFinding(
-                        check_type="webapi_route_conflict",
-                        severity="warning",
-                        file_path=None,
-                        line=None,
-                        message=message,
-                    ),
-                )
+        findings.extend(
+            (
+                module_id,
+                QualityFinding(
+                    check_type="webapi_route_conflict",
+                    severity="warning",
+                    file_path=None,
+                    line=None,
+                    message=message,
+                ),
             )
+            for module_id in module_ids
+        )
 
     return findings

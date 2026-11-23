@@ -608,9 +608,7 @@ async def test_run_agent_falls_back_to_empty_args_on_malformed_tool_call_json(db
                     )
                 ]
             )
-        for m in kwargs["messages"]:
-            if m.get("role") == "tool":
-                seen_tool_results.append(m["content"])
+        seen_tool_results.extend(m["content"] for m in kwargs["messages"] if m.get("role") == "tool")
         return _direct_answer_response()
 
     monkeypatch.setattr(loop_module.litellm, "acompletion", fake_acompletion)
@@ -640,9 +638,7 @@ async def test_run_agent_surfaces_an_unknown_tool_name_as_an_error_result(db_ses
             return _fake_stream(["ok"])
         if len(calls) == 1:
             return _tool_call_response("some_tool_that_does_not_exist", {})
-        for m in kwargs["messages"]:
-            if m.get("role") == "tool":
-                seen_tool_results.append(m["content"])
+        seen_tool_results.extend(m["content"] for m in kwargs["messages"] if m.get("role") == "tool")
         return _direct_answer_response()
 
     monkeypatch.setattr(loop_module.litellm, "acompletion", fake_acompletion)
@@ -674,9 +670,7 @@ async def test_run_agent_surfaces_a_tool_exception_as_an_error_result(db_session
             return _fake_stream(["ok"])
         if len(calls) == 1:
             return _tool_call_response("list_modules", {})
-        for m in kwargs["messages"]:
-            if m.get("role") == "tool":
-                seen_tool_results.append(m["content"])
+        seen_tool_results.extend(m["content"] for m in kwargs["messages"] if m.get("role") == "tool")
         return _direct_answer_response()
 
     monkeypatch.setattr(loop_module.litellm, "acompletion", fake_acompletion)

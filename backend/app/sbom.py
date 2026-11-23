@@ -97,13 +97,15 @@ def build_cyclonedx_sbom(
             if r.package_name not in module_bom_refs:
                 package_names.add(r.package_name)
 
-        for package_name in sorted(package_names):
-            components.append({"type": "library", "name": package_name, "bom-ref": package_name})
+        components.extend(
+            {"type": "library", "name": package_name, "bom-ref": package_name}
+            for package_name in sorted(package_names)
+        )
 
-        for module_bom_ref in sorted(depends_on):
-            dependencies.append(
-                {"ref": module_bom_ref, "dependsOn": sorted(depends_on[module_bom_ref])}
-            )
+        dependencies.extend(
+            {"ref": module_bom_ref, "dependsOn": sorted(depends_on[module_bom_ref])}
+            for module_bom_ref in sorted(depends_on)
+        )
 
     bom: dict[str, Any] = {
         "bomFormat": "CycloneDX",

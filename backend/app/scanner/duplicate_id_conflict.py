@@ -45,18 +45,18 @@ def detect_duplicate_id_conflict(
 
         who = ", ".join(sorted({row.module_name for row in group}))
         finding_message = message(id_value, who)
-        for module_id in module_ids:
-            findings.append(
-                (
-                    module_id,
-                    QualityFinding(
-                        check_type=check_type,
-                        severity="warning",
-                        file_path=None,
-                        line=None,
-                        message=finding_message,
-                    ),
-                )
+        findings.extend(
+            (
+                module_id,
+                QualityFinding(
+                    check_type=check_type,
+                    severity="warning",
+                    file_path=None,
+                    line=None,
+                    message=finding_message,
+                ),
             )
+            for module_id in module_ids
+        )
 
     return findings

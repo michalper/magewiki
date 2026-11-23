@@ -70,7 +70,7 @@ def test_merge_tags_dedupes_by_name_preferring_parser_source():
 
 
 def test_allowed_tags_matches_claude_md_vocabulary():
-    assert ALLOWED_TAGS == frozenset(
+    assert frozenset(
         {
             "payments", "shipping", "marketing", "erp", "search",
             "seo", "checkout", "admin-tools", "performance", "b2b",
@@ -78,7 +78,7 @@ def test_allowed_tags_matches_claude_md_vocabulary():
             "api", "analytics", "security", "multi-store", "theme",
             "pwa", "cron",
         }
-    )
+    ) == ALLOWED_TAGS
 
 
 def test_derive_parser_tags_matches_newly_expanded_vocabulary_dependencies():

@@ -73,18 +73,18 @@ def detect_db_schema_conflicts(columns: list[DbColumnRow]) -> list[tuple[int, Qu
             "Magento's declarative schema merges modules by sequence order; one module's definition "
             "silently wins and the other module's own assumption about this column can be wrong."
         )
-        for module_id in module_ids:
-            findings.append(
-                (
-                    module_id,
-                    QualityFinding(
-                        check_type="db_schema_conflict",
-                        severity="warning",
-                        file_path=None,
-                        line=None,
-                        message=message,
-                    ),
-                )
+        findings.extend(
+            (
+                module_id,
+                QualityFinding(
+                    check_type="db_schema_conflict",
+                    severity="warning",
+                    file_path=None,
+                    line=None,
+                    message=message,
+                ),
             )
+            for module_id in module_ids
+        )
 
     return findings

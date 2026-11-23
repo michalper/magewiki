@@ -57,8 +57,7 @@ async def fetch_cited_source_texts(
         label = source.get("module_name", f"module {module_id}")
         if relative_path:
             label = f"{label} / {relative_path}"
-        for chunk in chunks:
-            texts.append((label, chunk.text))
+        texts.extend((label, chunk.text) for chunk in chunks)
     return texts
 
 

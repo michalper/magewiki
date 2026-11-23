@@ -47,18 +47,18 @@ def detect_cache_type_conflicts(cache_types: list[CacheTypeRow]) -> list[tuple[i
             f"with a different instance: {who} — Magento's config merge resolves this by "
             "module-sequence order; one module's backing class silently wins."
         )
-        for module_id in module_ids:
-            findings.append(
-                (
-                    module_id,
-                    QualityFinding(
-                        check_type="cache_type_conflict",
-                        severity="warning",
-                        file_path=None,
-                        line=None,
-                        message=message,
-                    ),
-                )
+        findings.extend(
+            (
+                module_id,
+                QualityFinding(
+                    check_type="cache_type_conflict",
+                    severity="warning",
+                    file_path=None,
+                    line=None,
+                    message=message,
+                ),
             )
+            for module_id in module_ids
+        )
 
     return findings

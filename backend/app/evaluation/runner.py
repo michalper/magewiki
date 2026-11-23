@@ -158,7 +158,7 @@ async def _run_tool_question(
     that real invariant rather than silencing it, the same way the "agent"
     branch right below already asserts expected_answer is set.
     """
-    assert q.tool is not None and q.tool_kwargs is not None and check is not None, (
+    assert q.tool is not None and q.tool_kwargs is not None and check is not None, (  # noqa: S101
         f"{q.id}: a tool-mode question must set tool, tool_kwargs, and its expected-result predicate"
     )
     kwargs = _resolve_kwargs(q.tool_kwargs, module_id)
@@ -181,7 +181,9 @@ async def run_negative_eval(
         if q.mode == "tool":
             results.append(await _run_tool_question(session, module.id, q, q.expected_empty))
         else:
-            assert q.expected_answer is not None, f"{q.id}: mode='agent' questions must set expected_answer"
+            assert q.expected_answer is not None, (  # noqa: S101
+                f"{q.id}: mode='agent' questions must set expected_answer"
+            )
             final_text = ""
             async for event in run_agent(session, [{"role": "user", "content": q.query}], "dev"):
                 if event.get("event") == "token":

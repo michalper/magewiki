@@ -1,7 +1,7 @@
 import asyncio
 import logging
 from collections.abc import AsyncIterator
-from contextlib import asynccontextmanager
+from contextlib import asynccontextmanager, suppress
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Any
@@ -318,10 +318,10 @@ async def embed_chunks(ctx: dict[str, Any] | None, module_id: int, module_curren
             specs: list[tuple[str, str | None, int | None, str]] = [
                 ("module", None, None, build_module_chunk_text(module_doc))
             ]
-            for fa in file_analyses:
-                specs.append(
-                    ("file", fa.relative_path, None, build_file_chunk_text(fa.file_summary, fa.notable_behavior))
-                )
+            specs.extend(
+                ("file", fa.relative_path, None, build_file_chunk_text(fa.file_summary, fa.notable_behavior))
+                for fa in file_analyses
+            )
 
             method_rows = (
                 await session.execute(
@@ -431,10 +431,8 @@ async def scan_repository_job(ctx: dict[str, Any], repo_root: str) -> None:
     just means another trigger got there first, so this is a no-op, not a failure.
     """
     async with async_session_factory() as session:
-        try:
+        with suppress(ScanAlreadyInProgressError):
             await scan_repository(repo_root, session)
-        except ScanAlreadyInProgressError:
-            pass
 
 
 async def nightly_scan_all(ctx: dict[str, Any]) -> None:

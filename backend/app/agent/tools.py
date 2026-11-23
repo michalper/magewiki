@@ -447,12 +447,10 @@ async def list_modules(
         )
     ).all()
 
-    page = []
-    for row in rows:
-        # select(Module, ModuleDocument.doc)'s Row degenerates each element to
-        # `object` under mypy (confirmed via reveal_type) — cast() is the
-        # type-level fix, zero runtime effect.
-        page.append((cast(Module, row[0]), cast(dict[str, Any] | None, row[1]) or {}))
+    # select(Module, ModuleDocument.doc)'s Row degenerates each element to
+    # `object` under mypy (confirmed via reveal_type) — cast() is the
+    # type-level fix, zero runtime effect.
+    page = [(cast(Module, row[0]), cast(dict[str, Any] | None, row[1]) or {}) for row in rows]
 
     finding_counts: dict[int, int] = {}
     if check_type:
