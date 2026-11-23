@@ -200,8 +200,8 @@ async def test_summarize_file_falls_back_to_computed_cost_when_litellm_cost_fail
         raise RuntimeError("no pricing data for this model")
 
     monkeypatch.setattr("app.analyzer.client.litellm.acompletion", fake_acompletion)
-    monkeypatch.setattr("app.analyzer.client.litellm.completion_cost", _raising_cost)
-    monkeypatch.setattr("app.analyzer.client.compute_cost_usd", lambda model, tin, tout: Decimal("0.0007"))
+    monkeypatch.setattr("app.analyzer.pricing.litellm.completion_cost", _raising_cost)
+    monkeypatch.setattr("app.analyzer.pricing.compute_cost_usd", lambda model, tin, tout: Decimal("0.0007"))
 
     _summary, result = await summarize_file(
         "Model/Total.php", "<?php class Total {}", model="anthropic/claude-haiku-5-5", api_key="test-key"

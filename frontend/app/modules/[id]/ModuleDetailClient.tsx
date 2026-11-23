@@ -1,17 +1,17 @@
 "use client";
 
-import { useState, type ReactNode } from "react";
+import { useMemo, useState, type ReactNode } from "react";
 import Link from "next/link";
 import { useQuery } from "@tanstack/react-query";
 import ReactMarkdown, { type Components } from "react-markdown";
 import remarkGfm from "remark-gfm";
 import { EnabledBadge } from "@/components/enabled-badge";
-import { SeverityBadge, SEVERITY_ORDER, type Severity } from "@/components/severity-badge";
+import { FindingsPreviewList } from "@/components/findings-preview-list";
+import { SeverityBadge } from "@/components/severity-badge";
 import { StateBadge } from "@/components/state-badge";
 import { Button } from "@/components/ui/button";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import { TagBadge } from "@/components/tag-badge";
-import { FindingMessage } from "@/components/finding-message";
 import { SimilarModulesCard } from "@/components/similar-modules-card";
 import { apiFetch, apiUrl } from "@/lib/api";
 import { downloadCsv, toCsv } from "@/lib/csv";
@@ -333,8 +333,14 @@ async function fetchModule(id: string): Promise<ModuleDetail> {
   return apiFetch(`/modules/${id}`);
 }
 
-async function fetchModules(): Promise<ModuleSummary[]> {
-  const response = await apiFetch<components["schemas"]["ModuleListResponse"]>("/modules");
+async function fetchModules(repoRoot: string): Promise<ModuleSummary[]> {
+  // Scoped server-side to the one repo this module belongs to -- this list is
+  // only ever used to resolve same-repo dependency names to ids, so there's no
+  // reason to pull every module across every scanned repo (up to 5000 rows,
+  // the backend's own cap) over the wire just for that.
+  const response = await apiFetch<components["schemas"]["ModuleListResponse"]>(
+    `/modules?repo_root=${encodeURIComponent(repoRoot)}`,
+  );
   return response.modules;
 }
 
@@ -356,17 +362,29 @@ export default function ModuleDetailClient({ id }: { id: string }) {
   const moduleQuery = useQuery({ queryKey: ["module", id], queryFn: () => fetchModule(id) });
   const readmeQuery = useQuery({ queryKey: ["module-readme", id], queryFn: () => fetchReadme(id) });
   const historyQuery = useQuery({ queryKey: ["module-history", id], queryFn: () => fetchHistory(id) });
-  // Same queryKey the Modules list page uses, so navigating here from there is
-  // an instant cache hit rather than a second full-fleet fetch.
-  const modulesQuery = useQuery({ queryKey: ["modules"], queryFn: fetchModules });
-
   const repoRoot = moduleQuery.data?.repo_root;
-  const idByName = new Map<string, number>();
-  if (modulesQuery.data && repoRoot) {
-    for (const m of modulesQuery.data) {
-      if (m.repo_root === repoRoot) idByName.set(m.name, m.id);
+  // Depends on repoRoot being known first, so this only runs once moduleQuery
+  // has resolved -- not the same queryKey the Modules list/Compare pages use
+  // (those fetch every repo's modules unfiltered), so it doesn't share their
+  // cache entry, but it also doesn't pull every other repo's rows just to
+  // resolve this module's own same-repo dependency names below.
+  const modulesQuery = useQuery({
+    queryKey: ["modules", "repo", repoRoot],
+    queryFn: () => fetchModules(repoRoot!),
+    enabled: !!repoRoot,
+  });
+
+  // fetchModules above already scopes the request to repoRoot server-side
+  // (the real win: far fewer rows over the wire on a multi-repo fleet) --
+  // this re-checks repo_root client-side too rather than trusting that
+  // scoping blindly, the same defensive stance the rest of this file takes.
+  const idByName = useMemo(() => {
+    const map = new Map<string, number>();
+    for (const m of modulesQuery.data ?? []) {
+      if (m.repo_root === repoRoot) map.set(m.name, m.id);
     }
-  }
+    return map;
+  }, [modulesQuery.data, repoRoot]);
 
   return (
     <TooltipProvider>
@@ -642,29 +660,16 @@ export default function ModuleDetailClient({ id }: { id: string }) {
                   Export findings CSV
                 </Button>
               </div>
-              <ul className="text-sm space-y-2">
-                {[...moduleQuery.data.quality_findings]
-                  .sort((a, b) => SEVERITY_ORDER[a.severity as Severity] - SEVERITY_ORDER[b.severity as Severity])
-                  .slice(0, PREVIEW_FINDING_COUNT)
-                  .map((f, i) => (
-                    <li key={i} className="space-y-0.5">
-                      <div className="flex items-center gap-2">
-                        <SeverityBadge severity={f.severity as Severity}>{f.severity}</SeverityBadge>
-                        <span className="font-mono text-muted-foreground whitespace-nowrap">
-                          {f.file_path}
-                          {f.line ? `:${f.line}` : ""}
-                        </span>
-                      </div>
-                      <div><FindingMessage message={f.message} /></div>
-                    </li>
-                  ))}
-                {moduleQuery.data.quality_findings.length > PREVIEW_FINDING_COUNT && (
-                  <li className="text-muted-foreground">
+              <FindingsPreviewList
+                findings={moduleQuery.data.quality_findings}
+                limit={PREVIEW_FINDING_COUNT}
+                footer={
+                  <p className="text-sm text-muted-foreground mt-2">
                     +{moduleQuery.data.quality_findings.length - PREVIEW_FINDING_COUNT} more — use &ldquo;Export
                     findings CSV&rdquo; above for the full set
-                  </li>
-                )}
-              </ul>
+                  </p>
+                }
+              />
             </div>
           )}
 

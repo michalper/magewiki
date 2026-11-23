@@ -66,6 +66,27 @@ async def test_webhook_scan_rejects_missing_signature(demo_store_path):
 
 
 @pytest.mark.asyncio
+async def test_webhook_scan_rejects_a_missing_path():
+    """payload.get("path") on untrusted JSON (unlike POST /scan[/stream]'s
+    validated Pydantic field) can be None -- _validate_scan_path doesn't
+    itself guard against that, so this must be rejected before reaching it.
+    """
+    body = json.dumps({}).encode()
+    signature = _sign(body)
+
+    transport = ASGITransport(app=app)
+    async with AsyncClient(transport=transport, base_url="http://test") as client:
+        response = await client.post(
+            "/webhooks/scan",
+            content=body,
+            headers={"Content-Type": "application/json", "X-Signature-256": signature},
+        )
+
+    assert response.status_code == 400
+    assert "not a directory" in response.json()["detail"]
+
+
+@pytest.mark.asyncio
 async def test_webhook_scan_rejects_nonexistent_path():
     body = json.dumps({"path": "/no/such/path"}).encode()
     signature = _sign(body)

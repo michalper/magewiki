@@ -4052,3 +4052,103 @@ separate background agent, see its own entry below) independently
 diagnosed the same 8 failures down to this exact root cause and flagged
 it back -- confirming it from the other side before this was traced and
 fixed.
+
+**Whole-project `/simplify` pass (recorded 2026-11-23).** User's own
+request, run as a background agent in parallel with a whole-project
+security review and a whole-project `/code-review` -- reuse/
+simplification/efficiency/altitude only, not a bug hunt. Real duplication
+closed:
+
+- **Reuse**: `app/analyzer/pricing.py`'s new `resolve_llm_cost()` replaces
+  the identical "try `litellm.completion_cost`, fall back to the price
+  table" logic duplicated in 5 places (`analyzer/client.py`, `embeddings.py`
+  x2, `agent/loop.py`, `search/query_rewrite.py`, `search/rerank.py`).
+  `app/agent/tools.py`'s new `_module_tool` decorator replaces 6 copies of
+  "fetch the Module or return found:false" across `get_module`/
+  `get_dependencies`/`get_module_findings`/`find_similar_modules`/
+  `get_module_history`/`get_module_dependency_graph`. `app/scanner/
+  packagist_cache.py`'s new `fetch_many_with_cache()` replaces the
+  identical cache-then-fetch-then-cache-write shape `security_advisories.py`
+  and `abandoned_dependencies.py` each reimplemented -- this exact
+  duplication is the one that already caused a real check-order bug once
+  (see this file's own earlier entry). `app/api/routes/webhooks.py`'s
+  `webhook_scan` now calls `modules.py`'s `_validate_scan_path` instead of
+  its own second copy of the same containment+isdir check -- also a
+  duplication this file already recorded as having caused a real bug once,
+  independently fixed in both copies at the time.
+- **Efficiency**: `orchestrator.py`'s Phase A per-module parse block now
+  runs via `asyncio.to_thread`, matching Phase B's own existing treatment
+  for the same reason (stalls SSE progress/other concurrent scans
+  otherwise). `secrets_scanner.py`/`deprecated_scanner.py` now take the
+  module's already-read `php_sources: dict[str, bytes]` instead of
+  independently re-walking and re-reading every file from disk -- the exact
+  sharing `discovery.py`'s `read_module_source_files` docstring says it
+  exists for, which these two checks were bypassing (and which, as a
+  side effect, means they now automatically inherit the symlink-safety fix
+  below through that same shared `php_sources` map, without having been
+  touched by it directly). `jobs.py`'s `embed_chunks` now calls a new,
+  narrower `gather_file_analyses()` instead of the full `gather_module_facts`
+  (~20 queries) when it only ever read one field off the result;
+  `synthesize_module` (which needs the full fact set) is unaffected.
+  `app/api/routes/modules.py`'s `get_module()` replaced 21 hand-written
+  per-child-table queries plus a manual methods-grouping loop with one
+  `session.get(..., options=[selectinload(...), ...])` using the
+  `relationship()`s `models.py` already declares -- same query count, ~90
+  fewer lines.
+- **Explicitly flagged, not fixed**: `agent/loop.py`'s per-round tool-call
+  dispatch runs sequentially even for several independent tool calls in one
+  round -- real latency on the hottest path, but fixing it needs each
+  concurrent branch to use its own `AsyncSession` (not safe for concurrent
+  use), an architecture change disproportionate to this pass.
+
+Frontend: new shared `BadgeTooltip`, `PresenceBadge`, `FindingsPreviewList`
+components close real duplication between `app/modules/page.tsx` and
+`app/modules/[id]/ModuleDetailClient.tsx`. `app/chat/page.tsx`'s new
+`MessageBubble` (wrapped in `React.memo`) stops every SSE token tick from
+re-rendering and re-parsing every past turn's markdown, not just the
+actively-streaming bubble. `ModuleDetailClient.tsx` now scopes its
+dependency-name lookup fetch with `?repo_root=` instead of always pulling
+every module across every scanned repo. Two real duplications (inline
+has_readme/has_tests badges vs. the new `PresenceBadge`; `repos/page.tsx`'s
+hand-rolled tables vs. the shared `Table` components) were deliberately
+left alone because unifying them would change tested, observable UI
+output (exact text casing; different padding/border/hover styling), not
+just internal structure.
+
+**A `next build` type error this pass's own test suite didn't catch**:
+the new shared `FindingsPreviewList`'s `Finding.file_path` was typed as
+non-nullable `string`, but the real data (both callers' own
+`ModuleQualityFinding`-shaped findings) is `string | null` -- `npm run
+test:coverage`/`npm run lint` both stayed green (vitest/eslint don't do
+the same whole-project `tsc` type-check `next build` does), so this only
+surfaced when `npm run build` was run directly, same reason CI's
+`e2e-smoke` job runs a real `docker compose` build rather than trusting
+lint/unit tests alone. Fixed by widening the type to match the real data
+shape.
+
+**Running this concurrently with other background agents touching the
+same files caused a real, separate incident worth recording on its own
+terms** (not a flaw in the simplify pass's own output, which was correct):
+a security-fix agent was independently adding `is_safe_to_read()` checks to
+several of the same scanner files at the same time. The simplify agent's
+own report flagged 8 test failures and correctly traced them to a bug in
+one of the security fix's own new tests (a test that redirected a shared
+fixture module's `repo_root` without restoring/deleting it afterward,
+breaking later tests' cleanup lookup) -- diagnosed independently from both
+sides before it was fixed; see that fix's own decision-log entry for the
+full story. Separately, *merging* the two agents' work back together (two
+`git stash` round-trips across branches with different bases) once
+silently dropped one small, real piece of this pass's own jobs.py edit
+(the `gather_module_facts` -> `gather_file_analyses` caller-side change) --
+caught by diffing against the agent's own reported file list and the
+fact that the `gather_file_analyses` symbol would otherwise be unused,
+not by any test (both versions are 100% covered, since the untouched
+caller still exercises the now-unused-by-it helper indirectly through
+`synthesize_module`'s own real fact-gathering path). Re-applied by hand
+from the agent's own reported diff rather than re-running `/simplify`
+again. The lesson, not a process change: a stash's recorded 3-way merge
+base matters, and silently "successful" conflict-free stash application
+across branches with a different base is not proof nothing was lost --
+diff against the actual intended change set to confirm, the same
+discipline this project already applies to verifying a fix actually
+fixes something rather than trusting that a test passing means it does.

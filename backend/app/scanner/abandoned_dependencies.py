@@ -1,11 +1,10 @@
-import asyncio
 import re
 
 import httpx
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.scanner.dto import QualityFinding
-from app.scanner.packagist_cache import get_cached, set_cached
+from app.scanner.packagist_cache import fetch_many_with_cache
 from app.scanner.semver import constraints_overlap
 
 _P2_URL_TEMPLATE = "https://repo.packagist.org/p2/{package}.json"
@@ -23,8 +22,8 @@ def _cache_key(package_name: str) -> str:
 
 
 async def _fetch_from_packagist(package_name: str) -> dict | None:
-    """HTTP-only, no session — safe to run concurrently across packages,
-    unlike get_cached/set_cached below which share the scan's one AsyncSession.
+    """HTTP-only, no session — safe to run concurrently across packages, unlike
+    packagist_cache.py's get_cached/set_cached which share the scan's one AsyncSession.
     """
     try:
         async with httpx.AsyncClient(timeout=10.0) as client:
@@ -35,32 +34,6 @@ async def _fetch_from_packagist(package_name: str) -> dict | None:
             return response.json()
     except httpx.HTTPError:
         return None
-
-
-async def _fetch_package_info_for_all(session: AsyncSession, package_names: list[str]) -> dict[str, dict]:
-    """Three phases, each session-safe: (1) sequential cache reads — the only
-    way to touch one shared AsyncSession from a batch of packages, (2)
-    concurrent HTTP fetches for the cache misses, now off the session
-    entirely, (3) sequential cache writes for what was just fetched (a 404 or
-    HTTP error isn't cached, same as before — only a real response is).
-    """
-    data_by_package: dict[str, dict] = {}
-    misses: list[str] = []
-    for package_name in package_names:
-        cached = await get_cached(session, _cache_key(package_name))
-        if cached is not None:
-            data_by_package[package_name] = cached
-        else:
-            misses.append(package_name)
-
-    if misses:
-        fetched = await asyncio.gather(*(_fetch_from_packagist(name) for name in misses))
-        for package_name, data in zip(misses, fetched, strict=True):
-            if data is not None:
-                await set_cached(session, _cache_key(package_name), data)
-                data_by_package[package_name] = data
-
-    return data_by_package
 
 
 def _latest_version_entry(package_name: str, data: dict) -> dict | None:
@@ -81,7 +54,7 @@ async def check_abandoned_outdated(
     the CVE check. Non-blocking: staleness/abandonment is tech debt, not a
     known vulnerability, matching v1's own severity judgment.
     """
-    data_by_package = await _fetch_package_info_for_all(session, list(requirements))
+    data_by_package = await fetch_many_with_cache(session, list(requirements), _cache_key, _fetch_from_packagist)
 
     findings: list[QualityFinding] = []
     for package_name, declared_constraint in requirements.items():

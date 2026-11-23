@@ -12,6 +12,7 @@ from fastapi.responses import JSONResponse, PlainTextResponse, StreamingResponse
 from pydantic import BaseModel
 from sqlalchemy import ColumnElement, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import selectinload
 
 from app.analyzer.facts import gather_module_facts
 from app.analyzer.readme import render_readme_markdown
@@ -21,31 +22,15 @@ from app.api.sse import format_sse
 from app.config import settings
 from app.db import get_session
 from app.models import (
-    AclResource,
     ComposerPackageRequirement,
-    ConfigField,
-    CronJob,
-    DbTable,
     DiPlugin,
     DiPreference,
-    DiVirtualType,
-    EventObserver,
-    GraphQlField,
     Module,
-    ModuleCacheType,
     ModuleDependency,
     ModuleDocument,
     ModuleHistorySnapshot,
-    ModuleIndexer,
-    ModuleMenuItem,
-    ModuleMview,
     ModuleQualityFinding,
-    ModuleRoute,
-    ModuleWidget,
     PhpClass,
-    PhpClassMethod,
-    QueueBinding,
-    WebapiRoute,
 )
 from app.observability import SCAN_DURATION_SECONDS
 from app.sbom import SbomComponentInput, SbomRequirementInput, build_cyclonedx_sbom
@@ -820,81 +805,70 @@ async def list_duplicate_module_pairs(
 
 @router.get("/modules/{module_id}", response_model=ModuleDetail)
 async def get_module(module_id: int, session: AsyncSession = Depends(get_session)) -> ModuleDetail:
-    module = await session.get(Module, module_id)
+    # One query per relationship (21 of them, each re-deriving what Module's own
+    # relationship() declarations in models.py already model) used to live here --
+    # selectinload loads every one of them in its own batched query keyed off the
+    # same module_id, same query count per relationship, far less duplicated code,
+    # and a new fact type only needs one new relationship + one new selectinload.
+    module = await session.get(
+        Module,
+        module_id,
+        options=[
+            selectinload(Module.dependencies),
+            selectinload(Module.php_classes).selectinload(PhpClass.methods),
+            selectinload(Module.di_preferences),
+            selectinload(Module.di_plugins),
+            selectinload(Module.di_virtual_types),
+            selectinload(Module.event_observers),
+            selectinload(Module.graphql_fields),
+            selectinload(Module.cron_jobs),
+            selectinload(Module.webapi_routes),
+            selectinload(Module.config_fields),
+            selectinload(Module.db_tables),
+            selectinload(Module.queue_bindings),
+            selectinload(Module.acl_resources),
+            selectinload(Module.indexers),
+            selectinload(Module.mviews),
+            selectinload(Module.routes),
+            selectinload(Module.widgets),
+            selectinload(Module.menu_items),
+            selectinload(Module.cache_types),
+            selectinload(Module.quality_findings),
+        ],
+    )
     if module is None:
         raise HTTPException(status_code=404, detail="module not found")
 
-    dependencies = (
-        await session.scalars(select(ModuleDependency).where(ModuleDependency.module_id == module_id))
-    ).all()
-    classes = (
-        await session.scalars(select(PhpClass).where(PhpClass.module_id == module_id))
-    ).all()
-    preferences = (
-        await session.scalars(select(DiPreference).where(DiPreference.module_id == module_id))
-    ).all()
-    plugins = (
-        await session.scalars(select(DiPlugin).where(DiPlugin.module_id == module_id))
-    ).all()
-    virtual_types = (
-        await session.scalars(select(DiVirtualType).where(DiVirtualType.module_id == module_id))
-    ).all()
-    observers = (
-        await session.scalars(select(EventObserver).where(EventObserver.module_id == module_id))
-    ).all()
-    graphql_fields = (
-        await session.scalars(select(GraphQlField).where(GraphQlField.module_id == module_id))
-    ).all()
-    cron_jobs = (await session.scalars(select(CronJob).where(CronJob.module_id == module_id))).all()
-    webapi_routes = (
-        await session.scalars(select(WebapiRoute).where(WebapiRoute.module_id == module_id))
-    ).all()
-    config_fields = (
-        await session.scalars(select(ConfigField).where(ConfigField.module_id == module_id))
-    ).all()
-    db_tables = (await session.scalars(select(DbTable).where(DbTable.module_id == module_id))).all()
-    queue_bindings = (
-        await session.scalars(select(QueueBinding).where(QueueBinding.module_id == module_id))
-    ).all()
-    acl_resources = (
-        await session.scalars(select(AclResource).where(AclResource.module_id == module_id))
-    ).all()
-    indexers = (
-        await session.scalars(select(ModuleIndexer).where(ModuleIndexer.module_id == module_id))
-    ).all()
-    mviews = (await session.scalars(select(ModuleMview).where(ModuleMview.module_id == module_id))).all()
-    routes = (await session.scalars(select(ModuleRoute).where(ModuleRoute.module_id == module_id))).all()
-    widgets = (await session.scalars(select(ModuleWidget).where(ModuleWidget.module_id == module_id))).all()
-    menu_items = (
-        await session.scalars(select(ModuleMenuItem).where(ModuleMenuItem.module_id == module_id))
-    ).all()
-    cache_types = (
-        await session.scalars(select(ModuleCacheType).where(ModuleCacheType.module_id == module_id))
-    ).all()
-    quality_findings = (
-        await session.scalars(select(ModuleQualityFinding).where(ModuleQualityFinding.module_id == module_id))
-    ).all()
+    dependencies = module.dependencies
+    classes = module.php_classes
+    preferences = module.di_preferences
+    plugins = module.di_plugins
+    virtual_types = module.di_virtual_types
+    observers = module.event_observers
+    graphql_fields = module.graphql_fields
+    cron_jobs = module.cron_jobs
+    webapi_routes = module.webapi_routes
+    config_fields = module.config_fields
+    db_tables = module.db_tables
+    queue_bindings = module.queue_bindings
+    acl_resources = module.acl_resources
+    indexers = module.indexers
+    mviews = module.mviews
+    routes = module.routes
+    widgets = module.widgets
+    menu_items = module.menu_items
+    cache_types = module.cache_types
+    quality_findings = module.quality_findings
     doc_row = await session.scalar(select(ModuleDocument.doc).where(ModuleDocument.module_id == module_id))
 
-    all_methods = (
-        await session.scalars(
-            select(PhpClassMethod).where(PhpClassMethod.class_id.in_([c.id for c in classes]))
+    class_summaries = [
+        PhpClassSummary(
+            fqcn=c.fqcn, kind=c.kind, file_path=c.file_path, is_plugin=c.is_plugin,
+            is_observer=c.is_observer, role_signals=c.role_signals,
+            methods=[MethodSummary(name=m.name, start_line=m.start_line, end_line=m.end_line) for m in c.methods],
         )
-    ).all()
-    methods_by_class_id: dict[int, list[PhpClassMethod]] = {}
-    for m in all_methods:
-        methods_by_class_id.setdefault(m.class_id, []).append(m)
-
-    class_summaries = []
-    for c in classes:
-        methods = methods_by_class_id.get(c.id, [])
-        class_summaries.append(
-            PhpClassSummary(
-                fqcn=c.fqcn, kind=c.kind, file_path=c.file_path, is_plugin=c.is_plugin,
-                is_observer=c.is_observer, role_signals=c.role_signals,
-                methods=[MethodSummary(name=m.name, start_line=m.start_line, end_line=m.end_line) for m in methods],
-            )
-        )
+        for c in classes
+    ]
 
     return ModuleDetail(
         id=module.id,

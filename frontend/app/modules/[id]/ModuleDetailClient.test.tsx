@@ -51,7 +51,7 @@ function mockApis({
   history?: unknown[];
 } = {}) {
   fetchMock.mockImplementation(async (path: string) => {
-    if (path === "/modules") return { total: modules.length, modules };
+    if (path.startsWith("/modules?repo_root=")) return { total: modules.length, modules };
     if (path.endsWith("/graph")) return {};
     if (path.endsWith("/history")) return history;
     return module;
@@ -239,7 +239,9 @@ describe("ModuleDetailClient", () => {
 
   describe("README", () => {
     it("shows a loading placeholder while the README fetches", async () => {
-      fetchMock.mockImplementation(async (path: string) => (path === "/modules" ? { total: 0, modules: [] } : moduleDetail()));
+      fetchMock.mockImplementation(async (path: string) =>
+        path.startsWith("/modules?repo_root=") ? { total: 0, modules: [] } : moduleDetail(),
+      );
       vi.stubGlobal("fetch", vi.fn().mockReturnValue(new Promise(() => {})));
       renderWithQueryClient(<ModuleDetailClient id="1" />);
 
@@ -294,7 +296,11 @@ describe("ModuleDetailClient", () => {
       expect(screen.getByRole("heading", { name: "Risks" })).toBeInTheDocument();
       expect(screen.getByText("high")).toBeInTheDocument(); // risk severity badge
       // Appears twice: once in the header's "Depends on" row, once in the
-      // README's own "Dependencies" list item (linked via the same idByName map).
+      // README's own "Dependencies" list item (linked via the same idByName
+      // map) -- that map depends on its own repo-scoped fetch, which only
+      // starts once moduleQuery resolves, so this needs its own wait rather
+      // than piggybacking on the "Description" heading's waitFor above.
+      await waitFor(() => expect(screen.getAllByRole("link", { name: "Magento_Sales" })).toHaveLength(2));
       for (const link of screen.getAllByRole("link", { name: "Magento_Sales" })) {
         expect(link).toHaveAttribute("href", "/modules/5");
       }
@@ -436,7 +442,9 @@ describe("ModuleDetailClient", () => {
     });
 
     it("surfaces a real fetch error (not 404) as the module-level error state", async () => {
-      fetchMock.mockImplementation(async (path: string) => (path === "/modules" ? { total: 0, modules: [] } : moduleDetail()));
+      fetchMock.mockImplementation(async (path: string) =>
+        path.startsWith("/modules?repo_root=") ? { total: 0, modules: [] } : moduleDetail(),
+      );
       vi.stubGlobal(
         "fetch",
         vi.fn().mockResolvedValue({ status: 500, ok: false, text: async () => "" }),

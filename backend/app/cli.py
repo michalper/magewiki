@@ -5,7 +5,7 @@ import sys
 from collections.abc import Sequence
 from pathlib import Path
 
-from sqlalchemy import select, update
+from sqlalchemy import ColumnElement, select, update
 
 from app.db import async_session_factory
 from app.models import FileHash, Module, ModuleDocument
@@ -105,36 +105,32 @@ async def _resume_modules(modules: Sequence[Module], session) -> None:
     await session.commit()
 
 
-async def _run_resume_budget(repo_root: str | None) -> int:
+async def _run_resume(repo_root: str | None, state_filter: ColumnElement[bool], empty_message: str) -> int:
+    """Shared by resume-budget/resume-failed/resume-stuck below: same repo_root
+    scoping, same "nothing to do" message shape, differing only in which
+    Module.state predicate selects the modules to resume.
+    """
     async with async_session_factory() as session:
-        query = select(Module).where(Module.state == "paused_budget")
+        query = select(Module).where(state_filter)
         if repo_root:
             query = query.where(Module.repo_root == str(Path(repo_root).resolve()))
         modules = (await session.scalars(query)).all()
 
         if not modules:
-            print("No modules in paused_budget state.")
+            print(empty_message)
             return 0
 
         await _resume_modules(modules, session)
 
     return 0
+
+
+async def _run_resume_budget(repo_root: str | None) -> int:
+    return await _run_resume(repo_root, Module.state == "paused_budget", "No modules in paused_budget state.")
 
 
 async def _run_resume_failed(repo_root: str | None) -> int:
-    async with async_session_factory() as session:
-        query = select(Module).where(Module.state == "failed")
-        if repo_root:
-            query = query.where(Module.repo_root == str(Path(repo_root).resolve()))
-        modules = (await session.scalars(query)).all()
-
-        if not modules:
-            print("No modules in failed state.")
-            return 0
-
-        await _resume_modules(modules, session)
-
-    return 0
+    return await _run_resume(repo_root, Module.state == "failed", "No modules in failed state.")
 
 
 async def _run_resume_stuck(repo_root: str | None) -> int:
@@ -145,19 +141,9 @@ async def _run_resume_stuck(repo_root: str | None) -> int:
     (re-enqueuing a job ARQ already has queued is a harmless no-op via its job_id),
     so this is safe to run speculatively even on modules that are actually fine.
     """
-    async with async_session_factory() as session:
-        query = select(Module).where(Module.state.in_(("analyzing", "embedding")))
-        if repo_root:
-            query = query.where(Module.repo_root == str(Path(repo_root).resolve()))
-        modules = (await session.scalars(query)).all()
-
-        if not modules:
-            print("No modules in analyzing/embedding state.")
-            return 0
-
-        await _resume_modules(modules, session)
-
-    return 0
+    return await _run_resume(
+        repo_root, Module.state.in_(("analyzing", "embedding")), "No modules in analyzing/embedding state."
+    )
 
 
 async def _run_seed_packagist_cache(cache_key: str, response_json: str) -> int:

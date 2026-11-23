@@ -9,7 +9,7 @@ def _usage(prompt_tokens=100, completion_tokens=50) -> SimpleNamespace:
 
 
 def test_turn_cost_uses_litellms_own_cost(monkeypatch):
-    monkeypatch.setattr("app.agent.loop.litellm.completion_cost", lambda **k: 0.0021)
+    monkeypatch.setattr("app.analyzer.pricing.litellm.completion_cost", lambda **k: 0.0021)
 
     response = SimpleNamespace(usage=_usage())
     tokens_in, tokens_out, cost = _turn_cost(response, "anthropic/claude-haiku-5-5")
@@ -22,8 +22,8 @@ def test_turn_cost_falls_back_when_litellm_raises(monkeypatch):
     def _raise(**k):
         raise RuntimeError("no pricing data")
 
-    monkeypatch.setattr("app.agent.loop.litellm.completion_cost", _raise)
-    monkeypatch.setattr("app.agent.loop.compute_cost_usd", lambda model, tin, tout: Decimal("0.0005"))
+    monkeypatch.setattr("app.analyzer.pricing.litellm.completion_cost", _raise)
+    monkeypatch.setattr("app.analyzer.pricing.compute_cost_usd", lambda model, tin, tout: Decimal("0.0005"))
 
     response = SimpleNamespace(usage=_usage())
     _tin, _tout, cost = _turn_cost(response, "m")
@@ -32,8 +32,8 @@ def test_turn_cost_falls_back_when_litellm_raises(monkeypatch):
 
 
 def test_turn_cost_falls_back_when_litellm_returns_zero(monkeypatch):
-    monkeypatch.setattr("app.agent.loop.litellm.completion_cost", lambda **k: 0)
-    monkeypatch.setattr("app.agent.loop.compute_cost_usd", lambda model, tin, tout: Decimal("0.0006"))
+    monkeypatch.setattr("app.analyzer.pricing.litellm.completion_cost", lambda **k: 0)
+    monkeypatch.setattr("app.analyzer.pricing.compute_cost_usd", lambda model, tin, tout: Decimal("0.0006"))
 
     response = SimpleNamespace(usage=_usage())
     _tin, _tout, cost = _turn_cost(response, "m")

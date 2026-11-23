@@ -11,12 +11,12 @@ import { AccessTokenRequiredError } from "@/lib/access-token";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { EnabledBadge } from "@/components/enabled-badge";
+import { FindingsPreviewList } from "@/components/findings-preview-list";
+import { PresenceBadge } from "@/components/presence-badge";
 import { CHECK_TYPES, QualityBadges } from "@/components/quality-badges";
-import { SeverityBadge, SEVERITY_ORDER, type Severity } from "@/components/severity-badge";
 import { StateBadge } from "@/components/state-badge";
-import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
+import { TooltipProvider } from "@/components/ui/tooltip";
 import { TagBadge } from "@/components/tag-badge";
-import { FindingMessage } from "@/components/finding-message";
 import { apiFetch, apiUrl } from "@/lib/api";
 import { useDebouncedValue } from "@/lib/use-debounced-value";
 import { useDocumentTitle } from "@/lib/use-document-title";
@@ -137,26 +137,6 @@ function FilterSelect({
     </div>
   );
 }
-
-function PresenceBadge({ present, label }: { present: boolean; label: string }) {
-  return (
-    <Tooltip>
-      <TooltipTrigger className="inline-flex">
-        {present ? (
-          <SeverityBadge severity="ok">{label}</SeverityBadge>
-        ) : (
-          <SeverityBadge severity="none">no {label.toLowerCase()}</SeverityBadge>
-        )}
-      </TooltipTrigger>
-      <TooltipContent>
-        {present
-          ? `Has a ${label === "README" ? "README.md" : "Test/ directory"} in the module's own source.`
-          : `No ${label === "README" ? "README.md" : "test files"} found in the module's own source.`}
-      </TooltipContent>
-    </Tooltip>
-  );
-}
-
 
 function downloadModulesCsv(modules: ModuleSummary[]) {
   const headers = [
@@ -349,28 +329,15 @@ function ModuleRow({
                 <p className="text-sm text-muted-foreground py-2">No quality findings.</p>
               ) : (
                 <div className="py-2 space-y-2">
-                  <ul className="text-sm space-y-1.5">
-                    {[...detailQuery.data.quality_findings]
-                      .sort((a, b) => SEVERITY_ORDER[a.severity as Severity] - SEVERITY_ORDER[b.severity as Severity])
-                      .slice(0, PREVIEW_FINDING_COUNT)
-                      .map((f, i) => (
-                        <li key={i} className="space-y-0.5">
-                          <div className="flex items-center gap-2">
-                            <SeverityBadge severity={f.severity as Severity}>{f.severity}</SeverityBadge>
-                            <span className="font-mono text-muted-foreground whitespace-nowrap">
-                              {f.file_path}
-                              {f.line ? `:${f.line}` : ""}
-                            </span>
-                          </div>
-                          <div><FindingMessage message={f.message} /></div>
-                        </li>
-                      ))}
-                  </ul>
-                  {detailQuery.data.quality_findings.length > PREVIEW_FINDING_COUNT && (
-                    <Link href={`/modules/${module.id}`} className="text-sm text-primary hover:underline">
-                      View all {detailQuery.data.quality_findings.length} findings →
-                    </Link>
-                  )}
+                  <FindingsPreviewList
+                    findings={detailQuery.data.quality_findings}
+                    limit={PREVIEW_FINDING_COUNT}
+                    footer={
+                      <Link href={`/modules/${module.id}`} className="text-sm text-primary hover:underline">
+                        View all {detailQuery.data.quality_findings.length} findings →
+                      </Link>
+                    }
+                  />
                 </div>
               ))}
           </TableCell>

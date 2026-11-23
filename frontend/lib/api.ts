@@ -1,4 +1,4 @@
-import { AccessTokenRequiredError, getStoredAccessToken } from "@/lib/access-token";
+import { throwIfAccessTokenRequired, withAccessToken } from "@/lib/access-token";
 
 export const apiUrl = () => process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000";
 
@@ -13,11 +13,10 @@ export async function apiFetch<T>(path: string, init?: RequestInit): Promise<T> 
   // the handful of write/cost-incurring routes actually enforce this header,
   // and only when the deployment set WRITE_ACCESS_TOKEN (see CLAUDE.md's
   // Phase 24 decision note).
-  const token = getStoredAccessToken();
-  if (token) headers.set("X-Access-Token", token);
+  withAccessToken(headers);
 
   const res = await fetch(`${apiUrl()}${path}`, { ...init, headers });
-  if (res.status === 401) throw new AccessTokenRequiredError();
+  throwIfAccessTokenRequired(res);
   if (!res.ok) {
     const body = await res.json().catch(() => null);
     throw new Error(body?.detail ?? `API responded with ${res.status}`);
