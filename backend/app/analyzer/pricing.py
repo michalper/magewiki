@@ -1,4 +1,5 @@
 from decimal import Decimal
+from typing import Any
 
 import litellm
 
@@ -22,7 +23,7 @@ def compute_cost_usd(model: str, tokens_in: int, tokens_out: int) -> Decimal:
     return (Decimal(tokens_in) * prices["input"] + Decimal(tokens_out) * prices["output"]) / Decimal(1_000_000)
 
 
-def resolve_llm_cost(response, model: str, tokens_in: int, tokens_out: int) -> Decimal:
+def resolve_llm_cost(response: Any, model: str, tokens_in: int, tokens_out: int) -> Decimal:
     """litellm.completion_cost() first, falling back to the price table above
     when it raises or returns nothing usable (e.g. an unrecognized model) --
     cost computation must never block a call whose real work already

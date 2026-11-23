@@ -6,6 +6,7 @@ from collections.abc import Sequence
 from pathlib import Path
 
 from sqlalchemy import ColumnElement, select, update
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db import async_session_factory
 from app.models import FileHash, Module, ModuleDocument
@@ -43,7 +44,7 @@ async def _run_scan(path: str) -> int:
     return 1 if any(m.status == "error" for m in result.modules) else 0
 
 
-async def _resume_modules(modules: Sequence[Module], session) -> None:
+async def _resume_modules(modules: Sequence[Module], session: AsyncSession) -> None:
     """Shared by resume-budget and resume-failed: re-enqueue each module from
     wherever it actually stopped — unanalyzed files first (ground truth via
     FileHash.analyzed, not the pending_file_count counter, which only reflects

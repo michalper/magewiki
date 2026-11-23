@@ -11,6 +11,13 @@ describe("escapeCsvField", () => {
     expect(escapeCsvField(undefined)).toBe("");
   });
 
+  it("JSON-stringifies an object instead of Object's default toString()", () => {
+    // escapeCsvField takes `unknown` by design (toCsv's own rows: unknown[][]);
+    // a caller passing an object by mistake must not silently become the
+    // literal, useless text "[object Object]" in the exported file.
+    expect(escapeCsvField({ a: 1 })).toBe('"{""a"":1}"');
+  });
+
   it("quotes a field containing a comma, quote, or newline", () => {
     expect(escapeCsvField("a,b")).toBe('"a,b"');
     expect(escapeCsvField('a"b')).toBe('"a""b"');

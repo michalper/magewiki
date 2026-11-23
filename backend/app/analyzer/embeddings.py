@@ -118,7 +118,8 @@ async def embed_query_text(
     content_hash = hash_text(query)
     cached = await lookup_cache(session, content_hash, model, EMBEDDING_PROMPT_VERSION, "embedding")
     if cached is not None:
-        return cached.response["embedding"]
+        cached_vector: list[float] = cached.response["embedding"]
+        return cached_vector
 
     if await is_budget_exceeded(session):
         raise BudgetExceededError("Monthly LLM budget exceeded — cannot compute a new search query embedding.")

@@ -1,9 +1,10 @@
 import asyncio
 import logging
 from collections.abc import AsyncIterator
-from contextlib import asynccontextmanager
+from contextlib import asynccontextmanager, suppress
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
+from typing import Any
 
 from sqlalchemy import delete, func, select, update
 from sqlalchemy.dialects.postgresql import insert as pg_insert
@@ -99,7 +100,7 @@ async def fail_module_on_error(module_id: int, module_current_hash: str) -> Asyn
 
 
 async def analyze_file(
-    ctx: dict | None,
+    ctx: dict[str, Any] | None,
     module_id: int,
     relative_path: str,
     content_hash: str,
@@ -199,7 +200,7 @@ async def analyze_file(
                 )
 
 
-async def synthesize_module(ctx: dict | None, module_id: int, module_current_hash: str) -> None:
+async def synthesize_module(ctx: dict[str, Any] | None, module_id: int, module_current_hash: str) -> None:
     """Map-reduce over a module's file summaries + parser facts into the module-level
     JSON doc, once every changed/added file has been analyzed. On success, hands off
     to embed_chunks (state="embedding") rather than finishing the module itself —
@@ -293,7 +294,7 @@ async def synthesize_module(ctx: dict | None, module_id: int, module_current_has
             )
 
 
-async def embed_chunks(ctx: dict | None, module_id: int, module_current_hash: str) -> None:
+async def embed_chunks(ctx: dict[str, Any] | None, module_id: int, module_current_hash: str) -> None:
     """Build and embed the module/file/method chunks that back hybrid search, once
     synthesis has produced a module_docs row. The final step of the pipeline —
     sets the module to up_to_date. See CLAUDE.md "Multi-level index".
@@ -317,10 +318,10 @@ async def embed_chunks(ctx: dict | None, module_id: int, module_current_hash: st
             specs: list[tuple[str, str | None, int | None, str]] = [
                 ("module", None, None, build_module_chunk_text(module_doc))
             ]
-            for fa in file_analyses:
-                specs.append(
-                    ("file", fa.relative_path, None, build_file_chunk_text(fa.file_summary, fa.notable_behavior))
-                )
+            specs.extend(
+                ("file", fa.relative_path, None, build_file_chunk_text(fa.file_summary, fa.notable_behavior))
+                for fa in file_analyses
+            )
 
             method_rows = (
                 await session.execute(
@@ -422,7 +423,7 @@ async def embed_chunks(ctx: dict | None, module_id: int, module_current_hash: st
             await session.commit()
 
 
-async def scan_repository_job(ctx: dict, repo_root: str) -> None:
+async def scan_repository_job(ctx: dict[str, Any], repo_root: str) -> None:
     """ARQ job wrapper around scan_repository — used by the HMAC webhook (and the
     nightly cron below). Opens its own session like the other jobs in this module.
     scan_repository's own Postgres advisory lock already makes two overlapping
@@ -430,13 +431,11 @@ async def scan_repository_job(ctx: dict, repo_root: str) -> None:
     just means another trigger got there first, so this is a no-op, not a failure.
     """
     async with async_session_factory() as session:
-        try:
+        with suppress(ScanAlreadyInProgressError):
             await scan_repository(repo_root, session)
-        except ScanAlreadyInProgressError:
-            pass
 
 
-async def nightly_scan_all(ctx: dict) -> None:
+async def nightly_scan_all(ctx: dict[str, Any]) -> None:
     """Cron safety net (see CLAUDE.md "Scan, cron, and cost control"): re-scan every
     repo_root already known to the DB, so drift since the last scan/webhook gets
     caught even if nothing ever pinged us. One repo failing (e.g. its path no
@@ -464,7 +463,7 @@ async def nightly_scan_all(ctx: dict) -> None:
     await asyncio.gather(*(_scan_one(repo_root) for repo_root in repo_roots))
 
 
-async def refresh_magento_release_cache(ctx: dict) -> None:
+async def refresh_magento_release_cache(ctx: dict[str, Any]) -> None:
     """Phase 13 cron: pre-warm the cached "latest Magento release" data daily,
     decoupled from nightly_scan_all so it stays fresh even if that job is
     failing. A new release becomes visible to every module's upgrade-
@@ -482,7 +481,7 @@ async def refresh_magento_release_cache(ctx: dict) -> None:
         await session.commit()
 
 
-async def prune_module_history(ctx: dict) -> None:
+async def prune_module_history(ctx: dict[str, Any]) -> None:
     """Nightly cron: age-based retention for module_history_snapshots, added
     proactively (not after a bloat incident) per CLAUDE.md's "Operational
     lessons" note on v1's own real production history (an insert-only

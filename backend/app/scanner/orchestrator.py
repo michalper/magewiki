@@ -76,6 +76,7 @@ from app.scanner.dto import (
     MviewEntry,
     PendingAnalysisJob,
     PhpClassEntry,
+    QualityFinding,
     QueueBindingEntry,
     RouteEntry,
     WebapiRouteEntry,
@@ -281,7 +282,7 @@ async def scan_repository(repo_root: str, session: AsyncSession) -> ScanResult:
     async for event in scan_repository_events(repo_root, session):
         if event["event"] == "done":
             result = event["result"]
-    assert result is not None  # "done" is always the generator's last event
+    assert result is not None  # "done" is always the generator's last event  # noqa: S101
     return result
 
 
@@ -293,11 +294,11 @@ async def scan_paths(path: str, session: AsyncSession) -> ScanResult:
     async for event in scan_paths_events(path, session):
         if event["event"] == "done":
             result = event["result"]
-    assert result is not None  # "done" is always the generator's last event
+    assert result is not None  # "done" is always the generator's last event  # noqa: S101
     return result
 
 
-async def scan_paths_events(path: str, session: AsyncSession) -> AsyncIterator[dict]:
+async def scan_paths_events(path: str, session: AsyncSession) -> AsyncIterator[dict[str, Any]]:
     """Expands `path` into one or more store/module roots (find_store_roots)
     and scans each in turn — a directory containing several stores side by
     side (e.g. /sites/store-a, /sites/store-b, ...) scans all of them in one
@@ -356,7 +357,7 @@ async def scan_paths_events(path: str, session: AsyncSession) -> AsyncIterator[d
     yield {"event": "done", "result": combined}
 
 
-async def scan_repository_events(repo_root: str, session: AsyncSession) -> AsyncIterator[dict]:
+async def scan_repository_events(repo_root: str, session: AsyncSession) -> AsyncIterator[dict[str, Any]]:
     """The actual scan — a generator so a streaming caller (POST /scan/stream)
     can show live progress. Commits per module rather than once at the end
     specifically so that progress is real: a module is only visible to any
@@ -412,7 +413,7 @@ def _is_deadlock(exc: BaseException) -> bool:
     return getattr(getattr(exc, "orig", None), "sqlstate", None) == "40P01"
 
 
-async def _run_scan(root: Path, session: AsyncSession) -> AsyncIterator[dict]:
+async def _run_scan(root: Path, session: AsyncSession) -> AsyncIterator[dict[str, Any]]:
     result = ScanResult(repo_root=str(root))
 
     discovered = find_modules(root)
@@ -977,7 +978,7 @@ _ModuleChildModel = (
 
 
 async def _sync_module_children(
-    session: AsyncSession, module_id: int, model_cls: _ModuleChildModel, entries: list
+    session: AsyncSession, module_id: int, model_cls: _ModuleChildModel, entries: list[Any]
 ) -> None:
     """Replace every row of model_cls for this module — delete, then reinsert from
     freshly parsed entries. Shared by every 1:N parsed-fact table whose DTO field
@@ -1150,15 +1151,15 @@ async def _persist_module(
             )
         )
 
-    for relative_path in diff.added + diff.changed:
-        job_specs.append(
-            PendingAnalysisJob(
-                module_id=module.id,
-                relative_path=relative_path,
-                content_hash=new_hashes[relative_path],
-                module_current_hash=new_current_hash,
-            )
+    job_specs.extend(
+        PendingAnalysisJob(
+            module_id=module.id,
+            relative_path=relative_path,
+            content_hash=new_hashes[relative_path],
+            module_current_hash=new_current_hash,
         )
+        for relative_path in diff.added + diff.changed
+    )
 
     for dep_name in pm.module_xml.sequence:
         session.add(ModuleDependency(module_id=module.id, depends_on_name=dep_name))
@@ -1291,7 +1292,7 @@ async def _persist_module(
             )
         )
 
-    async def _session_based_checks() -> list:
+    async def _session_based_checks() -> list[QualityFinding]:
         # These three all read/write the same packagist_cache table through the
         # one shared `session` — AsyncSession doesn't support concurrent use
         # from multiple coroutines, so they must stay sequential relative to

@@ -1,5 +1,6 @@
 import json
 from pathlib import Path
+from typing import Any
 
 
 def find_path_repository_globs(composer_json_path: Path) -> list[str]:
@@ -23,7 +24,7 @@ def find_path_repository_globs(composer_json_path: Path) -> list[str]:
         return []
 
     repositories = raw.get("repositories")
-    entries: list = []
+    entries: list[Any] = []
     if isinstance(repositories, dict):
         entries = list(repositories.values())
     elif isinstance(repositories, list):
@@ -31,8 +32,8 @@ def find_path_repository_globs(composer_json_path: Path) -> list[str]:
     else:
         return []
 
-    globs: list[str] = []
-    for entry in entries:
-        if isinstance(entry, dict) and entry.get("type") == "path" and isinstance(entry.get("url"), str):
-            globs.append(entry["url"])
-    return globs
+    return [
+        entry["url"]
+        for entry in entries
+        if isinstance(entry, dict) and entry.get("type") == "path" and isinstance(entry.get("url"), str)
+    ]

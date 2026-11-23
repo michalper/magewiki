@@ -44,9 +44,104 @@ mypy = ">=1.13,<3.0"
 lxml-stubs = "^0.5"
 pip-audit = "^2.7"
 
+[tool.mypy]
+strict = true
+
 [tool.ruff]
 target-version = "py311"
 line-length = 100
+
+[tool.ruff.lint]
+# A practical "maximally strict, where practical" rule set for the OpenSSF
+# Best Practices Badge's warnings_strict criterion -- deliberately NOT
+# `select = ["ALL"]` (confirmed: that produces 10,025 findings, almost all
+# noise that actively fights this project's own documented conventions, not
+# real signal). Excluded on purpose, not by oversight:
+#   D   (pydocstyle)   -- CLAUDE.md: "Default to writing no comments," wants
+#                         docstrings only where the WHY is non-obvious, the
+#                         opposite of D's "every public thing needs one."
+#   ANN (flake8-annotations) -- redundant with mypy --strict, which already
+#                         requires every parameter/return annotated and
+#                         checks the annotations are actually correct; ANN
+#                         only checks presence, a strictly weaker, duplicate
+#                         signal.
+#   COM (flake8-commas)  -- trailing-comma style this project has never
+#                         adopted; a pure preference, not a quality signal.
+#   T20 (flake8-print)   -- app/cli.py and the eval scripts (run_ci_eval.py,
+#                         evaluation/runner.py) print by design, as real
+#                         CLI/report output, not forgotten debug statements.
+#   EM  (flake8-errmsg)  -- wants every raise to assign its message to a
+#                         variable first; this project's own exceptions are
+#                         already consistently clear inline, and the
+#                         indirection adds a line without adding clarity.
+#   FBT (flake8-boolean-trap) -- flags every `enabled: bool` keyword
+#                         argument this project's own API layer uses
+#                         throughout (FastAPI query params, SQLAlchemy model
+#                         fields); not a real bug class here.
+#   TD/FIX (flake8-todos/fixme) -- this project tracks follow-up work in the
+#                         project-decision-log skill and CLAUDE.md's phase
+#                         plan, not inline TODO comments.
+select = [
+    "E", "F", "W",    # pycodestyle errors/warnings, pyflakes -- already effectively on
+    "I",              # isort -- import ordering
+    "UP",             # pyupgrade -- modern Python 3.11+ idiom
+    "B",              # flake8-bugbear -- likely real bugs (extend-immutable-calls below)
+    "BLE",            # flake8-blind-except -- this project already reasons about every
+                      # `except Exception:` with an inline `# noqa: BLE001 - why` comment;
+                      # selecting the rule those comments were clearly written for, instead
+                      # of leaving them as dead text, is what actually makes them mean
+                      # something to a future lint run instead of a future reader.
+    "C4",             # flake8-comprehensions -- unnecessary list()/dict()/set() calls
+    "SIM",            # flake8-simplify -- needlessly complex code
+    "RUF",            # ruff's own rules
+    "PERF",           # perflint -- real performance anti-patterns
+    "S",              # flake8-bandit -- security (each finding reviewed, not blanket-ignored)
+    "PTH",            # flake8-use-pathlib -- os.path in a pathlib-based codebase
+]
+# E501 (line-too-long) excluded, not just raised: this project's own established
+# style (CLAUDE.md, every module docstring, every "why"-explaining inline
+# comment throughout the codebase) is long-form prose, the same reasoning
+# .markdownlint-cli2.yaml already applies to Markdown's equivalent MD013 rule.
+# Confirmed this is the codebase's real, consistent, pre-existing style, not a
+# few stragglers worth reflowing: 1181 hits across 116 files (E501 was never
+# actually enforced before this pass -- ruff's own bare defaults are E4/E7/E9/F,
+# not E501), including 89/89 of alembic/'s own findings. Reflowing ~1181 lines
+# for a line-length rule this project's own prose was never written to respect
+# is not "practical" by the criterion's own wording -- it would mean rewriting
+# working, already-reviewed comments for a purely cosmetic property.
+ignore = ["E501"]
+# Vendored third-party PHPUnit tree, not this project's own code (relative
+# to this file, i.e. backend/tests/fixtures -- ruff's exclude paths resolve
+# against the directory containing the config that sets them).
+exclude = ["tests/fixtures/**"]
+
+[tool.ruff.lint.per-file-ignores]
+# S101 (assert): pytest's own idiom for every test in this project -- not the
+# "assert could be compiled away by -O, don't use it for real control flow"
+# risk the rule exists for in application code (where this project's own
+# handful of real asserts, e.g. orchestrator.py's result-narrowing ones, stay
+# checked). 2083/2087 of this pass's S101 hits were here before this ignore.
+# S108 (hardcoded-temp-file): every hit here is a fake `/tmp/...` string used
+# only as a Module.repo_root test-fixture value (never an actual file this
+# project writes to) -- the real risk S108 warns about (a predictable path in
+# a shared temp dir an attacker could pre-create/symlink before a real write)
+# doesn't apply to a string that's never passed to open()/write.
+# S105 (hardcoded-password): every hit is a fake TEST_TOKEN/TEST_SECRET
+# module-level constant used only to sign/present a test request against
+# this project's own auth checks -- never a real credential.
+# S603 (subprocess-untrusted-input): test_cli.py's one real-CLI-process test
+# spawns `[sys.executable, "-m", "app.cli", ...]` with a fixed command and a
+# resolved test-fixture path, not attacker-influenced input.
+# S607 (subprocess-partial-path): conftest.py's one-time `alembic upgrade
+# head` setup call -- "alembic" resolving via PATH is the same trust level
+# as any other dev-container tooling invocation, not untrusted input.
+"tests/**" = ["S101", "S108", "S105", "S603", "S607"]
+# E402 (module-import-not-at-top): conftest.py's own leading comment block
+# explains why -- DATABASE_URL/REDIS_URL/MAGEWIKI_SCAN_ROOT_* must be
+# redirected to test-only values *before* anything imports app.config/app.db
+# (both bind their engine/session factory once at import time), so these
+# app.* imports deliberately come after that env-var setup, not before.
+"tests/conftest.py" = ["E402"]
 
 [tool.ruff.lint.flake8-bugbear]
 # FastAPI's dependency-injection pattern (`session: AsyncSession = Depends(get_session)`)

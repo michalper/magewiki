@@ -1,6 +1,7 @@
 import json
 import logging
 import uuid
+from typing import Any
 
 import litellm
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -68,7 +69,7 @@ async def rewrite_query(session: AsyncSession, query: str) -> str:
     return rewritten if rewritten else query
 
 
-async def _persist_query_rewrite_cost(session: AsyncSession, response, model: str) -> None:
+async def _persist_query_rewrite_cost(session: AsyncSession, response: Any, model: str) -> None:
     tokens_in = response.usage.prompt_tokens
     tokens_out = response.usage.completion_tokens
     cost = resolve_llm_cost(response, model, tokens_in, tokens_out)

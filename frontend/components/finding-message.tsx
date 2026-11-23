@@ -3,7 +3,7 @@
 const TRAILING_URL = /^([\s\S]*)\((https?:\/\/[^\s)]+)\)$/;
 
 export function FindingMessage({ message }: { message: string }) {
-  const match = message.match(TRAILING_URL);
+  const match = TRAILING_URL.exec(message);
   if (!match) {
     return <>{message}</>;
   }

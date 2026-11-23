@@ -1,3 +1,4 @@
+import contextlib
 import json
 from typing import Literal
 
@@ -79,10 +80,8 @@ class ModuleDoc(BaseModel):
         for field_name in _MODULE_DOC_LIST_FIELDS:
             value = data.get(field_name)
             if isinstance(value, str):
-                try:
+                with contextlib.suppress(json.JSONDecodeError):
                     data[field_name] = json.loads(value)
-                except json.JSONDecodeError:
-                    pass
         return data
 
     @field_validator("rejected_tags", mode="before")

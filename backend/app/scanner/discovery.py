@@ -47,7 +47,7 @@ def find_modules(repo_root: Path) -> list[DiscoveredModule]:
       that live entirely outside app/code and vendor.
     """
     if (repo_root / "etc" / "module.xml").is_file():
-        return [DiscoveredModule(root=repo_root, relative_path=Path("."), source_type="standalone")]
+        return [DiscoveredModule(root=repo_root, relative_path=Path(), source_type="standalone")]
 
     resolved_repo_root = repo_root.resolve()
     discovered: list[DiscoveredModule] = []

@@ -27,8 +27,7 @@ def render_readme_markdown(
         lines.append("")
         lines.append("## Features")
         lines.append("")
-        for f in doc.features:
-            lines.append(f"- **{f.name}**: {f.description} _(source: {f.source})_")
+        lines.extend(f"- **{f.name}**: {f.description} _(source: {f.source})_" for f in doc.features)
 
     if doc.integrations:
         lines.append("")
@@ -48,15 +47,13 @@ def render_readme_markdown(
         lines.append("")
         lines.append("## Configuration")
         lines.append("")
-        for c in doc.config_options:
-            lines.append(f"- `{c.path}`" + (f" — {c.label}" if c.label else ""))
+        lines.extend(f"- `{c.path}`" + (f" — {c.label}" if c.label else "") for c in doc.config_options)
 
     if doc.risks:
         lines.append("")
         lines.append("## Risks")
         lines.append("")
-        for r in doc.risks:
-            lines.append(f"- **[{r.severity}]** {r.description}")
+        lines.extend(f"- **[{r.severity}]** {r.description}" for r in doc.risks)
 
     lines.append("")
     lines.append("## For PMs")

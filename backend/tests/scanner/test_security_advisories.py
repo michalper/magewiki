@@ -92,7 +92,7 @@ async def test_check_security_advisories_handles_multiple_cache_misses_concurren
         lambda *a, **k: _FakeAsyncClient(advisories),
     )
 
-    findings = await check_security_advisories(db_session, {p: "^1.0" for p in packages})
+    findings = await check_security_advisories(db_session, dict.fromkeys(packages, "^1.0"))
 
     assert {f.message.split(" — ")[0] for f in findings} == {"CVE-A", "CVE-C"}
 

@@ -1,11 +1,10 @@
 import logging
-import os
 import time
 from collections import Counter
 from collections.abc import AsyncIterator
 from datetime import datetime
 from pathlib import Path
-from typing import Literal, cast
+from typing import Any, Literal, cast
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from fastapi.responses import JSONResponse, PlainTextResponse, StreamingResponse
@@ -79,7 +78,7 @@ class ScanResponse(BaseModel):
     stores_scanned: int
 
 
-def _extract_tags(doc: dict | None) -> list[str]:
+def _extract_tags(doc: dict[str, Any] | None) -> list[str]:
     if not doc:
         return []
     return [t.get("name") for t in doc.get("tags", []) if t.get("name")]
@@ -121,7 +120,7 @@ class ModuleSummary(BaseModel):
 class ModuleListResponse(BaseModel):
     """GET /modules' response -- `total` is the count of modules matching every
     filter *before* limit/offset, so a paginated caller (the modules browser
-    page) can render "X–Y of total" and a page count without a second request.
+    page) can render "X-Y of total" and a page count without a second request.
     """
 
     total: int
@@ -315,7 +314,7 @@ def _validate_scan_path(path: str) -> None:
     share one 400 response/message so a caller can't distinguish "not a directory"
     from "outside the allowed roots" and use that to probe the host filesystem.
     """
-    if not settings.is_within_scan_roots(path) or not os.path.isdir(path):
+    if not settings.is_within_scan_roots(path) or not Path(path).is_dir():
         raise HTTPException(status_code=400, detail=_not_a_directory_detail(path))
 
 
@@ -557,7 +556,7 @@ async def list_modules(
         classes = cast(int, row[1])
         plugins = cast(int, row[2])
         observers = cast(int, row[3])
-        doc = cast(dict | None, row[4])
+        doc = cast(dict[str, Any] | None, row[4])
         summaries.append(
             ModuleSummary(
                 id=module.id,
@@ -619,7 +618,7 @@ async def list_repos(session: AsyncSession = Depends(get_session)) -> list[RepoS
 
     counts_by_module = await _quality_finding_counts_by_module(session)
 
-    repos: dict[str, dict] = {}
+    repos: dict[str, dict[str, Any]] = {}
     for repo_root, module_id, enabled, has_readme, has_tests, last_scanned_at in module_rows:
         repo = repos.setdefault(
             repo_root,
@@ -738,7 +737,7 @@ async def list_module_overlap(session: AsyncSession = Depends(get_session)) -> l
         )
     ).all()
 
-    by_name: dict[str, list] = {}
+    by_name: dict[str, list[Any]] = {}
     for name, composer_name, repo_root, current_hash, setup_version, enabled in rows:
         by_name.setdefault(name, []).append((composer_name, repo_root, current_hash, setup_version, enabled))
 

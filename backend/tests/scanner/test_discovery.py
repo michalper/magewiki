@@ -24,7 +24,7 @@ def test_find_modules_standalone(demo_module_path: Path):
 
     assert len(discovered) == 1
     assert discovered[0].source_type == "standalone"
-    assert discovered[0].relative_path == Path(".")
+    assert discovered[0].relative_path == Path()
 
 
 def test_walk_module_source_files_finds_both_classes(demo_module_path: Path):

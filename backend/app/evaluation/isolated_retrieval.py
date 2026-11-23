@@ -5,6 +5,8 @@ app.search.hybrid is settled production architecture and is not refactored to
 serve this one-time evaluation need.
 """
 
+from typing import Any
+
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -34,7 +36,7 @@ _KEYWORD_ONLY_SQL = text("""
 """)
 
 
-def _rows_to_results(rows) -> list[SearchResult]:
+def _rows_to_results(rows: Any) -> list[SearchResult]:
     return [
         SearchResult(
             chunk_id=row.id,

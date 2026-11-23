@@ -202,10 +202,15 @@ function ConfigurationSectionCard({
   // to see which fields belong together.
   const bySection = new Map<string, Map<string, typeof fields>>();
   for (const f of fields) {
-    if (!bySection.has(f.section_id)) bySection.set(f.section_id, new Map());
-    const groups = bySection.get(f.section_id)!;
-    if (!groups.has(f.group_id)) groups.set(f.group_id, []);
-    groups.get(f.group_id)!.push(f);
+    // TypeScript can't link a Map.has() check to the following .get() as a
+    // narrowing pair, so this always .set()s a fresh default first (cheap,
+    // never actually replaces an existing entry on the already-has() path)
+    // rather than asserting the .get() result is non-null.
+    const groups = bySection.get(f.section_id) ?? new Map<string, typeof fields>();
+    bySection.set(f.section_id, groups);
+    const group = groups.get(f.group_id) ?? [];
+    groups.set(f.group_id, group);
+    group.push(f);
   }
   return (
     <CollapsibleCard title="Configuration" collapsible={fields.length > 12}>
@@ -370,7 +375,14 @@ export default function ModuleDetailClient({ id }: { id: string }) {
   // resolve this module's own same-repo dependency names below.
   const modulesQuery = useQuery({
     queryKey: ["modules", "repo", repoRoot],
-    queryFn: () => fetchModules(repoRoot!),
+    queryFn: () => {
+      // enabled below means react-query never actually invokes this while
+      // repoRoot is falsy -- this is a type guard for that real runtime
+      // guarantee, not a reachable error path.
+      /* v8 ignore next */
+      if (!repoRoot) throw new Error("unreachable: query disabled when repoRoot is falsy");
+      return fetchModules(repoRoot);
+    },
     enabled: !!repoRoot,
   });
 
@@ -655,7 +667,7 @@ export default function ModuleDetailClient({ id }: { id: string }) {
                   type="button"
                   variant="outline"
                   size="sm"
-                  onClick={() => downloadFindingsCsv(moduleQuery.data!.name, moduleQuery.data!.quality_findings)}
+                  onClick={() => downloadFindingsCsv(moduleQuery.data.name, moduleQuery.data.quality_findings)}
                 >
                   Export findings CSV
                 </Button>
@@ -687,7 +699,7 @@ export default function ModuleDetailClient({ id }: { id: string }) {
               </h2>
               <ul className="text-sm space-y-3">
                 {historyQuery.data.slice(0, HISTORY_PREVIEW_COUNT).map((entry, i) => {
-                  const delta = historyDelta(entry, historyQuery.data![i + 1]);
+                  const delta = historyDelta(entry, historyQuery.data[i + 1]);
                   return (
                     <li key={entry.scanned_at} className="space-y-1">
                       <div className="flex items-center gap-2 font-mono text-muted-foreground">

@@ -46,18 +46,18 @@ def detect_virtual_type_conflicts(virtual_types: list[VirtualTypeRow]) -> list[t
             "module-sequence order; one module's declaration silently wins and the other's is never "
             "actually used."
         )
-        for module_id in module_ids:
-            findings.append(
-                (
-                    module_id,
-                    QualityFinding(
-                        check_type="virtual_type_conflict",
-                        severity="warning",
-                        file_path=None,
-                        line=None,
-                        message=message,
-                    ),
-                )
+        findings.extend(
+            (
+                module_id,
+                QualityFinding(
+                    check_type="virtual_type_conflict",
+                    severity="warning",
+                    file_path=None,
+                    line=None,
+                    message=message,
+                ),
             )
+            for module_id in module_ids
+        )
 
     return findings

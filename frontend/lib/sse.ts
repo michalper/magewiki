@@ -1,5 +1,10 @@
 import { throwIfAccessTokenRequired, withAccessToken } from "@/lib/access-token";
 
+// T isn't inferred from an argument here; it's the caller's own declared
+// contract for what shape the parsed JSON payload is asserted to be (see the
+// `as T` below), the same role a generic plays in e.g. JSON.parse's own
+// typed-wrapper idioms.
+// eslint-disable-next-line @typescript-eslint/no-unnecessary-type-parameters
 export function parseSseBlock<T extends { event: string }>(block: string): T | null {
   const lines = block.split("\n");
   const eventLine = lines.find((l) => l.startsWith("event: "));
@@ -12,6 +17,10 @@ export function parseSseBlock<T extends { event: string }>(block: string): T | n
   const event = eventLine.slice("event: ".length);
   const rawData = dataLines.map((l) => l.slice("data: ".length)).join("\n");
   try {
+    // JSON.parse's own return type is `any` -- the trust boundary this
+    // project already accepts at the network edge (see eslint.config.mjs's
+    // own no-explicit-any comment), asserted into T immediately below.
+    // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
     const data = JSON.parse(rawData);
     return { event, ...data } as T;
   } catch {
@@ -22,6 +31,9 @@ export function parseSseBlock<T extends { event: string }>(block: string): T | n
   }
 }
 
+// Same reasoning as parseSseBlock<T> above: T is the caller's declared
+// event-shape contract for onEvent, not inferred from an argument.
+// eslint-disable-next-line @typescript-eslint/no-unnecessary-type-parameters
 export async function streamSse<T extends { event: string }>(
   url: string,
   body: unknown,

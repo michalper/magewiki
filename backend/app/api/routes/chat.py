@@ -1,5 +1,6 @@
 import logging
 from collections.abc import AsyncIterator
+from typing import Any
 
 from fastapi import APIRouter, Depends
 from fastapi.responses import StreamingResponse
@@ -26,7 +27,9 @@ class ChatRequest(BaseModel):
     audience: str = AUDIENCE_DEV
 
 
-async def _sse_stream(session: AsyncSession, messages: list[dict], audience: str) -> AsyncIterator[str]:
+async def _sse_stream(
+    session: AsyncSession, messages: list[dict[str, Any]], audience: str
+) -> AsyncIterator[str]:
     try:
         async for event in run_agent(session, messages, audience):
             yield format_sse(event)

@@ -43,16 +43,16 @@ def _scan_text(source: str, relative_file_path: str) -> list[QualityFinding]:
     findings: list[QualityFinding] = []
 
     for label, pattern in _BRANDED_PATTERNS:
-        for match in pattern.finditer(source):
-            findings.append(
-                QualityFinding(
-                    check_type="hardcoded_secret",
-                    severity="blocking",
-                    file_path=relative_file_path,
-                    line=_line_of(source, match.start()),
-                    message=f"{label}: {_redact(match.group(0))}",
-                )
+        findings.extend(
+            QualityFinding(
+                check_type="hardcoded_secret",
+                severity="blocking",
+                file_path=relative_file_path,
+                line=_line_of(source, match.start()),
+                message=f"{label}: {_redact(match.group(0))}",
             )
+            for match in pattern.finditer(source)
+        )
 
     for match in _GENERIC_SECRET_RE.finditer(source):
         value = match.group(2)

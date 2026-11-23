@@ -3,7 +3,7 @@ import re
 from collections.abc import Callable
 from dataclasses import dataclass
 from decimal import Decimal
-from typing import TypeVar
+from typing import Any, TypeVar
 
 import litellm
 from pydantic import ValidationError
@@ -21,7 +21,7 @@ T = TypeVar("T")
 
 @dataclass
 class LlmCallResult:
-    response_json: dict
+    response_json: dict[str, Any]
     tokens_in: int
     tokens_out: int
     cost_usd: Decimal
@@ -41,7 +41,7 @@ def _sum_llm_call_results(results: list[LlmCallResult]) -> LlmCallResult:
     )
 
 
-def _result_from_response(response, response_json: dict, model: str) -> LlmCallResult:
+def _result_from_response(response: Any, response_json: dict[str, Any], model: str) -> LlmCallResult:
     tokens_in = response.usage.prompt_tokens
     tokens_out = response.usage.completion_tokens
 
@@ -60,12 +60,12 @@ def _result_from_response(response, response_json: dict, model: str) -> LlmCallR
 
 async def _call_tool_use(
     prompt: str,
-    schema: dict,
+    schema: dict[str, Any],
     max_tokens: int,
     model: str,
     api_key: str | None,
     api_base: str | None,
-    validate: Callable[[dict], T],
+    validate: Callable[[dict[str, Any]], T],
     tool_name: str = "emit_result",
 ) -> tuple[T, LlmCallResult] | None:
     """Try structured output via forced tool-use, retrying with corrective
@@ -134,12 +134,12 @@ async def _call_tool_use(
 
 async def _call_plain_json(
     prompt: str,
-    schema: dict,
+    schema: dict[str, Any],
     max_tokens: int,
     model: str,
     api_key: str | None,
     api_base: str | None,
-    validate: Callable[[dict], T],
+    validate: Callable[[dict[str, Any]], T],
 ) -> tuple[T, LlmCallResult]:
     """Fallback for providers without reliable forced tool-choice: ask for raw JSON,
     with one corrective re-prompt if the first response doesn't parse, or parses
@@ -198,11 +198,11 @@ async def _call_plain_json(
 
 async def _call_llm(
     prompt: str,
-    schema: dict,
+    schema: dict[str, Any],
     model: str,
     api_key: str | None,
     api_base: str | None,
-    validate: Callable[[dict], T],
+    validate: Callable[[dict[str, Any]], T],
     max_tokens: int = 2000,
 ) -> tuple[T, LlmCallResult]:
     result = await _call_tool_use(prompt, schema, max_tokens, model, api_key, api_base, validate)
@@ -231,7 +231,7 @@ async def synthesize_module_doc(
 ) -> tuple[ModuleDoc, LlmCallResult]:
     prompt = build_module_synthesis_prompt(facts)
 
-    def _validate(data: dict) -> ModuleDoc:
+    def _validate(data: dict[str, Any]) -> ModuleDoc:
         return ModuleDoc.model_validate(
             data, context={"known_sources": known_sources, "known_config_paths": known_config_paths}
         )

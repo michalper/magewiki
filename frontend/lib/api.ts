@@ -18,8 +18,12 @@ export async function apiFetch<T>(path: string, init?: RequestInit): Promise<T> 
   const res = await fetch(`${apiUrl()}${path}`, { ...init, headers });
   throwIfAccessTokenRequired(res);
   if (!res.ok) {
-    const body = await res.json().catch(() => null);
+    // res.json() is `Promise<any>` by lib.dom's own typing -- this cast is
+    // this function's one network-edge trust boundary (see
+    // eslint.config.mjs's own no-explicit-any comment), not an implicit
+    // `any` leak: the backend's own error body shape, asserted explicitly.
+    const body = (await res.json().catch(() => null)) as { detail?: string } | null;
     throw new Error(body?.detail ?? `API responded with ${res.status}`);
   }
-  return res.json();
+  return res.json() as Promise<T>;
 }

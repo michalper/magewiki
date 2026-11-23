@@ -369,8 +369,8 @@ new version with a schema change can never run against a stale database.
 running against an unmigrated database, instead of failing only on the
 first real query.
 
-- API health check: http://localhost:8000/health
-- Web UI: http://localhost:3000 — a first-visit onboarding wizard walks through all of this in-app (reopen anytime from the **?** button in the header)
+- API health check: <http://localhost:8000/health>
+- Web UI: <http://localhost:3000> — a first-visit onboarding wizard walks through all of this in-app (reopen anytime from the **?** button in the header)
 
 ### Scan your own Magento store
 
@@ -379,7 +379,7 @@ first real query.
    store(s)/module(s) you want to scan, then `docker compose up -d` again so
    the new bind mount takes effect. The Modules page's Scan box shows what's
    currently configured ("Scannable under: ...").
-2. Open http://localhost:3000/modules, paste the absolute path to a Magento
+2. Open <http://localhost:3000/modules>, paste the absolute path to a Magento
    store or a single module (must be under a configured scan root) into the
    Scan box, and click **Scan**.
 3. If something fails, check the warnings shown under the scan result first —
@@ -429,7 +429,7 @@ kubectl rollout restart deployment/api deployment/worker -n magewiki
 kubectl wait --for=condition=available deployment/api deployment/worker deployment/web deployment/php-analyzer -n magewiki --timeout=120s
 ```
 
-- API: http://localhost:8080/health — Web UI: http://localhost:3080
+- API: <http://localhost:8080/health> — Web UI: <http://localhost:3080>
 - Trigger the scan CronJob on demand: `kubectl create job --from=cronjob/scan-demo-store manual-test -n magewiki`
 - Teardown: `kind delete cluster --name magewiki`
 

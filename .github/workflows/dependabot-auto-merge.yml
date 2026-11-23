@@ -1,8 +1,19 @@
 name: Dependabot auto-merge
 
-on: pull_request_target
+# pull_request, not pull_request_target: no step here checks out the PR's
+# head ref, so pull_request_target buys nothing -- Dependabot PRs are
+# same-repo branches (not forks), so plain pull_request already gets a
+# write-capable GITHUB_TOKEN and secrets here same as pull_request_target
+# would. pull_request_target is flagged categorically by some scanners
+# (e.g. SonarCloud's githubactions:S7631) regardless of whether a checkout
+# happens -- ordo hit this and switched for the same reason.
+on: pull_request
 
 permissions: {}
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
   auto-merge:

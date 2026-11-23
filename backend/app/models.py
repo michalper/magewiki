@@ -1,5 +1,6 @@
 from datetime import datetime
 from decimal import Decimal
+from typing import Any
 
 from pgvector.sqlalchemy import Vector
 from sqlalchemy import (
@@ -55,8 +56,8 @@ class Module(Base):
     # map of the real PSR-4 namespace roots. allow_plugins: package name ->
     # whether composer.json explicitly allows it to run as a plugin.
     composer_scripts: Mapped[list[str] | None] = mapped_column(ARRAY(Text))
-    composer_autoload_psr4: Mapped[dict | None] = mapped_column(JSONB)
-    composer_allow_plugins: Mapped[dict | None] = mapped_column(JSONB)
+    composer_autoload_psr4: Mapped[dict[str, Any] | None] = mapped_column(JSONB)
+    composer_allow_plugins: Mapped[dict[str, Any] | None] = mapped_column(JSONB)
     enabled: Mapped[bool | None] = mapped_column(Boolean)
     last_scanned_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
@@ -225,7 +226,7 @@ class PhpParseCache(Base):
     __tablename__ = "php_parse_cache"
 
     content_hash: Mapped[str] = mapped_column(Text, primary_key=True)
-    entries: Mapped[list] = mapped_column(JSONB)
+    entries: Mapped[list[dict[str, Any]]] = mapped_column(JSONB)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
 
@@ -546,7 +547,7 @@ class PackagistCache(Base):
     __tablename__ = "packagist_cache"
 
     cache_key: Mapped[str] = mapped_column(Text, primary_key=True)
-    response_json: Mapped[dict] = mapped_column(JSONB)
+    response_json: Mapped[dict[str, Any]] = mapped_column(JSONB)
     fetched_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
 
@@ -571,7 +572,7 @@ class AnalysisCache(Base):
     model: Mapped[str] = mapped_column(Text)
     prompt_version: Mapped[str] = mapped_column(Text)
     kind: Mapped[str] = mapped_column(Text)
-    response: Mapped[dict] = mapped_column(JSONB)
+    response: Mapped[dict[str, Any]] = mapped_column(JSONB)
     tokens_in: Mapped[int] = mapped_column(Integer)
     tokens_out: Mapped[int] = mapped_column(Integer)
     cost_usd: Mapped[Decimal] = mapped_column(Numeric(10, 6))
@@ -601,7 +602,7 @@ class ModuleDocument(Base):
     model: Mapped[str] = mapped_column(Text)
     prompt_version: Mapped[str] = mapped_column(Text)
     cache_id: Mapped[int] = mapped_column(ForeignKey("analysis_cache.id"))
-    doc: Mapped[dict] = mapped_column(JSONB)
+    doc: Mapped[dict[str, Any]] = mapped_column(JSONB)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
@@ -690,6 +691,6 @@ class ModuleHistorySnapshot(Base):
     current_hash: Mapped[str] = mapped_column(Text)
     state: Mapped[str] = mapped_column(Text)
     enabled: Mapped[bool | None] = mapped_column(Boolean)
-    finding_counts: Mapped[dict] = mapped_column(JSONB)
+    finding_counts: Mapped[dict[str, Any]] = mapped_column(JSONB)
 
     module: Mapped[Module] = relationship(back_populates="history_snapshots")

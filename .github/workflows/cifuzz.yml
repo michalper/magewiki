@@ -13,6 +13,10 @@ permissions:
 jobs:
   fuzzing:
     runs-on: ubuntu-latest
+    # Backstop against GitHub's own 6-hour default job ceiling silently
+    # eating runner-minutes if ClusterFuzzLite's build or fuzz step ever
+    # wedges -- 300s fuzz-seconds plus a normal build is minutes, not hours.
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
       - name: Build fuzzers

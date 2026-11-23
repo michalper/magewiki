@@ -480,8 +480,8 @@ export default function ModulesPage() {
     sourceType: sourceFilter !== "all" ? sourceFilter : undefined,
     state: stateFilter !== "all" ? stateFilter : undefined,
     enabled: enabledFilter !== "all" ? (enabledFilter as "true" | "false" | "unknown") : undefined,
-    repoRoot: repoFilter || undefined,
-    finding: findingFilter || undefined,
+    repoRoot: repoFilter ?? undefined,
+    finding: findingFilter ?? undefined,
     hasDoc: hasDocFilter === "true" ? true : undefined,
     sortBy: sortKey,
     sortDir,
@@ -572,17 +572,17 @@ export default function ModulesPage() {
           eventsSinceRefresh += 1;
           if (eventsSinceRefresh >= 5) {
             eventsSinceRefresh = 0;
-            queryClient.invalidateQueries({ queryKey: ["modules"] });
+            void queryClient.invalidateQueries({ queryKey: ["modules"] });
             // Also refresh any already-expanded row's detail panel — otherwise
             // it keeps showing the pre-scan doc/state while the list above it
             // has already moved on.
-            queryClient.invalidateQueries({ queryKey: ["module"] });
+            void queryClient.invalidateQueries({ queryKey: ["module"] });
           }
         } else if (event.event === "done") {
           setScanStatus("done");
           setScanResult(event.result);
-          queryClient.invalidateQueries({ queryKey: ["modules"] });
-          queryClient.invalidateQueries({ queryKey: ["module"] });
+          void queryClient.invalidateQueries({ queryKey: ["modules"] });
+          void queryClient.invalidateQueries({ queryKey: ["module"] });
         } else {
           // Defensive: ScanStreamEvent's own type is exhaustively discovered |
           // store | module | done | error, so this "else" can only ever hold

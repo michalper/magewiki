@@ -4485,3 +4485,156 @@ regression test confirmed red-without/green-with the fix via `git stash`
 Verified after all 8: full backend suite at 938/938 real tests (same 5
 environment-only failures as every other `docker compose run --rm api
 pytest` invocation in this session), `ruff check`/`mypy app` both clean.
+
+**OpenSSF Best Practices Badge: `warnings_strict` closed for real, across
+backend and frontend (recorded 2026-11-23).** User explicitly directed
+this after being shown the real scope first (`mypy --strict`: 110 errors,
+32 files; `ruff --select ALL`: 10,025 errors, almost all noise) rather
+than silently taking it on. Three commits, each independently verified:
+
+- **`backend/pyproject.toml` gets its first-ever `[tool.mypy]` section**
+  (`strict = true` -- there was none at all before, running on bare
+  defaults). All 110 real findings fixed with real types, not blanket
+  `Any`/`# type: ignore`: ~85 were "missing type arguments" (almost all
+  genuinely `dict[str, Any]` -- SBOM JSON, JSONB columns, external API
+  responses, agent tool results), ~13 were missing parameter/return
+  annotations (real types where this project's own code defines the
+  shape -- `etree._Element`, Starlette's `RequestResponseEndpoint`,
+  `AsyncSession` -- `Any` only for truly unstubbed third-party values
+  like litellm's `ModelResponse`), ~8 were "returning Any" fixed by
+  explicitly typing the variable right where an external/JSONB value
+  enters a function (the existing runtime `isinstance()`/validation
+  checks remain the real safety net, unchanged). Two needed something
+  sharper than a type fix: `run_ci_eval.py`'s `isolated_retrieval.embed_query_text
+  = _fake_embed` monkeypatch-the-import-site pattern (standard Python
+  test technique) isn't recognized as a valid external write target
+  under strict's `--no-implicit-reexport`, even though it's correct,
+  working code -- narrow `# type: ignore[attr-defined]` with a one-line
+  reason. `evaluation/runner.py`'s `_run_tool_question` needed a real
+  runtime `assert` (not just a type annotation) that
+  `tool`/`tool_kwargs`/`check` are set, because `NegativeQuestion`'s
+  dataclass makes those fields Optional for its "agent"-mode case, which
+  never reaches this function -- same pattern as the sibling
+  `assert expected_answer is not None` already in that file.
+- **`backend/pyproject.toml`'s `[tool.ruff.lint]` gets a curated `select`**
+  (E/F/W/I/UP/B/BLE/C4/SIM/RUF/PERF/S/PTH), explicitly not `ALL` --
+  documented in the config itself why each excluded category (D, ANN,
+  COM, T20, EM, FBT, TD/FIX) would fight this project's own established,
+  documented conventions rather than catch a real issue. `E501`
+  (line-too-long) selected then immediately `ignore`d, not left out of
+  `select` quietly: confirmed via real numbers, not assumed, that this
+  project's long-form-prose comment style (the same reasoning
+  `.markdownlint-cli2.yaml` already applies to Markdown's MD013) produces
+  1181 hits across 116 files including 89/89 of alembic/'s own findings
+  -- E501 was never actually enforced before this pass (ruff's bare
+  defaults are E4/E7/E9/F only). `BLE` (flake8-blind-except) was added
+  specifically because this codebase already had `# noqa: BLE001 - why`
+  comments scattered through it reasoning about specific `except
+  Exception:` blocks -- selecting the rule those comments were evidently
+  written for turns them back into something a lint run actually checks,
+  instead of leaving them as prose nobody enforces. `S101`/`S108` (assert,
+  hardcoded-temp-file) per-file-ignored for `tests/**` only -- confirmed
+  2083/2087 and 32/32 of those hits respectively were pytest's own idiom
+  and fake `/tmp/...` fixture strings never passed to a real file
+  operation, not real risks; the handful of real `app/`-code asserts
+  (orchestrator.py's result-narrowing ones) stay checked. The remaining
+  ~90 real findings (PERF401 manual-list-comprehensions across the
+  conflict-check family, E402, PTH112, RUF043, S105, S607/S603/S310,
+  RUF002, SIM105) were fixed for real, several by `ruff --fix
+  --unsafe-fixes` after reviewing its proposed diff first (not blindly
+  trusted) -- confirmed afterward that `ruff check .` reports "All checks
+  passed!" with exit 0, not just a lower count.
+- **`frontend/eslint.config.mjs`** layers `typescript-eslint`'s
+  `strictTypeChecked` + `stylisticTypeChecked` after the existing
+  Next.js config (`tsconfig.json` already had `"strict": true` -- only
+  the linter-level equivalent was missing), narrowed with reasoned
+  per-rule overrides recorded in the config itself (`no-explicit-any`
+  downgraded to warn, not disabled -- this codebase's own established
+  network-boundary-`any` pattern, kept visible; `no-unnecessary-condition`
+  off -- flags this project's own deliberate defensive checks against
+  untyped API response shapes; `restrict-template-expressions` allows
+  number/boolean/nullish, checked against every real hit first;
+  `no-confusing-void-expression` allows arrow shorthand, same -- checked
+  every hit, found no genuine confusing-void case; `consistent-type-definitions`
+  off, since this codebase already uses `type` everywhere and enforcing
+  `interface` would just be a cosmetic rewrite). `lib/api-types.ts`
+  (openapi-typescript generated) and test files excluded via targeted
+  overrides, the same "different risk profile" reasoning the backend
+  ruff config already applies to its own `tests/**`. 47 findings, each
+  with a real fix or a narrow reasoned suppression. One real,
+  previously-undetected bug found along the way, not just style noise:
+  `stats/page.tsx`'s `fallbackTiles` mapped `accent: "warning"` with no
+  `as const`, so it widened to plain `string` on assignment and silently
+  fell back to implicit `any` when used to index the `STATUS` color
+  palette -- traced to the real root cause via `tsc --noEmit` directly
+  (eslint's own "error typed value" message was too vague to act on
+  blindly) and fixed with `as const`. The two `<Cell>` elements in the
+  same file were a real, intentional recharts deprecation (removed in
+  4.0 per its own JSDoc, confirmed by reading recharts' source, not
+  assumed) -- migrated to the documented `fill`-on-each-data-entry
+  replacement (confirmed recharts' own `Pie.js` reads `entry.fill` for
+  per-sector color), then actually loaded `/stats` in a real running
+  browser (`docker compose up`) to confirm the progress-ring donuts
+  still render with the right colors -- a rendering-logic change, not
+  just a type fix, so type-checking alone wasn't enough to call it done.
+  Two new intentionally-unreachable guard branches (replacing `x!`
+  non-null assertions with an explicit throw, where react-query's own
+  `enabled` already guarantees the branch can't run) needed `/* v8
+  ignore next */` to keep the 100% coverage gate green -- caught by
+  actually re-running `test:coverage` after the eslint fixes, not
+  assumed clean from the lint pass alone.
+
+Verified across all three: full backend suite still 938/938 (same 5
+pre-existing environment-only failures), backend `ruff check`/`mypy app`
+clean, frontend `npm run lint` clean, `npm run test:coverage` still
+275/275 at 100% every metric, and `npm run build` (real `next build` +
+`tsc`, this project's own earlier-recorded lesson that vitest/eslint
+alone don't catch everything a full build does) clean.
+
+**ordo CI port, round 2 — step-level, plus a real CI gap found by hand
+(recorded 2026-11-23):** The first ordo survey (see its own entry above)
+compared whole workflow files; manually adding
+`SonarSource/sonarqube-quality-gate-action` to `ci.yml`'s `sonar` job (the
+scan-submission step alone never checked the gate result, so a red gate
+was only ever visible by clicking through to the SonarCloud dashboard, not
+reflected in the job's own pass/fail — also added `sonar` to branch
+protection's required status checks once it meant something) turned out to
+be a pattern already in ordo's own `ci.yml` that the first, workflow-file-
+level survey had missed entirely. A second, user-directed survey went
+step-by-step instead:
+
+- `dependabot-auto-merge.yml`: `pull_request_target` -> `pull_request`.
+  Verified no step in this workflow checks out the PR's head ref, so
+  `pull_request_target` bought nothing here — Dependabot PRs are same-repo
+  branches, not forks, so plain `pull_request` already gets a
+  write-capable `GITHUB_TOKEN`/secrets. Ordo hit SonarCloud's
+  `githubactions:S7631` (flags `pull_request_target` categorically,
+  regardless of whether a checkout happens) and made the identical switch
+  for the identical reason. Also added the `concurrency` group every other
+  workflow in this repo already had — this was the one left out.
+- Added `timeout-minutes` to every job with no backstop against GitHub's
+  own 6-hour default job ceiling: `cifuzz.yml`'s `fuzzing` job (30 min),
+  `ci.yml`'s `docker-build` matrix, `e2e-smoke`, `k8s-smoke` (20 min each)
+  — real candidates for a silent hang (ClusterFuzzLite build/fuzz, a
+  docker-compose stack, a `kind` cluster), none of them previously bounded
+  below GitHub's own ceiling.
+- `actionlint.yml`/`typos.yml`: added `workflow_dispatch` — already added
+  to `scorecard.yml`/`markdownlint.yml` in the first port, missed on these
+  two at the time.
+
+Explicitly not changed: `codecov-action`'s `fail_ci_if_error` (ordo sets
+`true`, magewiki sets `false` on both backend/frontend uploads) — flagged
+by the survey as a real, intentional-looking difference, left as a
+conscious open question rather than auto-flipped, since Codecov isn't in
+magewiki's required-status-check list and `false` may be a deliberate
+choice to avoid third-party-service flakiness failing CI for reasons
+unrelated to code correctness. Also confirmed still correctly excluded on
+re-check: action-version drift across `scorecard.yml`/`ci.yml`'s
+`codeql-action` pin/`typos` version (Dependabot's `github-actions`
+ecosystem already tracks these, a manual port would just fight it), ordo's
+CHANGELOG-driven release automation (already rejected in the first port's
+entry), and every Magento-Composer/MFTF/DAST-specific workflow (`api-tests
+.yml`, `integration-tests.yml`, `mftf.yml`, `php86-preview.yml`,
+`zap.yml`, `coverage.yml`, `debug-wif.yml`) — grepped in full for any
+smaller generically-applicable pattern buried inside the way the quality-
+gate-action was, found none beyond the two items above.

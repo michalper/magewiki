@@ -256,17 +256,24 @@ describe("StatsPage", () => {
     // Recharts' ResponsiveContainer never gets real layout dimensions here,
     // same as every other chart test in this file), just that switching to
     // the narrow label width/truncation branch doesn't break rendering.
+    // Saved and restored below, never called unbound -- not the real risk
+    // unbound-method exists to catch.
+    // eslint-disable-next-line @typescript-eslint/unbound-method
     const realMatchMedia = window.matchMedia;
     window.matchMedia = ((query: string) => ({
       matches: query === "(max-width: 480px)",
       media: query,
       onchange: null,
+      // Deprecated, but still part of MediaQueryList's own type shape this
+      // mock has to satisfy -- some libraries still feature-detect these.
+      // eslint-disable-next-line @typescript-eslint/no-deprecated
       addListener: () => {},
+      // eslint-disable-next-line @typescript-eslint/no-deprecated
       removeListener: () => {},
       addEventListener: () => {},
       removeEventListener: () => {},
       dispatchEvent: () => false,
-    })) as typeof window.matchMedia;
+    }));
 
     try {
       mockModules([mod({ finding_counts: { hardcoded_secret: 1 } })]);

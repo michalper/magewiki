@@ -46,7 +46,7 @@ test("filters narrow the module list and clear back to the full count", async ({
   await page.goto("/modules");
   const countText = page.getByText(/\d+ of \d+ modules/);
   await expect(countText).toBeVisible();
-  const [, total] = (await countText.textContent())!.match(/(\d+) of (\d+) modules/)!;
+  const [, total] = /(\d+) of (\d+) modules/.exec(((await countText.textContent())!))!;
 
   // A search that can't match anything real -- the module list narrows to 0,
   // proving the filter is actually wired to the query, not just decorative.
@@ -113,7 +113,7 @@ test("pagination controls move between real pages without skipping or repeating 
   // page's worth of rows.
   const countText = page.getByText(/\d+ of \d+ modules/);
   await expect(countText).toBeVisible();
-  const [, total] = (await countText.textContent())!.match(/(\d+) of (\d+) modules/)!;
+  const [, total] = /(\d+) of (\d+) modules/.exec(((await countText.textContent())!))!;
   const pageSize = 5;
   const expectedPageCount = Math.ceil(Number(total) / pageSize);
   expect(expectedPageCount).toBeGreaterThan(1); // otherwise this test can't prove anything
@@ -176,7 +176,7 @@ test("Export CSV downloads a real file with the module data", async ({ page }) =
   // downloadModulesCsv() builds (app/modules/page.tsx), and the real
   // seeded module's own row.
   const fs = await import("node:fs/promises");
-  const csv = await fs.readFile(path!, "utf-8");
+  const csv = await fs.readFile(path, "utf-8");
   expect(csv.split("\n")[0]).toContain("name,composer_name,setup_version,source_type,enabled,state");
   expect(csv).toContain("Vendor_Module");
   expect(csv).toContain("vendor/module-sample");
@@ -196,7 +196,7 @@ test("Export CSV respects an active filter instead of exporting everything", asy
 
   const path = await download.path();
   const fs = await import("node:fs/promises");
-  const csv = await fs.readFile(path!, "utf-8");
+  const csv = await fs.readFile(path, "utf-8");
   // Header row only -- no Vendor_Module data row once filtered out.
   expect(csv.trim().split("\n")).toHaveLength(1);
   expect(csv).not.toContain("Vendor_Module");

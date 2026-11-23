@@ -1,5 +1,6 @@
 import logging
 from pathlib import Path
+from typing import Any
 
 import httpx
 
@@ -46,7 +47,9 @@ _TOOL_CHECK_TYPES = {
 _CLASS_KEYED_TOOLS = {"phpmetrics"}
 
 
-async def _call_tool(tool: str, module_path: str, magento_root: str | None, php_binary: str) -> list[dict]:
+async def _call_tool(
+    tool: str, module_path: str, magento_root: str | None, php_binary: str
+) -> list[dict[str, Any]]:
     payload: dict[str, str] = {"module_path": module_path, "php_binary": php_binary}
     if magento_root is not None:
         payload["magento_root"] = magento_root
@@ -54,7 +57,12 @@ async def _call_tool(tool: str, module_path: str, magento_root: str | None, php_
         async with httpx.AsyncClient(timeout=120.0) as client:
             response = await client.post(f"{settings.php_analyzer_url}/{tool}", json=payload)
             response.raise_for_status()
-            data = response.json()
+            # Declared, not trusted -- the isinstance() check right below is the
+            # real runtime validation of this external sidecar's response shape;
+            # this annotation only tells mypy what we expect so it can type-check
+            # the rest of the function, same as every other JSON-decoding call
+            # site in this project.
+            data: dict[str, Any] = response.json()
     except httpx.HTTPError:
         logger.warning("php-analyzer %s call failed for %s", tool, module_path, exc_info=True)
         return []
@@ -77,7 +85,8 @@ async def _call_tool(tool: str, module_path: str, magento_root: str | None, php_
         # logs the way it silently did before.
         logger.warning("php-analyzer %s returned an unexpected JSON shape for %s: %r", tool, module_path, data)
         return []
-    return data.get("findings", [])
+    findings: list[dict[str, Any]] = data.get("findings", [])
+    return findings
 
 
 def _relativize(file_path: str, module_root: Path) -> str:

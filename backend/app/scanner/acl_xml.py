@@ -1,10 +1,12 @@
 from pathlib import Path
 
+from lxml import etree
+
 from app.scanner.dto import AclResourceEntry
 from app.scanner.xml_parse_utils import parse_xml_root
 
 
-def _walk_resources(resource_el, parent_id: str | None, out: list[AclResourceEntry]) -> None:
+def _walk_resources(resource_el: etree._Element, parent_id: str | None, out: list[AclResourceEntry]) -> None:
     resource_id = resource_el.get("id")
     if resource_id:
         out.append(AclResourceEntry(resource_id=resource_id, title=resource_el.get("title"), parent_id=parent_id))

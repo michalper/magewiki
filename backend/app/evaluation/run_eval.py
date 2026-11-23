@@ -35,7 +35,7 @@ REPORT_PATH = Path(__file__).parent / "report" / "eval_report.json"
 
 async def main() -> None:
     repo_root = os.environ.get(ORDO_FIXTURE_ENV)
-    if not repo_root or not os.path.isdir(repo_root):
+    if not repo_root or not Path(repo_root).is_dir():
         raise SystemExit(f"set {ORDO_FIXTURE_ENV} to a real Ordo_Automation checkout to run this eval")
 
     async with async_session_factory() as session:

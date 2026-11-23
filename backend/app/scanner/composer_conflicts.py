@@ -62,12 +62,12 @@ def detect_composer_conflicts(requirements: list[ComposerRequirementRow]) -> lis
             f"Conflicting composer version requirements for {package_name}: {who} — composer install "
             "resolves exactly one version of a package for the whole store, and these ranges don't overlap."
         )
-        for module_id in conflicting_modules:
-            findings.append(
-                (
-                    module_id,
-                    QualityFinding(check_type="composer_conflict", severity="warning", file_path=None, line=None, message=message),
-                )
+        findings.extend(
+            (
+                module_id,
+                QualityFinding(check_type="composer_conflict", severity="warning", file_path=None, line=None, message=message),
             )
+            for module_id in conflicting_modules
+        )
 
     return findings

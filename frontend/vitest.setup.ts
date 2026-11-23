@@ -16,12 +16,16 @@ if (!window.matchMedia) {
     matches: false,
     media: query,
     onchange: null,
+    // Both deprecated, but still part of MediaQueryList's own type -- this
+    // mock must implement the full interface shape to type-check as one.
+    // eslint-disable-next-line @typescript-eslint/no-deprecated
     addListener: () => {},
+    // eslint-disable-next-line @typescript-eslint/no-deprecated
     removeListener: () => {},
     addEventListener: () => {},
     removeEventListener: () => {},
     dispatchEvent: () => false,
-  }) as unknown as MediaQueryList;
+  });
 }
 
 // jsdom doesn't implement Element.scrollTo -- the Modules page's scan-log

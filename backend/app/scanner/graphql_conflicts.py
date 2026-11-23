@@ -52,18 +52,18 @@ def detect_graphql_field_conflicts(fields: list[GraphQlFieldRow]) -> list[tuple[
             f"(operation `{operation_type}`): {who} — Magento merges every module's schema.graphqls "
             "type extensions together; which resolver actually backs this field is ambiguous."
         )
-        for module_id in module_ids:
-            findings.append(
-                (
-                    module_id,
-                    QualityFinding(
-                        check_type="graphql_field_conflict",
-                        severity="warning",
-                        file_path=None,
-                        line=None,
-                        message=message,
-                    ),
-                )
+        findings.extend(
+            (
+                module_id,
+                QualityFinding(
+                    check_type="graphql_field_conflict",
+                    severity="warning",
+                    file_path=None,
+                    line=None,
+                    message=message,
+                ),
             )
+            for module_id in module_ids
+        )
 
     return findings

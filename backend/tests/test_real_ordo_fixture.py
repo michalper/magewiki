@@ -94,7 +94,7 @@ async def test_real_ordo_automation_module(db_session):
         }
         assert expected_method in method_names
 
-    assert EXPECTED_OBSERVERS <= observers
+    assert observers >= EXPECTED_OBSERVERS
 
     preferences = (await db_session.scalars(
         select(DiPreference).where(DiPreference.module_id == module.id)

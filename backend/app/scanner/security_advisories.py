@@ -1,3 +1,5 @@
+from typing import Any
+
 import httpx
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -12,7 +14,7 @@ def _cache_key(package_name: str) -> str:
     return f"advisories:{package_name}"
 
 
-async def _fetch_from_packagist(package_name: str) -> dict | None:
+async def _fetch_from_packagist(package_name: str) -> dict[str, Any] | None:
     """HTTP-only, no session — safe to run concurrently across packages, unlike
     packagist_cache.py's get_cached/set_cached which share the scan's one AsyncSession.
     """
@@ -20,18 +22,20 @@ async def _fetch_from_packagist(package_name: str) -> dict | None:
         async with httpx.AsyncClient(timeout=10.0) as client:
             response = await client.get(_ADVISORIES_URL, params={"packages[]": package_name})
             response.raise_for_status()
-            return response.json()
+            data: dict[str, Any] = response.json()
+            return data
     except httpx.HTTPError:
         return None
 
 
-def _advisories_for_package(data: dict, package_name: str) -> list[dict]:
+def _advisories_for_package(data: dict[str, Any], package_name: str) -> list[dict[str, Any]]:
     # Packagist returns "advisories": {} as a dict keyed by package name when
     # there are results, but as an empty *list* `[]` when there are none.
     advisories = data.get("advisories")
     if not isinstance(advisories, dict):
         return []
-    return advisories.get(package_name, [])
+    result: list[dict[str, Any]] = advisories.get(package_name, [])
+    return result
 
 
 async def check_security_advisories(

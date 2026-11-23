@@ -8,7 +8,6 @@ import {
   Bar,
   BarChart,
   CartesianGrid,
-  Cell,
   LabelList,
   Line,
   LineChart,
@@ -263,8 +262,8 @@ function ProgressRing({
   /* v8 ignore next */
   const pct = total === 0 ? 0 : Math.round((value / total) * 100);
   const data = [
-    { name: label, value },
-    { name: "remaining", value: total - value },
+    { name: label, value, fill: color },
+    { name: "remaining", value: total - value, fill: palette.track },
   ];
 
   return (
@@ -281,10 +280,11 @@ function ProgressRing({
               endAngle={-270}
               stroke="none"
               isAnimationActive={false}
-            >
-              <Cell fill={color} />
-              <Cell fill={palette.track} />
-            </Pie>
+            />
+            {/* Per-slice color comes from each data entry's own `fill` field above
+                (Recharts' Pie reads it directly) -- <Cell> is deprecated as of
+                recharts 3.x, removed in 4.0; see its own JSDoc for the migration
+                note this follows. */}
             <Tooltip />
           </PieChart>
         </ResponsiveContainer>
@@ -464,7 +464,7 @@ export default function StatsPage() {
       FALLBACK_CHECK_TYPES.map((checkType) => ({
         label: prettifyCheckType(checkType),
         checkTypes: [checkType],
-        accent: "warning" as AccentLevel,
+        accent: "warning" as const,
         description: undefined,
         value: sumByCheckType(modules, checkType),
       })),

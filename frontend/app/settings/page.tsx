@@ -54,7 +54,7 @@ export default function SettingsPage() {
   const patchMutation = useMutation({
     mutationFn: patchSettings,
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["llm-settings"] });
+      void queryClient.invalidateQueries({ queryKey: ["llm-settings"] });
       setLlmApiKey("");
       setEmbeddingApiKey("");
       setPendingEmbeddingUpdate(null);

@@ -10,6 +10,7 @@ actually scores, even when it contradicts the label.
 
 from collections.abc import Callable
 from dataclasses import dataclass, field
+from typing import Any
 
 MODULE_SENTINEL = "<module>"
 MODULE_ID_PLACEHOLDER = "__MODULE_ID__"
@@ -28,8 +29,8 @@ class EnumerationQuestion:
     id: str
     query: str
     tool: str
-    tool_kwargs: dict = field(default_factory=dict)
-    expected: Callable[[dict], bool] = lambda result: True
+    tool_kwargs: dict[str, Any] = field(default_factory=dict)
+    expected: Callable[[dict[str, Any]], bool] = lambda result: True
 
 
 @dataclass(frozen=True)
@@ -38,8 +39,8 @@ class NegativeQuestion:
     query: str
     mode: str  # "tool" | "agent"
     tool: str | None = None
-    tool_kwargs: dict | None = None
-    expected_empty: Callable[[dict], bool] | None = None
+    tool_kwargs: dict[str, Any] | None = None
+    expected_empty: Callable[[dict[str, Any]], bool] | None = None
     expected_answer: Callable[[str], bool] | None = None
 
 
