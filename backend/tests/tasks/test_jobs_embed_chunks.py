@@ -164,6 +164,59 @@ async def test_embed_chunks_skips_a_method_with_null_line_numbers(demo_store_pat
 
 
 @pytest.mark.asyncio
+async def test_embed_chunks_treats_a_symlinked_method_file_as_unreadable(
+    demo_store_path: Path, db_session, monkeypatch, tmp_path: Path
+):
+    """Security regression: a symlinked method-source file must never have
+    its *target*'s content embedded into an agent-citable chunk -- a real
+    symlink to a file outside the module, not a mock. Redirects
+    module.repo_root to a tmp_path that mirrors the real demo-store
+    module's relative layout for one file, replaced here with a symlink.
+    """
+    module = await _reach_embedding_state(demo_store_path, db_session, monkeypatch)
+
+    plugin_class = await db_session.scalar(
+        select(PhpClass).where(
+            PhpClass.module_id == module.id, PhpClass.file_path == "Plugin/SampleCheckoutPlugin.php"
+        )
+    )
+    assert plugin_class is not None
+
+    (tmp_path / "Plugin").mkdir()
+    secret = tmp_path.parent / "secret_outside_module.php"
+    secret.write_text("<?php\n// SECRET_API_KEY=supersecret\n")
+    (tmp_path / "Plugin" / "SampleCheckoutPlugin.php").symlink_to(secret)
+    await db_session.execute(update(Module).where(Module.id == module.id).values(repo_root=str(tmp_path), path="."))
+    await db_session.commit()
+
+    call_log: list[str] = []
+    monkeypatch.setattr("app.tasks.jobs.embed_texts_batch", _fake_embed_texts_batch(call_log))
+
+    await embed_chunks(None, module.id, module.current_hash)
+
+    method_chunk = await db_session.scalar(
+        select(Chunk).where(
+            Chunk.module_id == module.id,
+            Chunk.chunk_type == "method",
+            Chunk.relative_path == "Plugin/SampleCheckoutPlugin.php",
+        )
+    )
+    assert method_chunk is not None
+    assert "SECRET_API_KEY" not in method_chunk.text
+    assert "supersecret" not in method_chunk.text
+
+    # This test redirected the shared demo-store module's own repo_root to
+    # tmp_path above -- left in place, the next test's scan_demo_store()
+    # can no longer find this row by the *real* demo-store repo_root to
+    # clean it up first, leaving it (and its cache-linked children) behind
+    # to collide with a later test's own cleanup. Delete it directly rather
+    # than just restoring repo_root, matching every other test here that
+    # creates a module of its own.
+    await db_session.execute(delete(Module).where(Module.id == module.id))
+    await db_session.commit()
+
+
+@pytest.mark.asyncio
 async def test_embed_chunks_pauses_on_budget_exceeded(demo_store_path: Path, db_session, monkeypatch):
     module = await _reach_embedding_state(demo_store_path, db_session, monkeypatch)
 

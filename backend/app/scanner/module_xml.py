@@ -2,6 +2,7 @@ from pathlib import Path
 
 from lxml import etree
 
+from app.scanner.discovery import is_safe_to_read
 from app.scanner.dto import ModuleXmlResult
 
 
@@ -10,6 +11,9 @@ class InvalidModuleXmlError(Exception):
 
 
 def parse_module_xml(path: Path) -> ModuleXmlResult:
+    if not is_safe_to_read(path):
+        raise InvalidModuleXmlError(f"{path} is a symlink, refusing to follow it")
+
     try:
         tree = etree.parse(str(path))
     except etree.XMLSyntaxError as exc:

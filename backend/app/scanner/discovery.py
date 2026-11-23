@@ -100,6 +100,21 @@ def find_modules(repo_root: Path) -> list[DiscoveredModule]:
 _SOURCE_FILE_SUFFIXES = (".php", ".phtml")
 
 
+def is_safe_to_read(path: Path) -> bool:
+    """False for a symlink, regardless of what it points to. Scanned code is
+    untrusted input (CLAUDE.md's whole premise): a module shipping a symlink
+    named e.g. Helper/Evil.php -> /proc/self/environ or -> a host .env file
+    would otherwise have that target's real bytes hashed, tree-sitter-parsed,
+    sent to the configured LLM as "file content to summarize"
+    (app/tasks/jobs.py's analyze_file), and/or embedded into agent-citable
+    chunks -- a real secret-exfiltration path, not a theoretical one.
+    os.walk()'s followlinks=False (the default, used below) only stops
+    *descending into* a symlinked directory; it does not stop a symlinked
+    *file* from being listed in `filenames` and then read.
+    """
+    return not path.is_symlink()
+
+
 def walk_module_source_files(module_root: Path) -> list[Path]:
     """List all .php/.phtml files under a module root, excluding nested vendor/ and
     .git. Used for both per-file hashing/LLM analysis (hashing.py) and PHP class
@@ -111,7 +126,9 @@ def walk_module_source_files(module_root: Path) -> list[Path]:
         dirnames[:] = [d for d in dirnames if d not in (_PRUNE_ALWAYS | {"vendor"})]
         for filename in filenames:
             if filename.endswith(_SOURCE_FILE_SUFFIXES):
-                source_files.append(Path(dirpath) / filename)
+                candidate = Path(dirpath) / filename
+                if is_safe_to_read(candidate):
+                    source_files.append(candidate)
     return source_files
 
 

@@ -27,3 +27,15 @@ def test_parse_module_xml_malformed_xml(tmp_path: Path):
 
     with pytest.raises(InvalidModuleXmlError, match="malformed module.xml"):
         parse_module_xml(bad_xml)
+
+
+def test_parse_module_xml_refuses_a_symlink(tmp_path: Path):
+    """Security regression: must never follow a symlinked module.xml to
+    read an arbitrary host path (a real symlink, not a mock)."""
+    outside = tmp_path.parent / "outside_module.xml"
+    outside.write_text('<?xml version="1.0"?><config><module name="Evil"/></config>')
+    link = tmp_path / "module.xml"
+    link.symlink_to(outside)
+
+    with pytest.raises(InvalidModuleXmlError, match="symlink"):
+        parse_module_xml(link)

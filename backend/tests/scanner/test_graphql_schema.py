@@ -7,6 +7,17 @@ def test_parse_graphql_schema_missing_file(tmp_path: Path):
     assert parse_graphql_schema(tmp_path / "schema.graphqls") == []
 
 
+def test_parse_graphql_schema_returns_empty_for_a_symlink(tmp_path: Path):
+    """Security regression: a real symlink to a file outside the module
+    root must never have its content parsed as schema.graphqls."""
+    outside = tmp_path.parent / "outside_schema.graphqls"
+    outside.write_text("extend type Query { evil: String }", encoding="utf-8")
+    link = tmp_path / "schema.graphqls"
+    link.symlink_to(outside)
+
+    assert parse_graphql_schema(link) == []
+
+
 def test_parse_graphql_schema_extends_query_and_mutation_with_resolver(tmp_path: Path):
     schema = tmp_path / "schema.graphqls"
     schema.write_text(

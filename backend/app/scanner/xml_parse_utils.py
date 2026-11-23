@@ -2,6 +2,8 @@ from pathlib import Path
 
 from lxml import etree
 
+from app.scanner.discovery import is_safe_to_read
+
 
 def parse_xml_root(path: Path) -> etree._Element | None:
     """The is_file()/XMLSyntaxError guard shared by every one of this
@@ -15,9 +17,11 @@ def parse_xml_root(path: Path) -> etree._Element | None:
     (InvalidModuleXmlError), not a "nothing to report" case. Returns None
     for a missing or malformed file, same "doesn't exist / skip" handling
     every parser using this helper already used individually before it
-    existed.
+    existed. Also returns None for a symlink -- see is_safe_to_read's own
+    docstring for why a scanned module's declarative-XML file can't be
+    trusted to actually be the file it claims to be.
     """
-    if not path.is_file():
+    if not path.is_file() or not is_safe_to_read(path):
         return None
 
     try:

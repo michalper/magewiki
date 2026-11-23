@@ -17,7 +17,12 @@ from app.analyzer.embeddings import (
     embed_texts_batch,
     hash_text,
 )
-from app.analyzer.facts import gather_module_facts, known_config_paths, known_sources
+from app.analyzer.facts import (
+    gather_file_analyses,
+    gather_module_facts,
+    known_config_paths,
+    known_sources,
+)
 from app.analyzer.prompts import (
     EMBEDDING_PROMPT_VERSION,
     FILE_SUMMARY_PROMPT_VERSION,
@@ -42,6 +47,7 @@ from app.runtime_config import (
     resolve_llm_config,
     resolve_synthesis_llm_config,
 )
+from app.scanner.discovery import is_safe_to_read
 from app.scanner.magento_github import (
     fetch_release_component_versions,
     fetch_release_php_constraint,
@@ -116,6 +122,14 @@ async def analyze_file(
                     return
 
                 file_path = Path(module.repo_root) / module.path / relative_path
+                # Re-checked here, not just at discovery time: this reads
+                # straight from disk again, independently, and this is the
+                # one call site that sends the content to an external LLM --
+                # see is_safe_to_read's own docstring for why a symlink here
+                # (even one discovery already should have excluded) must
+                # never be followed.
+                if not is_safe_to_read(file_path):
+                    raise ValueError(f"{relative_path} is a symlink, refusing to read or analyze it")
                 content = file_path.read_text(encoding="utf-8", errors="replace")
                 _summary, result = await summarize_file(
                     relative_path,
@@ -286,14 +300,14 @@ async def embed_chunks(ctx: dict | None, module_id: int, module_current_hash: st
             if doc_row is None:
                 return  # synthesize_module hasn't written its doc yet — shouldn't happen, defensive no-op
 
-            facts = await gather_module_facts(session, module_id)
+            file_analyses = await gather_file_analyses(session, module_id)
             module_doc = ModuleDoc.model_validate(doc_row.doc)
 
             # Build the full target chunk set for this generation: (chunk_type, relative_path, method_id, text).
             specs: list[tuple[str, str | None, int | None, str]] = [
                 ("module", None, None, build_module_chunk_text(module_doc))
             ]
-            for fa in facts.file_analyses:
+            for fa in file_analyses:
                 specs.append(
                     ("file", fa.relative_path, None, build_file_chunk_text(fa.file_summary, fa.notable_behavior))
                 )
@@ -313,6 +327,12 @@ async def embed_chunks(ctx: dict | None, module_id: int, module_current_hash: st
                     continue  # real PHP methods always have these; defensive guard for the nullable DB columns
                 file_path = Path(module.repo_root) / module.path / php_class.file_path
                 try:
+                    # Same re-check as analyze_file above: a symlinked
+                    # method-source file would otherwise become an
+                    # agent-citable, embedded chunk straight from whatever
+                    # it points to.
+                    if not is_safe_to_read(file_path):
+                        raise OSError(f"{file_path} is a symlink")
                     lines = file_path.read_text(encoding="utf-8", errors="replace").splitlines()
                     source = "\n".join(lines[method.start_line - 1 : method.end_line])
                 except OSError:

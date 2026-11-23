@@ -1,11 +1,12 @@
 import json
 from pathlib import Path
 
+from app.scanner.discovery import is_safe_to_read
 from app.scanner.dto import ComposerResult, QualityFinding
 
 
 def parse_composer_json(path: Path) -> ComposerResult | None:
-    if not path.is_file():
+    if not path.is_file() or not is_safe_to_read(path):
         return None
 
     try:
