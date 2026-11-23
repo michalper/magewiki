@@ -36,6 +36,26 @@ def test_parse_xml_root_returns_none_for_invalid_bytes_in_the_declared_encoding(
     assert parse_xml_root(xml) is None
 
 
+def test_parse_xml_root_does_not_expand_an_xxe_entity(tmp_path: Path):
+    """Defense-in-depth regression for HARDENED_XML_PARSER (see its own
+    comment in xml_parse_utils.py: checked directly, this was never
+    exploitable against the pinned lxml/libxml2, but the parser is hardened
+    explicitly anyway). Verified against a real local file (not a mock)
+    outside the module directory -- its content must never appear anywhere
+    in, or leak via, the parse result, regardless of which layer is doing
+    the blocking."""
+    secret = tmp_path.parent / "xxe_secret.txt"
+    secret.write_text("super-secret-host-content")
+    xml = tmp_path / "di.xml"
+    xml.write_text(
+        '<?xml version="1.0"?>'
+        f'<!DOCTYPE config [ <!ENTITY xxe SYSTEM "file://{secret}"> ]>'
+        "<config><preference for=\"A\" type=\"&xxe;\"/></config>"
+    )
+
+    assert parse_xml_root(xml) is None
+
+
 def test_parse_xml_root_returns_none_for_a_symlink(tmp_path: Path):
     """Security regression, shared by all 14 of this helper's callers
     (acl/cache/crontab/di/events/system/webapi/db_schema/indexer/menu/

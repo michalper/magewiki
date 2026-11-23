@@ -88,14 +88,17 @@ def filter_tags(tags: list[Tag]) -> tuple[list[Tag], list[str]]:
     controlled vocabulary. Never trust a tag's self-reported `source` here —
     genuine parser tags come only from derive_parser_tags() and are merged in
     separately by the caller; nothing legitimately reaches this function
-    already carrying source="parser", so honoring that claim would let the
-    model bypass ALLOWED_TAGS just by setting it.
+    already carrying source="parser", so a kept tag's source is always forced
+    to "ai" here, regardless of what the model itself claimed (found by a
+    whole-project code review: the filter used to check only `tag.name`,
+    leaving a self-declared source="parser" on a hallucinated tag untouched —
+    the docstring's own "never trust" claim wasn't actually enforced).
     """
     kept: list[Tag] = []
     rejected: list[str] = []
     for tag in tags:
         if tag.name in ALLOWED_TAGS:
-            kept.append(tag)
+            kept.append(tag if tag.source == "ai" else tag.model_copy(update={"source": "ai"}))
         else:
             rejected.append(tag.name)
     return kept, rejected

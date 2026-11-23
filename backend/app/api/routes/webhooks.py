@@ -41,11 +41,13 @@ async def webhook_scan(request: Request) -> WebhookScanResponse:
 
     path = payload.get("path")
     # Untrusted JSON, unlike POST /scan[/stream]'s validated Pydantic field -- path
-    # may be missing/empty/not a string, which _validate_scan_path below doesn't
-    # itself guard against. The containment+isdir check past that point is the
-    # same real access-control gate as POST /scan[/stream] (_validate_scan_path),
-    # kept in one place after a past incident where it drifted between two
-    # independent copies — see the project-decision-log skill.
+    # may be missing/empty/not a string. is_within_scan_roots fails closed (returns
+    # False, not a TypeError) for a non-string value, so _validate_scan_path below
+    # still raises a clean 400 rather than letting a bad JSON shape propagate as an
+    # unhandled 500. The containment+isdir check past that point is the same real
+    # access-control gate as POST /scan[/stream] (_validate_scan_path), kept in one
+    # place after a past incident where it drifted between two independent copies
+    # — see the project-decision-log skill.
     if not path:
         raise HTTPException(status_code=400, detail=f"not a directory: {path}")
     _validate_scan_path(path)

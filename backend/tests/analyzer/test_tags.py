@@ -39,6 +39,24 @@ def test_filter_tags_does_not_trust_a_self_claimed_parser_source():
     assert rejected == ["not-in-vocab-but-claims-parser-sourced"]
 
 
+def test_filter_tags_forces_ai_source_on_an_in_vocabulary_spoofed_tag():
+    # The gap the test above doesn't cover: an *in*-vocabulary tag claiming
+    # source="parser" was previously kept with that spoofed source intact
+    # (only tag.name was checked) -- found by a whole-project code review.
+    # derive_parser_tags() is the only legitimate source of a "parser" tag;
+    # filter_tags only ever sees doc.tags (raw LLM output), so every kept
+    # tag's source must be forced to "ai" regardless of what the model
+    # itself claimed, or a hallucinated tag could pose as a deterministic
+    # signal downstream (CLAUDE.md: tag source distinguishes the two).
+    tags = [Tag(name="payments", source="parser", confidence=1.0)]
+    kept, rejected = filter_tags(tags)
+    assert rejected == []
+    assert len(kept) == 1
+    assert kept[0].source == "ai"
+    assert kept[0].name == "payments"
+    assert kept[0].confidence == 1.0
+
+
 def test_merge_tags_dedupes_by_name_preferring_parser_source():
     parser_tags = [Tag(name="checkout", source="parser", confidence=1.0)]
     ai_tags = [Tag(name="checkout", source="ai", confidence=0.7), Tag(name="marketing", source="ai", confidence=0.6)]

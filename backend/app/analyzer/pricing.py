@@ -33,9 +33,14 @@ def resolve_llm_cost(response, model: str, tokens_in: int, tokens_out: int) -> D
     """
     try:
         raw_cost = litellm.completion_cost(completion_response=response)
-        cost = Decimal(str(raw_cost)) if raw_cost else None
+        cost = Decimal(str(raw_cost)) if raw_cost is not None else None
     except Exception:  # noqa: BLE001 - cost computation must never block the caller
         cost = None
-    if not cost or cost <= 0:
+    # A legitimately reported cost of exactly 0 (e.g. a free-tier or cached
+    # completion) must not be treated the same as "no cost info at all" --
+    # `if not cost` conflated the two and silently overstated spend by
+    # recomputing a nonzero cost from token counts on top of a real $0
+    # response. Only a missing/negative value falls back to the price table.
+    if cost is None or cost < 0:
         cost = compute_cost_usd(model, tokens_in, tokens_out)
     return cost

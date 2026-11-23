@@ -4,6 +4,7 @@ from lxml import etree
 
 from app.scanner.discovery import is_safe_to_read
 from app.scanner.dto import ModuleXmlResult
+from app.scanner.xml_parse_utils import HARDENED_XML_PARSER
 
 
 class InvalidModuleXmlError(Exception):
@@ -15,7 +16,7 @@ def parse_module_xml(path: Path) -> ModuleXmlResult:
         raise InvalidModuleXmlError(f"{path} is a symlink, refusing to follow it")
 
     try:
-        tree = etree.parse(str(path))
+        tree = etree.parse(str(path), parser=HARDENED_XML_PARSER)
     except (etree.XMLSyntaxError, OSError) as exc:
         # lxml raises OSError, not XMLSyntaxError, for some malformed
         # encoding declarations when parsing from a file path -- found by

@@ -14,6 +14,13 @@ name: Markdown lint
 # with YAML frontmatter (name/description) by that tool's own convention,
 # never a markdown H1, so MD041 would always fire there for a structural
 # reason that has nothing to do with this repo's actual prose quality.
+#
+# frontend/AGENTS.md excluded for the same reason as .claude/skills/**, but
+# more so: it's auto-generated and re-added by `next dev` itself (see its
+# own header comment), not hand-authored at all -- the file structurally
+# starts with an HTML comment and an H2, never an H1, by Next.js's own
+# convention, and hand-editing it to pass MD041 would just get silently
+# reverted on the next `next dev` run.
 
 on:
   push:
@@ -45,3 +52,4 @@ jobs:
             **/*.md
             !node_modules/**
             !.claude/skills/**
+            !frontend/AGENTS.md

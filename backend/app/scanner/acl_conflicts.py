@@ -1,7 +1,7 @@
-from collections import defaultdict
 from dataclasses import dataclass
 
 from app.scanner.dto import QualityFinding
+from app.scanner.duplicate_id_conflict import detect_duplicate_id_conflict
 
 
 @dataclass
@@ -22,35 +22,13 @@ def detect_acl_resource_conflicts(resources: list[AclResourceRow]) -> list[tuple
     xsi:type/nullable to compare); same-author restatement of the identical
     id is not flagged.
     """
-    groups: dict[str, list[AclResourceRow]] = defaultdict(list)
-    for r in resources:
-        groups[r.resource_id].append(r)
-
-    findings: list[tuple[int, QualityFinding]] = []
-
-    for resource_id, group in groups.items():
-        module_ids = {r.module_id for r in group}
-        if len(module_ids) < 2:
-            continue  # same-author overlap -- not a cross-module conflict
-
-        who = ", ".join(sorted({r.module_name for r in group}))
-        message = (
+    return detect_duplicate_id_conflict(
+        resources,
+        "resource_id",
+        "acl_resource_conflict",
+        lambda resource_id, who: (
             f'Multiple modules declare the same acl.xml `<resource id="{resource_id}">`: {who} — '
             "Magento merges every module's ACL resource tree by id; an exact duplicate is ambiguous, "
             "with one module's declaration silently winning depending on compilation order."
-        )
-        for module_id in module_ids:
-            findings.append(
-                (
-                    module_id,
-                    QualityFinding(
-                        check_type="acl_resource_conflict",
-                        severity="warning",
-                        file_path=None,
-                        line=None,
-                        message=message,
-                    ),
-                )
-            )
-
-    return findings
+        ),
+    )

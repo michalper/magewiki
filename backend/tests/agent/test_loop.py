@@ -735,6 +735,57 @@ async def test_run_agent_falls_back_to_computed_cost_when_the_final_stream_repor
     await db_session.commit()
 
 
+@pytest.mark.asyncio
+async def test_run_agent_respects_a_real_zero_cost_from_the_final_stream(db_session, monkeypatch):
+    """A legitimately reported cost of exactly 0 (free-tier/cached completion)
+    must not be treated the same as "no cost info" (usage.cost is None, the
+    case the test above covers) -- found by a whole-project code review."""
+    suffix = uuid.uuid4().hex[:8]
+    module = await _make_module(db_session, suffix)
+
+    async def _never_exceeded(session):
+        return False
+
+    monkeypatch.setattr(loop_module, "is_budget_exceeded", _never_exceeded)
+    monkeypatch.setattr(loop_module.litellm, "completion_cost", lambda **k: 0.0001)
+
+    async def fake_list_modules(session, **kwargs):
+        return {"total": 1, "modules": [{"module_id": module.id, "name": module.name}]}
+
+    monkeypatch.setitem(loop_module.TOOL_FUNCTIONS, "list_modules", fake_list_modules)
+
+    async def _stream_with_real_zero_cost():
+        yield FakeStreamChunk(choices=[FakeChunkChoice("hi")])
+        yield FakeStreamChunk(choices=[], usage=FakeUsage(prompt_tokens=50, completion_tokens=20, cost=0.0))
+
+    calls = []
+
+    async def fake_acompletion(**kwargs):
+        calls.append(kwargs)
+        if kwargs.get("stream"):
+            return _stream_with_real_zero_cost()
+        if len(calls) == 1:
+            return _tool_call_response("list_modules", {})
+        return _direct_answer_response()
+
+    monkeypatch.setattr(loop_module.litellm, "acompletion", fake_acompletion)
+    # If the bug resurfaces (treating the real 0 as missing), this fallback's
+    # distinctive value would leak into the total and the assertion below
+    # would catch it.
+    monkeypatch.setattr(loop_module, "compute_cost_usd", lambda model, tin, tout: Decimal("0.0003"))
+
+    events = [e async for e in run_agent(db_session, [{"role": "user", "content": "hi"}], "dev")]
+
+    done_event = next(e for e in events if e["event"] == "done")
+    # Decimal("0.0001") from each of the two non-streaming rounds + Decimal("0")
+    # from the final stream's real, legitimate zero cost -- not the 0.0003
+    # fallback.
+    assert done_event["cost_usd"] == "0.0002"
+
+    await db_session.execute(delete(Module).where(Module.id == module.id))
+    await db_session.commit()
+
+
 def test_turn_cost_records_a_chat_metric_per_real_call(monkeypatch):
     model = "anthropic/claude-haiku-5-5"
     before_calls = LLM_CALLS_TOTAL.labels(model, "chat")._value.get()
