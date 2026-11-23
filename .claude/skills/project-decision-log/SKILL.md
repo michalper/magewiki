@@ -4590,3 +4590,51 @@ clean, frontend `npm run lint` clean, `npm run test:coverage` still
 275/275 at 100% every metric, and `npm run build` (real `next build` +
 `tsc`, this project's own earlier-recorded lesson that vitest/eslint
 alone don't catch everything a full build does) clean.
+
+**ordo CI port, round 2 — step-level, plus a real CI gap found by hand
+(recorded 2026-11-23):** The first ordo survey (see its own entry above)
+compared whole workflow files; manually adding
+`SonarSource/sonarqube-quality-gate-action` to `ci.yml`'s `sonar` job (the
+scan-submission step alone never checked the gate result, so a red gate
+was only ever visible by clicking through to the SonarCloud dashboard, not
+reflected in the job's own pass/fail — also added `sonar` to branch
+protection's required status checks once it meant something) turned out to
+be a pattern already in ordo's own `ci.yml` that the first, workflow-file-
+level survey had missed entirely. A second, user-directed survey went
+step-by-step instead:
+
+- `dependabot-auto-merge.yml`: `pull_request_target` -> `pull_request`.
+  Verified no step in this workflow checks out the PR's head ref, so
+  `pull_request_target` bought nothing here — Dependabot PRs are same-repo
+  branches, not forks, so plain `pull_request` already gets a
+  write-capable `GITHUB_TOKEN`/secrets. Ordo hit SonarCloud's
+  `githubactions:S7631` (flags `pull_request_target` categorically,
+  regardless of whether a checkout happens) and made the identical switch
+  for the identical reason. Also added the `concurrency` group every other
+  workflow in this repo already had — this was the one left out.
+- Added `timeout-minutes` to every job with no backstop against GitHub's
+  own 6-hour default job ceiling: `cifuzz.yml`'s `fuzzing` job (30 min),
+  `ci.yml`'s `docker-build` matrix, `e2e-smoke`, `k8s-smoke` (20 min each)
+  — real candidates for a silent hang (ClusterFuzzLite build/fuzz, a
+  docker-compose stack, a `kind` cluster), none of them previously bounded
+  below GitHub's own ceiling.
+- `actionlint.yml`/`typos.yml`: added `workflow_dispatch` — already added
+  to `scorecard.yml`/`markdownlint.yml` in the first port, missed on these
+  two at the time.
+
+Explicitly not changed: `codecov-action`'s `fail_ci_if_error` (ordo sets
+`true`, magewiki sets `false` on both backend/frontend uploads) — flagged
+by the survey as a real, intentional-looking difference, left as a
+conscious open question rather than auto-flipped, since Codecov isn't in
+magewiki's required-status-check list and `false` may be a deliberate
+choice to avoid third-party-service flakiness failing CI for reasons
+unrelated to code correctness. Also confirmed still correctly excluded on
+re-check: action-version drift across `scorecard.yml`/`ci.yml`'s
+`codeql-action` pin/`typos` version (Dependabot's `github-actions`
+ecosystem already tracks these, a manual port would just fight it), ordo's
+CHANGELOG-driven release automation (already rejected in the first port's
+entry), and every Magento-Composer/MFTF/DAST-specific workflow (`api-tests
+.yml`, `integration-tests.yml`, `mftf.yml`, `php86-preview.yml`,
+`zap.yml`, `coverage.yml`, `debug-wif.yml`) — grepped in full for any
+smaller generically-applicable pattern buried inside the way the quality-
+gate-action was, found none beyond the two items above.
