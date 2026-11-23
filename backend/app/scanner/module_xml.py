@@ -16,7 +16,11 @@ def parse_module_xml(path: Path) -> ModuleXmlResult:
 
     try:
         tree = etree.parse(str(path))
-    except etree.XMLSyntaxError as exc:
+    except (etree.XMLSyntaxError, OSError) as exc:
+        # lxml raises OSError, not XMLSyntaxError, for some malformed
+        # encoding declarations when parsing from a file path -- found by
+        # fuzzing xml_parse_utils.parse_xml_root's identical etree.parse
+        # call, not by any hand-written XML sample.
         raise InvalidModuleXmlError(f"malformed module.xml: {exc}") from exc
 
     module_el = tree.getroot().find("module")

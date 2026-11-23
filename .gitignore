@@ -29,6 +29,9 @@ k8s/base/.env.k8s
 # Docker
 *.pid
 
+# Local ClusterFuzzLite build output (docker build -f .clusterfuzzlite/Dockerfile)
+.cifuzz-out/
+
 # OS
 .DS_Store
 

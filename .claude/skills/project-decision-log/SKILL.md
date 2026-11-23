@@ -4228,3 +4228,57 @@ read classic branch-protection rules -- not necessarily meaning none exist).
 **Maintained** (0, "created within the last 90 days") and **Contributors**
 (0, "0 contributing companies") aren't fixable by any change at all -- they
 resolve with time and real outside contributors, respectively.
+
+**Fuzzing check, added despite thin expected value for a memory-safe stack
+(recorded 2026-11-23):** the last fixable Scorecard finding from the same
+pass above, done only after flagging the real tradeoff to the user first --
+OSS-Fuzz/ClusterFuzzLite is designed around catching memory corruption in
+native code, and this project is pure Python/TypeScript, where the realistic
+payoff is "an uncaught exception on malformed input," not a new bug class.
+Added anyway (user's call) via `.clusterfuzzlite/` (Dockerfile + build.sh +
+three Atheris harnesses) and `.github/workflows/cifuzz.yml`
+(`google/clusterfuzzlite/actions/{build_fuzzers,run_fuzzers}`, SHA-pinned
+same as every other action per the pass above), targeting the parsers that
+read a scanned module's own untrusted files: `fuzz_xml_parsers.py` (every
+`parse_xml_root`-based lxml parser plus `module.xml`/`routes.xml`/
+`queue_config`), `fuzz_php_classes.py` (`parse_php_source`'s tree-sitter-php
+class/method extraction, plus `config_php`'s own tree-sitter-based array
+parser), `fuzz_graphql_schema.py` (`parse_graphql_schema`'s graphql-core
+usage). `build.sh` installs `backend/app` as a real package (`pyproject.toml`
+already declares `packages = [{ include = "app" }]`) rather than wiring
+PYTHONPATH by hand, so the harnesses import `app.scanner.*` exactly as the
+real app does.
+
+Not theoretical: the very first local `docker build -f .clusterfuzzlite/
+Dockerfile . && docker run ... bash /src/build.sh` + a 30-second fuzz run of
+`fuzz_xml_parsers` found a real bug before any CI run ever did. `lxml`
+raises `OSError` ("Invalid bytes in character encoding"), not
+`etree.XMLSyntaxError`, for some malformed encoding declarations when
+parsing from a file path -- `xml_parse_utils.parse_xml_root` and
+`module_xml.parse_module_xml` each have their own `etree.parse(str(path))`
+call and each only caught `XMLSyntaxError`, so a scanned module's XML file
+with this specific kind of corruption crashed the whole scan instead of
+failing open like every other malformed-XML case these two functions
+otherwise handle identically. Fixed by adding `OSError` to both `except`
+clauses (minimal, scoped change -- not a broad `except Exception`). Verified
+rigorously, matching this log's own established discipline for "a test
+passing isn't proof a fix fixes something": `git stash`ed just the two
+source fixes, confirmed the two new regression tests
+(`test_parse_xml_root_returns_none_for_invalid_bytes_in_the_declared_encoding`,
+`test_parse_module_xml_invalid_bytes_in_the_declared_encoding`, using a
+hand-written minimal reproducer -- `<config>\xff\xfe</config>` after a valid
+`<?xml encoding="UTF-8"?>` prolog -- confirmed byte-for-byte against the
+real fuzzer-found crash, not a guess) go red without the fix, then
+`stash pop`ped to restore it and confirmed green; full backend suite
+re-verified at 915/915 (the same 5 environment-only failures as every other
+`docker compose run --rm api pytest` invocation in this session -- missing
+repo-root-relative `.env.example`/Ordo-fixture paths inside the `api`
+image's own build context, unrelated to this change) plus clean
+`ruff`/`mypy`, and all three harnesses re-run clean for 60 real seconds each
+(190k-250k executions) after the fix. Deliberately out of scope for this
+first pass: `php_parser.py`'s raw tree-sitter-php call itself (tree-sitter
+is designed to never crash on arbitrary byte input -- fuzzing its own
+_traversal_ helpers via `parse_php_source`/`parse_config_php` above is the
+part actually worth exercising) and `discovery.py`'s filesystem-walking
+logic (needs a real directory tree as input, not a byte blob -- a
+structurally different, not yet attempted, harness shape).

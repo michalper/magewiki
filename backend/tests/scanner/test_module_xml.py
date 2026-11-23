@@ -29,6 +29,17 @@ def test_parse_module_xml_malformed_xml(tmp_path: Path):
         parse_module_xml(bad_xml)
 
 
+def test_parse_module_xml_invalid_bytes_in_the_declared_encoding(tmp_path: Path):
+    """Same fuzzing-found regression as test_xml_parse_utils.py's equivalent
+    test: lxml raises OSError, not XMLSyntaxError, for some byte sequences that
+    don't decode under the file's own declared encoding."""
+    bad_xml = tmp_path / "module.xml"
+    bad_xml.write_bytes(b'<?xml version="1.0" encoding="UTF-8"?><config>\xff\xfe</config>')
+
+    with pytest.raises(InvalidModuleXmlError, match="malformed module.xml"):
+        parse_module_xml(bad_xml)
+
+
 def test_parse_module_xml_refuses_a_symlink(tmp_path: Path):
     """Security regression: must never follow a symlinked module.xml to
     read an arbitrary host path (a real symlink, not a mock)."""
