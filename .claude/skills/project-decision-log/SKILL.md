@@ -4152,3 +4152,79 @@ across branches with a different base is not proof nothing was lost --
 diff against the actual intended change set to confirm, the same
 discipline this project already applies to verifying a fix actually
 fixes something rather than trusting that a test passing means it does.
+
+**OpenSSF Scorecard follow-up (recorded 2026-11-23):** triggered by actually
+reading `https://scorecard.dev/viewer/?uri=github.com/michalper/magewiki`
+(the viewer page itself renders no data client-side; the JSON API at
+`api.securityscorecards.dev/projects/github.com/michalper/magewiki` has the
+real per-check scores) rather than assuming the badge already added to the
+README meant everything under it was fine. Overall score was 5/10 at commit
+`13989fea`. Two findings were real and fixable without touching GitHub repo
+settings:
+
+- **Vulnerabilities (scored 0, "13 known vulnerabilities")** was exactly the
+  already-tracked "Still open: filelock override removal" item above --
+  confirmed by cross-referencing the GHSA IDs Scorecard's OSV-based scan
+  reported against `gh api repos/michalper/magewiki/dependabot/alerts`: the
+  same 13 `filelock` CVEs, all already `dismissed` on GitHub's side (per the
+  `backend/Dockerfile` force-install workaround's own reasoning) but
+  Scorecard's OSV scan reads `poetry.lock` directly and doesn't know about
+  Dependabot dismissals, so the lockfile still showing `filelock==3.32.7`
+  kept scoring as vulnerable regardless. Re-checked PyPI directly rather than
+  trusting the old note that no newer litellm existed: `litellm` 1.110.2 (up
+  from the installed 1.109.1) relaxed its own pin to `filelock<5,>=3.16.1`,
+  unblocking a real `poetry update filelock` (`3.32.7` -> `4.3.0`) instead of
+  another out-of-band force-install. `backend/pyproject.toml`'s `litellm`
+  constraint bumped `^1.108` -> `^1.110`; the `backend/Dockerfile` force-install
+  step removed entirely now that `poetry install` alone resolves the fixed
+  version. Verified before considering this safe: `litellm`'s only consumers
+  in this codebase are `litellm.acompletion`/`aembedding`/`completion_cost`
+  (grepped `app/`, same high-level surface checked before the 1.108 bump
+  too), full backend suite green (913/913 real tests; the other 5 failures
+  seen in one `docker compose run --rm api pytest` pass were pre-existing
+  environment artifacts of running tests against the `api` image's own build
+  context rather than the full repo checkout -- `REPO_ROOT`-relative
+  `.env.example`/`k8s/.env.k8s.example` paths and the host-only Ordo fixture
+  path don't exist inside that image -- not a regression from this change),
+  `ruff check`/`mypy app` both clean on the real built image.
+- **Token-Permissions (scored 0)** flagged `.github/workflows/
+  dependabot-auto-merge.yml` for setting `contents: write` at the
+  *workflow* level. Fixed by moving the `permissions:` block down onto the
+  one `auto-merge` job itself (`permissions: {}` at the top, the actual
+  grants under the job) -- same effective permissions for this workflow's
+  only job, but scoped so a job added later wouldn't silently inherit
+  write access.
+
+Also fixed, not a Scorecard line item on its own but a known precondition
+for the **Pinned-Dependencies** check (scored 0, "no GitHub Actions ... pinned
+by hash"): every `uses:` line across all 8 `.github/workflows/*.yml` files
+plus `.github/actions/setup-backend-env/action.yml` (24 unique actions) now
+pins to a commit SHA with a `# vX.Y.Z` trailing comment for readability,
+resolved via `gh api repos/{owner}/{repo}/commits/{tag}`. Confirmed safe to
+maintain going forward, not a one-off: `.github/dependabot.yml` already runs
+a weekly `github-actions` ecosystem update, which tracks and bumps SHA pins
+(with the same `# vX.Y.Z` comment convention) same as it would version tags,
+and `dependabot-auto-merge.yml` already auto-merges patch/minor bumps once
+CI is green. Verified with `actionlint` (clean, exit 0) after the rewrite,
+not just visually. Explicitly left unpinned, on purpose: `alpine:edge` in
+`php-analyzer/Dockerfile` (per that file's own existing comment, `edge` is a
+rolling tag relied on specifically *because* it floats -- it's the only
+Alpine base carrying php83/84/85 side by side; digest-pinning it would
+silently freeze out exactly the packages it's chosen for) -- digest-pinning
+the other base images (`python:3.13-slim`, `node:26-slim`,
+`pgvector/pgvector:pg16`, `redis:7-alpine`) was considered but not done in
+this pass: `dependabot.yml` has no `docker` ecosystem entry, so a digest pin
+there would silently go stale with no bump mechanism, unlike the Actions
+pins above -- left as a separate decision for whoever adds that ecosystem
+entry.
+
+Two more Scorecard findings are real but are GitHub repo-settings changes,
+not code changes, and were left for the user to decide rather than applied
+silently: **Code-Review** (0/21 merged changesets approved by someone other
+than the author -- expected for a solo-maintained repo, and "fixing" it
+would mean requiring a second approver who doesn't exist) and
+**Branch-Protection** (unscored, `-1`, because Scorecard's own token can't
+read classic branch-protection rules -- not necessarily meaning none exist).
+**Maintained** (0, "created within the last 90 days") and **Contributors**
+(0, "0 contributing companies") aren't fixable by any change at all -- they
+resolve with time and real outside contributors, respectively.
