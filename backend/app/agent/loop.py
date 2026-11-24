@@ -120,6 +120,12 @@ def _collect_sources(
     elif tool_name == "list_modules":
         for r in result.get("modules", []):
             _add(r.get("module_id"), r.get("name"))
+    elif tool_name == "recommend_module_cleanup":
+        for p in result.get("merge_candidates", []):
+            _add(p.get("module_a_id"), p.get("module_a_name"))
+            _add(p.get("module_b_id"), p.get("module_b_name"))
+        for r in result.get("deprecation_candidates", []):
+            _add(r.get("module_id"), r.get("name"))
 
 
 _ENUMERATION_PHRASES = (

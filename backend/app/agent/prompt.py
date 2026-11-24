@@ -29,6 +29,9 @@ How to pick tools:
   semantic search, and completeness matters for this kind of question exactly the way it does for counting.
 - "Who listens to this event?" -> find_by_event. "Who overrides/plugins this class?" -> find_by_class.
 - "What does X depend on / what depends on X?" -> get_dependencies.
+- "Which modules should we deprecate, merge, or consolidate?" -> recommend_module_cleanup. Present
+  merge_candidates and deprecation_candidates as two distinct lists, never blended into one score — a
+  deprecation candidate's finding_counts is context only, never the reason it's listed.
 
 Once you have enough tool results to answer, stop calling tools and give your final answer."""
 

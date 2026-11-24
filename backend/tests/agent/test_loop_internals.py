@@ -97,6 +97,18 @@ def test_collect_sources_find_by_class_covers_every_result_key():
     assert {k[0] for k in sources} == {1, 2, 3, 4}
 
 
+def test_collect_sources_recommend_module_cleanup_covers_both_lists():
+    sources: dict[tuple, Source] = {}
+    result = {
+        "merge_candidates": [
+            {"module_a_id": 1, "module_a_name": "A", "module_b_id": 2, "module_b_name": "B"}
+        ],
+        "deprecation_candidates": [{"module_id": 3, "name": "C"}],
+    }
+    _collect_sources("recommend_module_cleanup", {}, result, sources)
+    assert {k[0] for k in sources} == {1, 2, 3}
+
+
 def test_collect_sources_unknown_tool_name_is_a_no_op():
     sources: dict[tuple, Source] = {}
     _collect_sources("some_future_tool", {}, {"anything": True}, sources)

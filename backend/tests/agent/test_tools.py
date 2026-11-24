@@ -20,6 +20,7 @@ from app.agent.tools import (
     get_module_history,
     list_modules,
     read_file,
+    recommend_module_cleanup,
     search_modules,
 )
 from app.analyzer.prompts import MODULE_SYNTHESIS_PROMPT_VERSION
@@ -28,6 +29,7 @@ from app.models import (
     Chunk,
     EventObserver,
     Module,
+    ModuleDependency,
     ModuleDocument,
     ModuleHistorySnapshot,
     ModuleQualityFinding,
@@ -505,6 +507,96 @@ async def test_find_duplicate_module_pairs_tool_empty_when_nothing_close_enough(
 
     await db_session.execute(delete(Module).where(Module.id == alone.id))
     await db_session.commit()
+
+
+@pytest.mark.asyncio
+async def test_recommend_module_cleanup_returns_a_merge_candidate_from_a_real_duplicate_pair(db_session):
+    suffix = uuid.uuid4().hex[:8]
+    base = _base_dim(suffix)
+    a = await _make_bare_module(db_session, f"{suffix}-a", name=f"CleanupDupA_{suffix}")
+    b = await _make_bare_module(db_session, f"{suffix}-b", name=f"CleanupDupB_{suffix}")
+    db_session.add(
+        Chunk(
+            module_id=a.id, chunk_type="module", content_hash=f"module-chunk-{a.id}", text="s",
+            embedding=_vector({base: 1.0}),
+        )
+    )
+    db_session.add(
+        Chunk(
+            module_id=b.id, chunk_type="module", content_hash=f"module-chunk-{b.id}", text="s",
+            embedding=_vector({base: 0.99, base + 1: 0.01}),
+        )
+    )
+    await db_session.commit()
+
+    try:
+        result = await recommend_module_cleanup(db_session, min_similarity=0.5)
+    finally:
+        await db_session.execute(delete(Module).where(Module.id.in_([a.id, b.id])))
+        await db_session.commit()
+
+    pair = next(
+        p for p in result["merge_candidates"] if {p["module_a_id"], p["module_b_id"]} == {a.id, b.id}
+    )
+    assert pair["similarity"] > 0.9
+
+
+@pytest.mark.asyncio
+async def test_recommend_module_cleanup_returns_a_deprecation_candidate_with_finding_context(db_session):
+    suffix = uuid.uuid4().hex[:8]
+    orphan = Module(
+        repo_root=f"/tmp/agent-tools-cleanup-test-{suffix}",
+        name=f"CleanupOrphan_{suffix}",
+        path=".",
+        source_type="standalone",
+        state="up_to_date",
+        enabled=False,
+        current_hash=f"hash-{suffix}",
+        last_scanned_at=datetime.now(UTC),
+    )
+    db_session.add(orphan)
+    await db_session.flush()
+    db_session.add(
+        ModuleQualityFinding(module_id=orphan.id, check_type="hardcoded_secret", severity="blocking", message="m")
+    )
+    await db_session.commit()
+
+    try:
+        result = await recommend_module_cleanup(db_session, limit=500)
+    finally:
+        await db_session.execute(delete(Module).where(Module.id == orphan.id))
+        await db_session.commit()
+
+    entry = next(d for d in result["deprecation_candidates"] if d["module_id"] == orphan.id)
+    assert entry["finding_counts"] == {"hardcoded_secret": 1}
+
+
+@pytest.mark.asyncio
+async def test_recommend_module_cleanup_excludes_a_disabled_module_something_still_depends_on(db_session):
+    suffix = uuid.uuid4().hex[:8]
+    referenced = Module(
+        repo_root=f"/tmp/agent-tools-cleanup-test-{suffix}",
+        name=f"CleanupReferenced_{suffix}",
+        path=".",
+        source_type="standalone",
+        state="up_to_date",
+        enabled=False,
+        current_hash=f"hash-{suffix}",
+        last_scanned_at=datetime.now(UTC),
+    )
+    db_session.add(referenced)
+    await db_session.flush()
+    dependent = await _make_bare_module(db_session, f"{suffix}-dep", name=f"CleanupDependent_{suffix}")
+    db_session.add(ModuleDependency(module_id=dependent.id, depends_on_name=referenced.name))
+    await db_session.commit()
+
+    try:
+        result = await recommend_module_cleanup(db_session, limit=500)
+    finally:
+        await db_session.execute(delete(Module).where(Module.id.in_([referenced.id, dependent.id])))
+        await db_session.commit()
+
+    assert all(d["module_id"] != referenced.id for d in result["deprecation_candidates"])
 
 
 @pytest.mark.asyncio
