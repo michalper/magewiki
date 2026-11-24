@@ -108,6 +108,16 @@ async function globalSetup() {
       "magento-github:2.4.8:composer.json",
       JSON.stringify({ require: { php: "~8.1.0||~8.2.0||~8.3.0" }, replace: {} }),
     );
+    // Phase 27's upgrade-impact page needs a *second*, different target
+    // version with a *different* outcome for the same module, to prove the
+    // page is genuinely version-sensitive rather than just echoing the
+    // cached "latest" result above. Vendor_QualityChecks' real composer.json
+    // declares "php": "~7.4.0" (see backend/tests/fixtures/*/Vendor_QualityChecks'
+    // own composer.json) -- compatible with this constraint, unlike 2.4.8's.
+    seedPackagistCache(
+      "magento-github:2.4.6:composer.json",
+      JSON.stringify({ require: { php: "~7.3.0||~7.4.0" }, replace: {} }),
+    );
     await seedScan(apiUrl, scanRoots[1]);
   }
 }

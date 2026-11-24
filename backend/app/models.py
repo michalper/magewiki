@@ -47,6 +47,13 @@ class Module(Base):
     homepage: Mapped[str | None] = mapped_column(Text)
     authors: Mapped[list[str] | None] = mapped_column(ARRAY(Text))
     php_extensions: Mapped[list[str] | None] = mapped_column(ARRAY(Text))
+    # Phase 27: composer.json's own require.php constraint, persisted so the
+    # upgrade-impact "what if I upgrade to Magento X" query can compare an
+    # arbitrary chosen release against every already-scanned module without
+    # re-reading composer.json from disk -- previously only a transient
+    # scan-time local (pm.composer.php_constraint), fed straight into
+    # check_magento_upgrade_readiness and discarded.
+    php_constraint: Mapped[str | None] = mapped_column(Text)
     # composer.json facts parsed from the start but never surfaced anywhere --
     # deliberately deferred per CLAUDE.md's "lower-value, more niche fields"
     # note next to the homepage/authors/php_extensions decision above, added

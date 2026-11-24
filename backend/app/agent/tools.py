@@ -19,6 +19,9 @@ from app.models import (
     ModuleQualityFinding,
     PhpClass,
 )
+from app.search.cleanup_candidates import (
+    find_orphaned_disabled_modules as _find_orphaned_disabled_modules,
+)
 from app.search.hybrid import hybrid_search
 from app.search.query_rewrite import rewrite_query
 from app.search.rerank import rerank_results
@@ -232,6 +235,41 @@ async def find_duplicate_module_pairs(session: AsyncSession, min_similarity: flo
                 "similarity": p.similarity,
             }
             for p in pairs
+        ],
+    }
+
+
+async def recommend_module_cleanup(session: AsyncSession, min_similarity: float = 0.5, limit: int = 10) -> dict[str, Any]:
+    """Two deterministic, SQL-only signals combined into one recommendation --
+    never a quality-finding-weighted "score": a module with many findings
+    needs fixing, not necessarily removing, so findings stay attached per
+    deprecation candidate as context only, never part of the decision itself.
+    """
+    pairs = await _find_duplicate_module_pairs(session, min_similarity=min_similarity, limit=limit)
+    orphaned = await _find_orphaned_disabled_modules(session, limit=limit)
+    return {
+        "merge_candidates": [
+            {
+                "module_a_id": p.module_a_id,
+                "module_a_name": p.module_a_name,
+                "module_a_composer_name": p.module_a_composer_name,
+                "module_b_id": p.module_b_id,
+                "module_b_name": p.module_b_name,
+                "module_b_composer_name": p.module_b_composer_name,
+                "similarity": p.similarity,
+            }
+            for p in pairs
+        ],
+        "deprecation_candidates": [
+            {
+                "module_id": o.module_id,
+                "name": o.name,
+                "composer_name": o.composer_name,
+                "path": o.path,
+                "repo_root": o.repo_root,
+                "finding_counts": o.finding_counts,
+            }
+            for o in orphaned
         ],
     }
 
@@ -490,6 +528,7 @@ TOOL_FUNCTIONS: dict[str, Callable[..., Awaitable[dict[str, Any]]]] = {
     "get_module_history": get_module_history,
     "get_module_dependency_graph": get_module_dependency_graph,
     "find_duplicate_module_pairs": find_duplicate_module_pairs,
+    "recommend_module_cleanup": recommend_module_cleanup,
     "find_by_event": find_by_event,
     "find_by_class": find_by_class,
     "read_file": read_file,
@@ -640,6 +679,29 @@ TOOL_SCHEMAS = [
                 "properties": {
                     "min_similarity": {"type": "number", "description": "0-1, default 0.5"},
                     "limit": {"type": "integer", "description": "Max pairs, default 20"},
+                },
+                "required": [],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "recommend_module_cleanup",
+            "description": (
+                "Fleet-wide cleanup recommendations, two kinds: merge_candidates (modules that look like "
+                "duplicate/redundant integrations, same as find_duplicate_module_pairs) and "
+                "deprecation_candidates (modules that are disabled AND nothing else in the fleet still "
+                "references them -- no module sequences after them, overrides one of their classes, or "
+                "plugs into one of their classes). Use for 'which modules should we deprecate/merge/"
+                "consolidate?'. Each deprecation candidate's finding_counts is context only, never the "
+                "reason it's listed -- a module with many findings needs fixing, not necessarily removing."
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "min_similarity": {"type": "number", "description": "0-1, default 0.5"},
+                    "limit": {"type": "integer", "description": "Max candidates per kind, default 10"},
                 },
                 "required": [],
             },

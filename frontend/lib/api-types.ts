@@ -172,6 +172,37 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/repos/upgrade-impact": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Repo Upgrade Impact
+         * @description "What if I upgrade to Magento `version`?" -- Phase 12b's
+         *     check_magento_upgrade_readiness answers this only for "the latest
+         *     release," persisted as a ModuleQualityFinding row at nightly-scan time.
+         *     This is an on-demand, read-only query against an arbitrary version
+         *     instead: nothing here is written to ModuleQualityFinding, since a
+         *     what-if query isn't a scan and must never change real finding counts or
+         *     badges. `version` is used directly as a Magento GitHub release tag
+         *     (Magento's own tags are bare version strings like "2.4.7", no "v"
+         *     prefix) -- the exact same magento_github.py functions
+         *     check_magento_upgrade_readiness already relies on, just fetched once
+         *     here and compared against every module in-memory via
+         *     compare_against_release(), instead of once per module.
+         */
+        get: operations["get_repo_upgrade_impact_repos_upgrade_impact_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/modules/overlap": {
         parameters: {
             query?: never;
@@ -206,6 +237,34 @@ export interface paths {
         };
         /** List Duplicate Module Pairs */
         get: operations["list_duplicate_module_pairs_modules_duplicate_pairs_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/modules/findings-by-path": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List Findings By Path
+         * @description Resolves a pull request's changed files to the modules they belong to
+         *     and returns each module's current quality findings -- the lookup the
+         *     PR-gate CI script (app/ci/pr_gate.py) needs to decide whether a PR
+         *     touches a module with an existing blocking finding. `paths` is
+         *     comma-separated, same convention as `finding` on GET /modules. Matching
+         *     is by longest-prefix against Module.path (not a FK -- a diff only gives
+         *     file paths), so "module-foo" never swallows "module-foo-extra"; a
+         *     Module.path of "" (a single-module repo whose root is the module root)
+         *     matches everything but loses to any more specific module.
+         */
+        get: operations["list_findings_by_path_modules_findings_by_path_get"];
         put?: never;
         post?: never;
         delete?: never;
@@ -555,6 +614,18 @@ export interface components {
             disabled: boolean;
         };
         /**
+         * FindingsByPathResponse
+         * @description GET /modules/findings-by-path's response -- the PR-gate CI script
+         *     (app/ci/pr_gate.py) resolves a pull request's changed files against this
+         *     to decide whether a touched module already carries a blocking finding.
+         */
+        FindingsByPathResponse: {
+            /** Modules */
+            modules: components["schemas"]["ModuleFindingsEntry"][];
+            /** Unmatched Paths */
+            unmatched_paths: string[];
+        };
+        /**
          * FleetTrendPointEntry
          * @description Phase 22b: one fleet-wide total-findings data point, oldest first --
          *     see app/search/fleet_trend.py for how it's reconstructed from Phase 16's
@@ -841,6 +912,19 @@ export interface components {
              */
             quality_findings: components["schemas"]["QualityFindingResponse"][];
         };
+        /** ModuleFindingsEntry */
+        ModuleFindingsEntry: {
+            /** Module Id */
+            module_id: number;
+            /** Name */
+            name: string;
+            /** Path */
+            path: string;
+            /** Matched Paths */
+            matched_paths: string[];
+            /** Findings */
+            findings: components["schemas"]["QualityFindingResponse"][];
+        };
         /**
          * ModuleHistoryEntry
          * @description Phase 16: one module_history_snapshots row. Deltas (which check_types
@@ -1013,6 +1097,17 @@ export interface components {
                 [key: string]: number;
             };
         };
+        /** ModuleUpgradeImpactEntry */
+        ModuleUpgradeImpactEntry: {
+            /** Module Id */
+            module_id: number;
+            /** Name */
+            name: string;
+            /** Path */
+            path: string;
+            /** Findings */
+            findings: components["schemas"]["QualityFindingResponse"][];
+        };
         /** ModuleWidgetSummary */
         ModuleWidgetSummary: {
             /** Widget Id */
@@ -1181,6 +1276,15 @@ export interface components {
             composer_name: string | null;
             /** Similarity */
             similarity: number;
+        };
+        /** UpgradeImpactResponse */
+        UpgradeImpactResponse: {
+            /** Version */
+            version: string;
+            /** Checked Count */
+            checked_count: number;
+            /** Blocked Modules */
+            blocked_modules: components["schemas"]["ModuleUpgradeImpactEntry"][];
         };
         /** ValidationError */
         ValidationError: {
@@ -1443,6 +1547,38 @@ export interface operations {
             };
         };
     };
+    get_repo_upgrade_impact_repos_upgrade_impact_get: {
+        parameters: {
+            query: {
+                repo_root: string;
+                version: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["UpgradeImpactResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     list_module_overlap_modules_overlap_get: {
         parameters: {
             query?: never;
@@ -1481,6 +1617,38 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["DuplicateModulePairEntry"][];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_findings_by_path_modules_findings_by_path_get: {
+        parameters: {
+            query: {
+                repo_root: string;
+                paths: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["FindingsByPathResponse"];
                 };
             };
             /** @description Validation Error */

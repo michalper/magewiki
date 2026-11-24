@@ -87,7 +87,7 @@ Agentic RAG over hybrid search in Postgres: an agent with tools (tool calling vi
 
 **Multi-level index**: module README (top level) → per-file summaries → code fragments (methods, XML blocks) for citation only. Chunking follows code structure, not character count. Source code for citations lives in the database; `read_file` reads from the database, not disk.
 
-**Agent tools**: `search_modules`, `get_module`, `get_dependencies`, `get_module_findings`, `find_similar_modules`, `get_module_history`, `get_module_dependency_graph`, `find_duplicate_module_pairs`, `find_by_event`, `find_by_class`, `read_file(path, lines)`, `list_modules`.
+**Agent tools**: `search_modules`, `get_module`, `get_dependencies`, `get_module_findings`, `find_similar_modules`, `get_module_history`, `get_module_dependency_graph`, `find_duplicate_module_pairs`, `recommend_module_cleanup`, `find_by_event`, `find_by_class`, `read_file(path, lines)`, `list_modules`.
 
 **Question routing**:
 
@@ -101,6 +101,7 @@ Agentic RAG over hybrid search in Postgres: an agent with tools (tool calling vi
 | "Why does this module have finding X?", "what quality issues does this module have?" | `get_module_findings` (SQL over `module_quality_findings`, with real file/line citations) |
 | "What does this module depend on, transitively?", "show the dependency graph" | `get_module_dependency_graph` (BFS over module.xml/di.xml relations) |
 | "Which modules across the fleet look like duplicates?" | `find_duplicate_module_pairs` (fleet-wide embedding cosine similarity, distinct from the per-module `find_similar_modules`) |
+| "Which modules should we deprecate, merge, or consolidate?" | `recommend_module_cleanup` (merge candidates from `find_duplicate_module_pairs`; deprecation candidates are disabled modules with zero incoming `module.xml` sequence/`di.xml` preference/plugin edges from anywhere else in the fleet — quality findings are attached as context only, never the reason a module is listed) |
 
 Enumeration questions go through SQL, because top-k retrieval doesn't guarantee completeness by nature.
 
@@ -150,6 +151,9 @@ MVP = Phases 0–5. Each phase is done separately: first a plan for approval, th
 | 23 | Cross-module conflict detection, round 6: `widget.xml` facts and a duplicate-widget-id check (global namespace, no area) | A module with a clashing widget id shows a badge, folded into the "Cross-module conflicts" Stats tile |
 | 24 | Lightweight access gate (`WRITE_ACCESS_TOKEN`) on `POST /chat`, `PATCH /settings/llm`, `POST /scan[/stream]` — lets an operator safely enable a real LLM key on the public demo without open budget exposure; read-only browsing stays open | A write/chat/scan call without the configured token gets 401; the catalog stays fully browsable with no token |
 | 25 | Cross-module conflict detection, round 7: `menu.xml` admin-menu-item-id conflicts (kept `warning` severity for family consistency) and `cache.xml` type conflicts (only when `instance` disagrees) | A module with a clashing menu item id or disputed cache type shows a badge, folded into the "Cross-module conflicts" Stats tile |
+| 26 | PR gate: a standalone `pr_gate.py` CLI (stdlib + httpx only) plus a composite GitHub Action consumers add to their own Magento store's CI, backed by a new `GET /modules/findings-by-path` lookup. Reads the target repo's already-scanned state — does not scan the PR branch itself | A pull request touching a module with an existing blocking finding gets a sticky PR comment and a failed check; a clean PR gets a sticky comment and a passing check |
+| 27 | Upgrade impact: "what if I upgrade to Magento X" — a `GET /repos/upgrade-impact` endpoint and a Repos-page-linked UI page, reusing Phase 12b's `magento_github.py` fetch functions and a new `compare_against_release()` extracted from `check_magento_upgrade_readiness` for this. Purely read/compute against an arbitrary chosen version; writes nothing to `ModuleQualityFinding` | Picking a target Magento version on a repo's upgrade-impact page lists exactly which already-scanned modules would break and why, without scanning that repo again |
+| 28 | Repo health report: a one-click shareable Markdown summary (module counts, enabled/README/test/doc percentages, a KPI-tile-grouped findings breakdown, top-5 riskiest modules), built entirely client-side from `GET /modules?repo_root=...` — no new backend endpoint | A "Download health report" button on a repo's card produces a real, readable `.md` file a user can paste into Slack or email |
 
 Version 1.0 ships before Phases 7b–9: a finished project with six technologies beats an unfinished one with ten.
 

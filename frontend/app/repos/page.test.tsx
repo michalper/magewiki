@@ -6,9 +6,45 @@ import ReposPage from "./page";
 
 vi.mock("@/lib/api", () => ({ apiFetch: vi.fn(), apiUrl: () => "http://localhost:8000" }));
 
+const pushMock = vi.fn();
+vi.mock("next/navigation", () => ({
+  useRouter: () => ({ push: pushMock }),
+}));
+
+vi.mock("@/lib/csv", () => ({ downloadFile: vi.fn() }));
+
 import { apiFetch } from "@/lib/api";
+import { downloadFile } from "@/lib/csv";
 
 const fetchMock = vi.mocked(apiFetch);
+const downloadFileMock = vi.mocked(downloadFile);
+
+function moduleSummary(overrides: Partial<Record<string, unknown>> = {}) {
+  return {
+    id: 1,
+    name: "Vendor_Module",
+    composer_name: "vendor/module",
+    source_type: "app_code",
+    path: "app/code/Vendor/Module",
+    repo_root: "/sites/store-a",
+    enabled: true,
+    state: "up_to_date",
+    setup_version: "1.0.0",
+    class_count: 0,
+    plugin_count: 0,
+    observer_count: 0,
+    last_scanned_at: "2026-01-01T00:00:00Z",
+    tags: [],
+    has_readme: true,
+    has_tests: true,
+    has_module_doc: true,
+    phpunit_tests_run: null,
+    phpunit_tests_failed: null,
+    phpunit_coverage_percent: null,
+    finding_counts: {},
+    ...overrides,
+  };
+}
 
 function repo(overrides: Partial<Record<string, unknown>> = {}) {
   return {
@@ -26,6 +62,8 @@ function repo(overrides: Partial<Record<string, unknown>> = {}) {
 describe("ReposPage", () => {
   beforeEach(() => {
     fetchMock.mockReset();
+    pushMock.mockReset();
+    downloadFileMock.mockReset();
   });
 
   it("shows loading state before any query resolves", () => {
@@ -79,6 +117,113 @@ describe("ReposPage", () => {
       "_self",
     );
     openSpy.mockRestore();
+  });
+
+  it("downloads a health report for a repo without navigating to its filtered modules list", async () => {
+    fetchMock.mockImplementation(async (path: string) => {
+      if (path === "/repos") return [repo()];
+      if (path.startsWith("/modules?repo_root=")) {
+        return { total: 1, modules: [moduleSummary({ finding_counts: { hardcoded_secret: 1 } })] };
+      }
+      return [];
+    });
+    const user = userEvent.setup();
+    renderWithQueryClient(<ReposPage />);
+
+    await waitFor(() => expect(screen.getByText("/sites/store-a")).toBeInTheDocument());
+    await user.click(screen.getByRole("button", { name: "Download health report" }));
+
+    await waitFor(() => expect(downloadFileMock).toHaveBeenCalledTimes(1));
+    const [filename, content, mimeType] = downloadFileMock.mock.calls[0];
+    expect(filename).toMatch(/^store-a-health-report-\d{4}-\d{2}-\d{2}\.md$/);
+    expect(content).toContain("Vendor_Module");
+    expect(mimeType).toBe("text/markdown;charset=utf-8;");
+    expect(fetchMock).toHaveBeenCalledWith("/modules?repo_root=%2Fsites%2Fstore-a&limit=5000");
+  });
+
+  it("disables only the clicked repo's health-report button while the download is in flight", async () => {
+    let resolveModules!: (value: { total: number; modules: unknown[] }) => void;
+    fetchMock.mockImplementation(async (path: string) => {
+      if (path === "/repos") return [repo()];
+      if (path.startsWith("/modules?repo_root=")) {
+        return new Promise((resolve) => {
+          resolveModules = resolve;
+        });
+      }
+      return [];
+    });
+    const user = userEvent.setup();
+    renderWithQueryClient(<ReposPage />);
+
+    await waitFor(() => expect(screen.getByText("/sites/store-a")).toBeInTheDocument());
+    await user.click(screen.getByRole("button", { name: "Download health report" }));
+
+    await waitFor(() => expect(screen.getByRole("button", { name: "Downloading..." })).toBeDisabled());
+    expect(screen.getByRole("button", { name: "Download SBOM" })).toBeEnabled();
+
+    resolveModules({ total: 1, modules: [moduleSummary()] });
+    await waitFor(() => expect(downloadFileMock).toHaveBeenCalledTimes(1));
+    expect(screen.getByRole("button", { name: "Download health report" })).toBeEnabled();
+  });
+
+  it("falls back to a generic filename segment when repo_root has no path segments", async () => {
+    fetchMock.mockImplementation(async (path: string) => {
+      if (path === "/repos") return [repo({ repo_root: "/" })];
+      if (path.startsWith("/modules?repo_root=")) return { total: 1, modules: [moduleSummary()] };
+      return [];
+    });
+    const user = userEvent.setup();
+    renderWithQueryClient(<ReposPage />);
+
+    await waitFor(() => expect(screen.getByText("/")).toBeInTheDocument());
+    await user.click(screen.getByRole("button", { name: "Download health report" }));
+
+    await waitFor(() => expect(downloadFileMock).toHaveBeenCalledTimes(1));
+    expect(downloadFileMock.mock.calls[0][0]).toMatch(/^repo-health-report-\d{4}-\d{2}-\d{2}\.md$/);
+  });
+
+  it("shows a generic error message when the failure isn't a real Error", async () => {
+    fetchMock.mockImplementation(async (path: string) => {
+      if (path === "/repos") return [repo()];
+      // eslint-disable-next-line @typescript-eslint/only-throw-error -- deliberately a non-Error rejection
+      if (path.startsWith("/modules?repo_root=")) throw "not a real error";
+      return [];
+    });
+    const user = userEvent.setup();
+    renderWithQueryClient(<ReposPage />);
+
+    await waitFor(() => expect(screen.getByText("/sites/store-a")).toBeInTheDocument());
+    await user.click(screen.getByRole("button", { name: "Download health report" }));
+
+    await waitFor(() => expect(screen.getByText("Failed to build health report.")).toBeInTheDocument());
+  });
+
+  it("shows an inline error and re-enables the button when building the health report fails", async () => {
+    fetchMock.mockImplementation(async (path: string) => {
+      if (path === "/repos") return [repo()];
+      if (path.startsWith("/modules?repo_root=")) throw new Error("boom");
+      return [];
+    });
+    const user = userEvent.setup();
+    renderWithQueryClient(<ReposPage />);
+
+    await waitFor(() => expect(screen.getByText("/sites/store-a")).toBeInTheDocument());
+    await user.click(screen.getByRole("button", { name: "Download health report" }));
+
+    await waitFor(() => expect(screen.getByText("boom")).toBeInTheDocument());
+    expect(screen.getByRole("button", { name: "Download health report" })).toBeEnabled();
+    expect(downloadFileMock).not.toHaveBeenCalled();
+  });
+
+  it("navigates to the upgrade-impact page for a repo without navigating to its filtered modules list", async () => {
+    fetchMock.mockImplementation(async (path: string) => (path === "/repos" ? [repo()] : []));
+    const user = userEvent.setup();
+    renderWithQueryClient(<ReposPage />);
+
+    await waitFor(() => expect(screen.getByText("/sites/store-a")).toBeInTheDocument());
+    await user.click(screen.getByRole("button", { name: "Check upgrade impact" }));
+
+    expect(pushMock).toHaveBeenCalledWith("/repos/upgrade-impact?repo_root=%2Fsites%2Fstore-a");
   });
 
   it("singularizes the module count for exactly one module", async () => {

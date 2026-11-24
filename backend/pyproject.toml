@@ -142,6 +142,14 @@ exclude = ["tests/fixtures/**"]
 # (both bind their engine/session factory once at import time), so these
 # app.* imports deliberately come after that env-var setup, not before.
 "tests/conftest.py" = ["E402"]
+# S603/S607 (subprocess-untrusted-input / partial-path): app/ci/pr_gate.py's
+# `git diff` call -- "git" resolves via PATH (same trust level as the
+# `alembic` call tests/conftest.py already carries this ignore for) and the
+# arguments are a fixed `--name-only {base_ref}...HEAD` with a CLI-supplied
+# ref, not attacker-controlled network input -- this script runs inside a
+# CI job the repo operator already controls, the same trust boundary as the
+# CI job itself.
+"app/ci/pr_gate.py" = ["S603", "S607"]
 
 [tool.ruff.lint.flake8-bugbear]
 # FastAPI's dependency-injection pattern (`session: AsyncSession = Depends(get_session)`)

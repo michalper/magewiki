@@ -33,6 +33,11 @@ from app.models import (
 )
 from app.observability import SCAN_DURATION_SECONDS
 from app.sbom import SbomComponentInput, SbomRequirementInput, build_cyclonedx_sbom
+from app.scanner.magento_github import (
+    fetch_release_component_versions,
+    fetch_release_php_constraint,
+)
+from app.scanner.magento_upgrade import compare_against_release
 from app.scanner.orchestrator import (
     ScanAlreadyInProgressError,
     ScanResult,
@@ -257,6 +262,24 @@ class QualityFindingResponse(BaseModel):
     file_path: str | None
     line: int | None
     message: str
+
+
+class ModuleFindingsEntry(BaseModel):
+    module_id: int
+    name: str
+    path: str
+    matched_paths: list[str]
+    findings: list[QualityFindingResponse]
+
+
+class FindingsByPathResponse(BaseModel):
+    """GET /modules/findings-by-path's response -- the PR-gate CI script
+    (app/ci/pr_gate.py) resolves a pull request's changed files against this
+    to decide whether a touched module already carries a blocking finding.
+    """
+
+    modules: list[ModuleFindingsEntry]
+    unmatched_paths: list[str]
 
 
 class ModuleDetail(ModuleSummary):
@@ -700,6 +723,100 @@ async def get_repo_sbom(repo_root: str, session: AsyncSession = Depends(get_sess
     )
 
 
+class ModuleUpgradeImpactEntry(BaseModel):
+    module_id: int
+    name: str
+    path: str
+    findings: list[QualityFindingResponse]
+
+
+class UpgradeImpactResponse(BaseModel):
+    version: str
+    checked_count: int
+    blocked_modules: list[ModuleUpgradeImpactEntry]
+
+
+@router.get("/repos/upgrade-impact", response_model=UpgradeImpactResponse)
+async def get_repo_upgrade_impact(
+    repo_root: str, version: str, session: AsyncSession = Depends(get_session)
+) -> UpgradeImpactResponse:
+    """"What if I upgrade to Magento `version`?" -- Phase 12b's
+    check_magento_upgrade_readiness answers this only for "the latest
+    release," persisted as a ModuleQualityFinding row at nightly-scan time.
+    This is an on-demand, read-only query against an arbitrary version
+    instead: nothing here is written to ModuleQualityFinding, since a
+    what-if query isn't a scan and must never change real finding counts or
+    badges. `version` is used directly as a Magento GitHub release tag
+    (Magento's own tags are bare version strings like "2.4.7", no "v"
+    prefix) -- the exact same magento_github.py functions
+    check_magento_upgrade_readiness already relies on, just fetched once
+    here and compared against every module in-memory via
+    compare_against_release(), instead of once per module.
+    """
+    # Sequential, not asyncio.gather -- both calls share this one AsyncSession
+    # (via packagist_cache's get_cached/set_cached), which doesn't support
+    # concurrent use from multiple coroutines (see magento_upgrade.py's own
+    # comment on the identical fix there -- confirmed directly here too: a
+    # real IllegalStateChangeError). Cheap regardless: both read the same
+    # tag's composer.json, so the second call is always a cache hit.
+    target_php_constraint = await fetch_release_php_constraint(session, version)
+    component_versions = await fetch_release_component_versions(session, version)
+    if target_php_constraint is None and not component_versions:
+        raise HTTPException(status_code=404, detail=f"Magento release {version!r} not found")
+
+    modules = (
+        await session.execute(
+            select(Module.id, Module.name, Module.path, Module.php_constraint).where(Module.repo_root == repo_root)
+        )
+    ).all()
+    if not modules:
+        raise HTTPException(status_code=404, detail="no modules scanned under this repo_root")
+
+    module_ids = [module_id for module_id, _, _, _ in modules]
+    requirement_rows = (
+        await session.execute(
+            select(
+                ComposerPackageRequirement.module_id,
+                ComposerPackageRequirement.package_name,
+                ComposerPackageRequirement.constraint,
+            ).where(
+                ComposerPackageRequirement.module_id.in_(module_ids),
+                ComposerPackageRequirement.package_name.startswith("magento/"),
+            )
+        )
+    ).all()
+    requirements_by_module: dict[int, dict[str, str]] = {}
+    for module_id, package_name, constraint in requirement_rows:
+        requirements_by_module.setdefault(module_id, {})[package_name] = constraint
+
+    blocked_modules = []
+    for module_id, name, path, php_constraint in modules:
+        findings = compare_against_release(
+            version, target_php_constraint, component_versions, php_constraint, requirements_by_module.get(module_id, {})
+        )
+        if findings:
+            blocked_modules.append(
+                ModuleUpgradeImpactEntry(
+                    module_id=module_id,
+                    name=name,
+                    path=path,
+                    findings=[
+                        QualityFindingResponse(
+                            check_type=f.check_type,
+                            severity=f.severity,
+                            file_path=f.file_path,
+                            line=f.line,
+                            message=f.message,
+                        )
+                        for f in findings
+                    ],
+                )
+            )
+    blocked_modules.sort(key=lambda m: m.name)
+
+    return UpgradeImpactResponse(version=version, checked_count=len(modules), blocked_modules=blocked_modules)
+
+
 class OverlapStoreEntry(BaseModel):
     repo_root: str
     current_hash: str | None
@@ -800,6 +917,77 @@ async def list_duplicate_module_pairs(
         )
         for p in pairs
     ]
+
+
+@router.get("/modules/findings-by-path", response_model=FindingsByPathResponse)
+async def list_findings_by_path(
+    repo_root: str,
+    paths: str,
+    session: AsyncSession = Depends(get_session),
+) -> FindingsByPathResponse:
+    """Resolves a pull request's changed files to the modules they belong to
+    and returns each module's current quality findings -- the lookup the
+    PR-gate CI script (app/ci/pr_gate.py) needs to decide whether a PR
+    touches a module with an existing blocking finding. `paths` is
+    comma-separated, same convention as `finding` on GET /modules. Matching
+    is by longest-prefix against Module.path (not a FK -- a diff only gives
+    file paths), so "module-foo" never swallows "module-foo-extra"; a
+    Module.path of "" (a single-module repo whose root is the module root)
+    matches everything but loses to any more specific module.
+    """
+    changed_paths = [p.strip() for p in paths.split(",") if p.strip()]
+
+    candidates = (
+        await session.execute(select(Module.id, Module.name, Module.path).where(Module.repo_root == repo_root))
+    ).all()
+
+    matched_paths_by_module: dict[int, list[str]] = {}
+    module_info: dict[int, tuple[str, str]] = {}
+    unmatched_paths: list[str] = []
+    for changed_path in changed_paths:
+        best: tuple[int, str, str] | None = None  # (module_id, name, path) -- longest path wins
+        for module_id, name, module_path in candidates:
+            is_match = module_path == "" or changed_path == module_path or changed_path.startswith(f"{module_path}/")
+            if is_match and (best is None or len(module_path) > len(best[2])):
+                best = (module_id, name, module_path)
+        if best is None:
+            unmatched_paths.append(changed_path)
+        else:
+            module_id, name, module_path = best
+            matched_paths_by_module.setdefault(module_id, []).append(changed_path)
+            module_info[module_id] = (name, module_path)
+
+    findings_by_module: dict[int, list[QualityFindingResponse]] = {}
+    if matched_paths_by_module:
+        findings = (
+            await session.execute(
+                select(ModuleQualityFinding).where(ModuleQualityFinding.module_id.in_(matched_paths_by_module))
+            )
+        ).scalars()
+        for finding in findings:
+            findings_by_module.setdefault(finding.module_id, []).append(
+                QualityFindingResponse(
+                    check_type=finding.check_type,
+                    severity=finding.severity,
+                    file_path=finding.file_path,
+                    line=finding.line,
+                    message=finding.message,
+                )
+            )
+
+    modules = [
+        ModuleFindingsEntry(
+            module_id=module_id,
+            name=module_info[module_id][0],
+            path=module_info[module_id][1],
+            matched_paths=sorted(matched_paths),
+            findings=findings_by_module.get(module_id, []),
+        )
+        for module_id, matched_paths in matched_paths_by_module.items()
+    ]
+    modules.sort(key=lambda m: m.name)
+
+    return FindingsByPathResponse(modules=modules, unmatched_paths=unmatched_paths)
 
 
 @router.get("/modules/{module_id}", response_model=ModuleDetail)
