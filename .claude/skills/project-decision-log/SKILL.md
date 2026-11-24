@@ -4638,3 +4638,42 @@ entry), and every Magento-Composer/MFTF/DAST-specific workflow (`api-tests
 `zap.yml`, `coverage.yml`, `debug-wif.yml`) — grepped in full for any
 smaller generically-applicable pattern buried inside the way the quality-
 gate-action was, found none beyond the two items above.
+
+**Phases 26-29: PR gate, upgrade impact, repo health report, cleanup recommendations
+(recorded 2026-11-24):** Four new, unplanned phases picked from a user-requested feature
+brainstorm, each scoped and shipped independently per this project's usual working method.
+One candidate idea (a license-compliance check) turned out to already exist
+(`app/scanner/license_check.py`'s `license_risk` check, Phase 9/12-era) — not rebuilt, and
+worth noting here specifically because it means the shortlist wasn't re-derived from a fresh
+read of CLAUDE.md's phase table before picking items, only from a plain-language brainstorm;
+a few minutes checking against the real check_type list first would have caught this without
+a wasted research pass.
+
+Phase 27 (upgrade impact) surfaced a real, previously-dormant concurrency bug in Phase 12b's
+own `check_magento_upgrade_readiness`: `asyncio.gather(fetch_release_php_constraint(...),
+fetch_release_component_versions(...))`, both sharing one `AsyncSession` via
+`packagist_cache`'s `get_cached`/`set_cached`, raised a real
+`sqlalchemy.exc.IllegalStateChangeError` once something besides a unit-test mock actually hit
+both code paths for a real module with a `magento/*` requirement — the only reason this had
+never surfaced before is that every existing test mocked
+`fetch_release_php_constraint`/`fetch_release_component_versions` entirely (see
+`tests/scanner/test_magento_upgrade.py`'s own comment on patching at the function boundary),
+so the real concurrent-session-access path was simply never exercised end-to-end until the new
+`/repos/upgrade-impact` endpoint's own manual smoke test hit it against live data. Fixed in
+both the original check and the new endpoint by making the two fetches sequential instead of
+concurrent — free either way, since both calls read the same tag's cached `composer.json`, so
+the second call is always a cache hit. `app/scanner/packagist_cache.py`'s own
+`fetch_many_with_cache` docstring already documents this exact constraint (sequential
+cache reads/writes, concurrent only for the actual network fetches once they're off the
+session) — this bug was exactly the shape that comment warns against, just in a call site
+that predates it. Lesson: a test that mocks a dependency at the function boundary rather than
+one layer lower (e.g. the real cache-table access) can hide a real concurrency bug for an
+arbitrarily long time; worth a second pass with the real, unmocked function (seeded cache row,
+no mock) wherever a check shares a session across `asyncio.gather`'d calls.
+
+Phase 29's `recommend_module_cleanup` deliberately does not fold quality-finding counts into
+its deprecation-candidate signal (only `enabled=False` + zero incoming `ModuleDependency`/
+`DiPreference`/`DiPlugin` edges counts) — a module with many findings needs fixing, not
+necessarily removing, and blending the two would have turned a deterministic, explainable
+recommendation into a fuzzy score the agent couldn't accurately cite. Findings are attached
+to each deprecation candidate as context only.
