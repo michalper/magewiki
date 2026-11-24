@@ -36,14 +36,19 @@ test("downloads a real, correct health-report Markdown file for the seeded repo"
   expect(markdown).toContain("- 1 module\n");
   // Vendor_Module's real, deterministic single-module findings: a
   // composer_completeness issue (missing require-dev phpunit/phpunit) and
-  // 4 php-analyzer findings (2 phpmd + 2 phpcs). No Magento-upgrade finding
-  // here -- its real require.php (">=8.1") and magento/module-sales
-  // requirement are evaluated against global-setup.ts's deliberately fake,
-  // network-free "2.4.8" cache entry (empty "replace" map), not real GitHub
-  // data, so magento_version_blocker can never fire in this seeded e2e
-  // environment (see quality-checks.spec.ts's own comment on the same cache
-  // entry, used there for Vendor_QualityChecks' magento_php_incompatible).
+  // 4 php-analyzer findings (2 phpmd + 2 phpcs) -- both pure local facts,
+  // unaffected by anything external. Deliberately NOT asserting on a
+  // Magento-upgrade finding or an exact total count here: unlike
+  // conflict-store's Vendor_QualityChecks (evaluated against
+  // global-setup.ts's seeded, network-free "2.4.8"/"2.4.6" cache entries),
+  // demo-store is scanned *before* those entries are seeded (see
+  // global-setup.ts's own ordering), so its magento_php_incompatible/
+  // magento_version_blocker result depends on whatever Magento's real,
+  // live GitHub release actually requires at scan time -- not deterministic
+  // across environments or time (confirmed directly: this assertion once
+  // flaked in CI on a real, then-current magento_version_blocker finding
+  // that this sandbox's own cached data didn't have).
   expect(markdown).toContain("- **Composer issues**: 1");
   expect(markdown).toContain("- **PHP static-analysis findings**: 4");
-  expect(markdown).toMatch(/\[Vendor_Module]\(.*\/modules\/\d+\) — 5 findings/);
+  expect(markdown).toMatch(/\[Vendor_Module]\(.*\/modules\/\d+\) — \d+ findings?/);
 });
