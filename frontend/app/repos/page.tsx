@@ -2,13 +2,15 @@
 
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import type { MouseEvent } from "react";
+import { useState, type MouseEvent } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { QualityBadges } from "@/components/quality-badges";
 import { SeverityBadge } from "@/components/severity-badge";
 import { Button } from "@/components/ui/button";
 import { apiFetch, apiUrl } from "@/lib/api";
-import type { paths } from "@/lib/api-types";
+import type { components, paths } from "@/lib/api-types";
+import { downloadFile } from "@/lib/csv";
+import { buildHealthReportMarkdown } from "@/lib/health-report";
 import { useDocumentTitle } from "@/lib/use-document-title";
 
 function downloadSbom(e: MouseEvent, repoRoot: string) {
@@ -17,11 +19,19 @@ function downloadSbom(e: MouseEvent, repoRoot: string) {
   window.open(`${apiUrl()}/repos/sbom?repo_root=${encodeURIComponent(repoRoot)}`, "_self");
 }
 
+// Last path segment, e.g. "/sites/store-a" -> "store-a" -- just for a
+// readable download filename, same role Path(repo_root).name plays for the
+// backend's own SBOM filename.
+function repoNameFor(repoRoot: string): string {
+  return repoRoot.split("/").filter(Boolean).pop() ?? "repo";
+}
+
 type RepoSummary = paths["/repos"]["get"]["responses"][200]["content"]["application/json"][number];
 type ModuleOverlapEntry =
   paths["/modules/overlap"]["get"]["responses"][200]["content"]["application/json"][number];
 type DuplicateModulePairEntry =
   paths["/modules/duplicate-pairs"]["get"]["responses"][200]["content"]["application/json"][number];
+type ModuleListResponse = components["schemas"]["ModuleListResponse"];
 
 async function fetchRepos(): Promise<RepoSummary[]> {
   return apiFetch("/repos");
@@ -38,6 +48,35 @@ async function fetchDuplicatePairs(): Promise<DuplicateModulePairEntry[]> {
 export default function ReposPage() {
   useDocumentTitle("Repos");
   const router = useRouter();
+  // Tracks which single repo card's health-report download is in flight (or
+  // just failed), so only that one button disables/shows an error -- not a
+  // global loading flag that would freeze every other card's buttons too.
+  const [reportState, setReportState] = useState<{ repoRoot: string; error?: string } | null>(null);
+
+  async function downloadHealthReport(e: MouseEvent, repoRoot: string) {
+    e.preventDefault();
+    e.stopPropagation();
+    setReportState({ repoRoot });
+    try {
+      const { modules } = await apiFetch<ModuleListResponse>(
+        `/modules?repo_root=${encodeURIComponent(repoRoot)}&limit=5000`,
+      );
+      const markdown = buildHealthReportMarkdown({
+        repoRoot,
+        modules,
+        generatedAt: new Date(),
+        origin: window.location.origin,
+      });
+      downloadFile(
+        `${repoNameFor(repoRoot)}-health-report-${new Date().toISOString().slice(0, 10)}.md`,
+        markdown,
+        "text/markdown;charset=utf-8;",
+      );
+      setReportState(null);
+    } catch (err) {
+      setReportState({ repoRoot, error: err instanceof Error ? err.message : "Failed to build health report." });
+    }
+  }
 
   function goToUpgradeImpact(e: MouseEvent, repoRoot: string) {
     // Nested inside the repo card's own outer <Link> (to /modules?repo=...)
@@ -104,7 +143,7 @@ export default function ReposPage() {
               </div>
               <div className="flex items-center justify-between gap-3">
                 <QualityBadges findingCounts={repo.finding_counts} />
-                <div className="flex items-center gap-2">
+                <div className="flex flex-wrap items-center justify-end gap-2">
                   <Button
                     type="button"
                     variant="outline"
@@ -117,12 +156,26 @@ export default function ReposPage() {
                     type="button"
                     variant="outline"
                     size="sm"
+                    disabled={reportState?.repoRoot === repo.repo_root && !reportState.error}
+                    onClick={(e) => void downloadHealthReport(e, repo.repo_root)}
+                  >
+                    {reportState?.repoRoot === repo.repo_root && !reportState.error
+                      ? "Downloading..."
+                      : "Download health report"}
+                  </Button>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
                     onClick={(e) => downloadSbom(e, repo.repo_root)}
                   >
                     Download SBOM
                   </Button>
                 </div>
               </div>
+              {reportState?.repoRoot === repo.repo_root && reportState.error && (
+                <p className="text-sm text-destructive">{reportState.error}</p>
+              )}
             </Link>
           ))}
         </div>

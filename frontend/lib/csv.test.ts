@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { downloadCsv, escapeCsvField, toCsv } from "./csv";
+import { downloadCsv, downloadFile, escapeCsvField, toCsv } from "./csv";
 
 describe("escapeCsvField", () => {
   it("passes plain text through unchanged", () => {
@@ -46,6 +46,29 @@ describe("toCsv", () => {
   });
 });
 
+describe("downloadFile", () => {
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  it("creates an object URL with the given MIME type, clicks a download link, then revokes the URL", () => {
+    const createObjectURL = vi.fn().mockReturnValue("blob:fake-url");
+    const revokeObjectURL = vi.fn();
+    vi.stubGlobal("URL", { ...URL, createObjectURL, revokeObjectURL });
+    const clickSpy = vi.spyOn(HTMLAnchorElement.prototype, "click").mockImplementation(() => {});
+
+    downloadFile("report.md", "# Report", "text/markdown;charset=utf-8;");
+
+    expect(createObjectURL).toHaveBeenCalledTimes(1);
+    const blob = createObjectURL.mock.calls[0][0] as Blob;
+    expect(blob.type).toBe("text/markdown;charset=utf-8;");
+    expect(clickSpy).toHaveBeenCalledTimes(1);
+    expect(revokeObjectURL).toHaveBeenCalledWith("blob:fake-url");
+
+    vi.unstubAllGlobals();
+  });
+});
+
 describe("downloadCsv", () => {
   afterEach(() => {
     vi.restoreAllMocks();
@@ -60,6 +83,8 @@ describe("downloadCsv", () => {
     downloadCsv("modules.csv", "a,b\n1,2");
 
     expect(createObjectURL).toHaveBeenCalledTimes(1);
+    const blob = createObjectURL.mock.calls[0][0] as Blob;
+    expect(blob.type).toBe("text/csv;charset=utf-8;");
     expect(clickSpy).toHaveBeenCalledTimes(1);
     expect(revokeObjectURL).toHaveBeenCalledWith("blob:fake-url");
 
