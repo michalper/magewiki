@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import type { MouseEvent } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { QualityBadges } from "@/components/quality-badges";
@@ -36,6 +37,18 @@ async function fetchDuplicatePairs(): Promise<DuplicateModulePairEntry[]> {
 
 export default function ReposPage() {
   useDocumentTitle("Repos");
+  const router = useRouter();
+
+  function goToUpgradeImpact(e: MouseEvent, repoRoot: string) {
+    // Nested inside the repo card's own outer <Link> (to /modules?repo=...)
+    // -- same preventDefault/stopPropagation the "Download SBOM" button
+    // right next to it already needs, so this click navigates here instead
+    // of falling through to the card's own link.
+    e.preventDefault();
+    e.stopPropagation();
+    router.push(`/repos/upgrade-impact?repo_root=${encodeURIComponent(repoRoot)}`);
+  }
+
   const reposQuery = useQuery({ queryKey: ["repos"], queryFn: fetchRepos });
   const overlapQuery = useQuery({ queryKey: ["modules-overlap"], queryFn: fetchModuleOverlap });
   const duplicatesQuery = useQuery({ queryKey: ["modules-duplicate-pairs"], queryFn: fetchDuplicatePairs });
@@ -91,14 +104,24 @@ export default function ReposPage() {
               </div>
               <div className="flex items-center justify-between gap-3">
                 <QualityBadges findingCounts={repo.finding_counts} />
-                <Button
-                  type="button"
-                  variant="outline"
-                  size="sm"
-                  onClick={(e) => downloadSbom(e, repo.repo_root)}
-                >
-                  Download SBOM
-                </Button>
+                <div className="flex items-center gap-2">
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    onClick={(e) => goToUpgradeImpact(e, repo.repo_root)}
+                  >
+                    Check upgrade impact
+                  </Button>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    onClick={(e) => downloadSbom(e, repo.repo_root)}
+                  >
+                    Download SBOM
+                  </Button>
+                </div>
               </div>
             </Link>
           ))}

@@ -1112,6 +1112,7 @@ async def _persist_module(
     module.homepage = pm.composer.homepage if pm.composer else None
     module.authors = pm.composer.authors if pm.composer else []
     module.php_extensions = pm.composer.php_extensions if pm.composer else []
+    module.php_constraint = pm.composer.php_constraint if pm.composer else None
     module.composer_scripts = pm.composer.scripts if pm.composer else []
     module.composer_autoload_psr4 = pm.composer.autoload_psr4 if pm.composer else {}
     module.composer_allow_plugins = pm.composer.allow_plugins if pm.composer else {}

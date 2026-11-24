@@ -6,6 +6,11 @@ import ReposPage from "./page";
 
 vi.mock("@/lib/api", () => ({ apiFetch: vi.fn(), apiUrl: () => "http://localhost:8000" }));
 
+const pushMock = vi.fn();
+vi.mock("next/navigation", () => ({
+  useRouter: () => ({ push: pushMock }),
+}));
+
 import { apiFetch } from "@/lib/api";
 
 const fetchMock = vi.mocked(apiFetch);
@@ -26,6 +31,7 @@ function repo(overrides: Partial<Record<string, unknown>> = {}) {
 describe("ReposPage", () => {
   beforeEach(() => {
     fetchMock.mockReset();
+    pushMock.mockReset();
   });
 
   it("shows loading state before any query resolves", () => {
@@ -79,6 +85,17 @@ describe("ReposPage", () => {
       "_self",
     );
     openSpy.mockRestore();
+  });
+
+  it("navigates to the upgrade-impact page for a repo without navigating to its filtered modules list", async () => {
+    fetchMock.mockImplementation(async (path: string) => (path === "/repos" ? [repo()] : []));
+    const user = userEvent.setup();
+    renderWithQueryClient(<ReposPage />);
+
+    await waitFor(() => expect(screen.getByText("/sites/store-a")).toBeInTheDocument());
+    await user.click(screen.getByRole("button", { name: "Check upgrade impact" }));
+
+    expect(pushMock).toHaveBeenCalledWith("/repos/upgrade-impact?repo_root=%2Fsites%2Fstore-a");
   });
 
   it("singularizes the module count for exactly one module", async () => {

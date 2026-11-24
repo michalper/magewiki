@@ -16,7 +16,7 @@
 
 An AI-powered catalog and chat agent for Magento 2 codebases. MageWiki-AI scans Magento modules (`module.xml`, `composer.json`, `di.xml`, `events.xml`, `Plugin/` classes), builds a knowledge base in PostgreSQL, and lets developers and PMs ask natural-language questions about the architecture — with every answer citing the module and file it came from. It also runs a battery of quality, security, and Magento-upgrade-readiness checks on every scanned module and surfaces the results as badges, a stats dashboard, and a multi-repo fleet view — including **cross-module conflict detection**: two modules fighting over the same plugin hook, a Composer package version range, or a REST route don't fail quietly until someone hits the bug in production; MageWiki flags the exact pair and why.
 
-Project status: **all 27 planned phases done** (0–12b, 13–26) — the MVP (v1.0, Phases 0–5) plus cron/webhook automation, BYOK in the UI, Ollama support, a per-module dependency graph, an evaluation suite, CI/CD, a local Kubernetes deployment, parser-only quality checks, CVE/dependency intelligence, a multi-repo fleet view, a real PHP static-analysis toolchain (PHPStan/PHPMD/phpcs/Rector), Magento-upgrade-readiness checking, deeper structural facts (webapi/crontab/db_schema/system.xml), a second round of cross-module conflict detection (`di.xml` preferences, `crontab.xml` jobs, GraphQL fields), per-module change history, opt-in RAG query rewriting, webhook alerting on new secrets/CVEs, a third round of conflict detection on `acl.xml` admin-ACL resources plus an unprotected-admin-controller check, a fourth round on `indexer.xml`/`mview.xml` ids, semantic duplicate-module detection plus a side-by-side module comparison page, a fifth conflict-detection round on `routes.xml` route ids/frontNames, a sixth on `widget.xml` ids, a lightweight access gate on write/cost-incurring endpoints, a seventh conflict-detection round on `menu.xml`/`cache.xml` ids, and a PR-gate GitHub Action that fails a pull request touching a module with an existing blocking finding. See **[`docs/roadmap.md`](docs/roadmap.md)** for the per-phase changelog and `CLAUDE.md` for the full design/decision behind each one.
+Project status: **all 28 planned phases done** (0–12b, 13–27) — the MVP (v1.0, Phases 0–5) plus cron/webhook automation, BYOK in the UI, Ollama support, a per-module dependency graph, an evaluation suite, CI/CD, a local Kubernetes deployment, parser-only quality checks, CVE/dependency intelligence, a multi-repo fleet view, a real PHP static-analysis toolchain (PHPStan/PHPMD/phpcs/Rector), Magento-upgrade-readiness checking, deeper structural facts (webapi/crontab/db_schema/system.xml), a second round of cross-module conflict detection (`di.xml` preferences, `crontab.xml` jobs, GraphQL fields), per-module change history, opt-in RAG query rewriting, webhook alerting on new secrets/CVEs, a third round of conflict detection on `acl.xml` admin-ACL resources plus an unprotected-admin-controller check, a fourth round on `indexer.xml`/`mview.xml` ids, semantic duplicate-module detection plus a side-by-side module comparison page, a fifth conflict-detection round on `routes.xml` route ids/frontNames, a sixth on `widget.xml` ids, a lightweight access gate on write/cost-incurring endpoints, a seventh conflict-detection round on `menu.xml`/`cache.xml` ids, a PR-gate GitHub Action that fails a pull request touching a module with an existing blocking finding, and an on-demand "what if I upgrade to Magento X" impact query. See **[`docs/roadmap.md`](docs/roadmap.md)** for the per-phase changelog and `CLAUDE.md` for the full design/decision behind each one.
 
 **[See the full Wiki](https://github.com/michalper/magewiki/wiki)** for a screen-by-screen walkthrough — every screenshot there is a real scan of [Ordo_Automation](https://github.com/michalper/ordo), not a synthetic demo. **[See `docs/architecture.md`](docs/architecture.md)** for the reasoning behind the retrieval design, the anti-hallucination guarantees, and how LLM cost is kept bounded — the "why", not just the "what".
 
@@ -301,6 +301,17 @@ jobs:
           api-url: ${{ secrets.MAGEWIKI_API_URL }}
           repo-root: /path/to/this/store # exactly the repo_root MageWiki scanned it under
 ```
+
+## Upgrade impact
+
+Phase 12b's Magento-upgrade-readiness check only ever answers "is this module ready for
+*the latest* Magento release." The **Repos** page's "Check upgrade impact" button answers a
+different question: pick *any* Magento version, and see exactly which already-scanned
+modules in that repo would break and why — before actually starting an upgrade. It's a
+read-only, on-demand query against the last scan's data (the module's own `require.php` and
+`magento/*` composer constraints vs. that release's real `composer.json`, fetched from
+Magento's public GitHub mirror and cached) — it never triggers a rescan and never writes to
+a real quality finding, so checking a hypothetical version never pollutes the dashboard.
 
 ## Real-world results
 

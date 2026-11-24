@@ -33,6 +33,11 @@ from app.models import (
 )
 from app.observability import SCAN_DURATION_SECONDS
 from app.sbom import SbomComponentInput, SbomRequirementInput, build_cyclonedx_sbom
+from app.scanner.magento_github import (
+    fetch_release_component_versions,
+    fetch_release_php_constraint,
+)
+from app.scanner.magento_upgrade import compare_against_release
 from app.scanner.orchestrator import (
     ScanAlreadyInProgressError,
     ScanResult,
@@ -716,6 +721,100 @@ async def get_repo_sbom(repo_root: str, session: AsyncSession = Depends(get_sess
         media_type="application/vnd.cyclonedx+json",
         headers={"Content-Disposition": f'attachment; filename="sbom-{safe_name}.json"'},
     )
+
+
+class ModuleUpgradeImpactEntry(BaseModel):
+    module_id: int
+    name: str
+    path: str
+    findings: list[QualityFindingResponse]
+
+
+class UpgradeImpactResponse(BaseModel):
+    version: str
+    checked_count: int
+    blocked_modules: list[ModuleUpgradeImpactEntry]
+
+
+@router.get("/repos/upgrade-impact", response_model=UpgradeImpactResponse)
+async def get_repo_upgrade_impact(
+    repo_root: str, version: str, session: AsyncSession = Depends(get_session)
+) -> UpgradeImpactResponse:
+    """"What if I upgrade to Magento `version`?" -- Phase 12b's
+    check_magento_upgrade_readiness answers this only for "the latest
+    release," persisted as a ModuleQualityFinding row at nightly-scan time.
+    This is an on-demand, read-only query against an arbitrary version
+    instead: nothing here is written to ModuleQualityFinding, since a
+    what-if query isn't a scan and must never change real finding counts or
+    badges. `version` is used directly as a Magento GitHub release tag
+    (Magento's own tags are bare version strings like "2.4.7", no "v"
+    prefix) -- the exact same magento_github.py functions
+    check_magento_upgrade_readiness already relies on, just fetched once
+    here and compared against every module in-memory via
+    compare_against_release(), instead of once per module.
+    """
+    # Sequential, not asyncio.gather -- both calls share this one AsyncSession
+    # (via packagist_cache's get_cached/set_cached), which doesn't support
+    # concurrent use from multiple coroutines (see magento_upgrade.py's own
+    # comment on the identical fix there -- confirmed directly here too: a
+    # real IllegalStateChangeError). Cheap regardless: both read the same
+    # tag's composer.json, so the second call is always a cache hit.
+    target_php_constraint = await fetch_release_php_constraint(session, version)
+    component_versions = await fetch_release_component_versions(session, version)
+    if target_php_constraint is None and not component_versions:
+        raise HTTPException(status_code=404, detail=f"Magento release {version!r} not found")
+
+    modules = (
+        await session.execute(
+            select(Module.id, Module.name, Module.path, Module.php_constraint).where(Module.repo_root == repo_root)
+        )
+    ).all()
+    if not modules:
+        raise HTTPException(status_code=404, detail="no modules scanned under this repo_root")
+
+    module_ids = [module_id for module_id, _, _, _ in modules]
+    requirement_rows = (
+        await session.execute(
+            select(
+                ComposerPackageRequirement.module_id,
+                ComposerPackageRequirement.package_name,
+                ComposerPackageRequirement.constraint,
+            ).where(
+                ComposerPackageRequirement.module_id.in_(module_ids),
+                ComposerPackageRequirement.package_name.startswith("magento/"),
+            )
+        )
+    ).all()
+    requirements_by_module: dict[int, dict[str, str]] = {}
+    for module_id, package_name, constraint in requirement_rows:
+        requirements_by_module.setdefault(module_id, {})[package_name] = constraint
+
+    blocked_modules = []
+    for module_id, name, path, php_constraint in modules:
+        findings = compare_against_release(
+            version, target_php_constraint, component_versions, php_constraint, requirements_by_module.get(module_id, {})
+        )
+        if findings:
+            blocked_modules.append(
+                ModuleUpgradeImpactEntry(
+                    module_id=module_id,
+                    name=name,
+                    path=path,
+                    findings=[
+                        QualityFindingResponse(
+                            check_type=f.check_type,
+                            severity=f.severity,
+                            file_path=f.file_path,
+                            line=f.line,
+                            message=f.message,
+                        )
+                        for f in findings
+                    ],
+                )
+            )
+    blocked_modules.sort(key=lambda m: m.name)
+
+    return UpgradeImpactResponse(version=version, checked_count=len(modules), blocked_modules=blocked_modules)
 
 
 class OverlapStoreEntry(BaseModel):
