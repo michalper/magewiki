@@ -259,6 +259,24 @@ class QualityFindingResponse(BaseModel):
     message: str
 
 
+class ModuleFindingsEntry(BaseModel):
+    module_id: int
+    name: str
+    path: str
+    matched_paths: list[str]
+    findings: list[QualityFindingResponse]
+
+
+class FindingsByPathResponse(BaseModel):
+    """GET /modules/findings-by-path's response -- the PR-gate CI script
+    (app/ci/pr_gate.py) resolves a pull request's changed files against this
+    to decide whether a touched module already carries a blocking finding.
+    """
+
+    modules: list[ModuleFindingsEntry]
+    unmatched_paths: list[str]
+
+
 class ModuleDetail(ModuleSummary):
     license: list[str] | None = None
     homepage: str | None = None
@@ -800,6 +818,77 @@ async def list_duplicate_module_pairs(
         )
         for p in pairs
     ]
+
+
+@router.get("/modules/findings-by-path", response_model=FindingsByPathResponse)
+async def list_findings_by_path(
+    repo_root: str,
+    paths: str,
+    session: AsyncSession = Depends(get_session),
+) -> FindingsByPathResponse:
+    """Resolves a pull request's changed files to the modules they belong to
+    and returns each module's current quality findings -- the lookup the
+    PR-gate CI script (app/ci/pr_gate.py) needs to decide whether a PR
+    touches a module with an existing blocking finding. `paths` is
+    comma-separated, same convention as `finding` on GET /modules. Matching
+    is by longest-prefix against Module.path (not a FK -- a diff only gives
+    file paths), so "module-foo" never swallows "module-foo-extra"; a
+    Module.path of "" (a single-module repo whose root is the module root)
+    matches everything but loses to any more specific module.
+    """
+    changed_paths = [p.strip() for p in paths.split(",") if p.strip()]
+
+    candidates = (
+        await session.execute(select(Module.id, Module.name, Module.path).where(Module.repo_root == repo_root))
+    ).all()
+
+    matched_paths_by_module: dict[int, list[str]] = {}
+    module_info: dict[int, tuple[str, str]] = {}
+    unmatched_paths: list[str] = []
+    for changed_path in changed_paths:
+        best: tuple[int, str, str] | None = None  # (module_id, name, path) -- longest path wins
+        for module_id, name, module_path in candidates:
+            is_match = module_path == "" or changed_path == module_path or changed_path.startswith(f"{module_path}/")
+            if is_match and (best is None or len(module_path) > len(best[2])):
+                best = (module_id, name, module_path)
+        if best is None:
+            unmatched_paths.append(changed_path)
+        else:
+            module_id, name, module_path = best
+            matched_paths_by_module.setdefault(module_id, []).append(changed_path)
+            module_info[module_id] = (name, module_path)
+
+    findings_by_module: dict[int, list[QualityFindingResponse]] = {}
+    if matched_paths_by_module:
+        findings = (
+            await session.execute(
+                select(ModuleQualityFinding).where(ModuleQualityFinding.module_id.in_(matched_paths_by_module))
+            )
+        ).scalars()
+        for finding in findings:
+            findings_by_module.setdefault(finding.module_id, []).append(
+                QualityFindingResponse(
+                    check_type=finding.check_type,
+                    severity=finding.severity,
+                    file_path=finding.file_path,
+                    line=finding.line,
+                    message=finding.message,
+                )
+            )
+
+    modules = [
+        ModuleFindingsEntry(
+            module_id=module_id,
+            name=module_info[module_id][0],
+            path=module_info[module_id][1],
+            matched_paths=sorted(matched_paths),
+            findings=findings_by_module.get(module_id, []),
+        )
+        for module_id, matched_paths in matched_paths_by_module.items()
+    ]
+    modules.sort(key=lambda m: m.name)
+
+    return FindingsByPathResponse(modules=modules, unmatched_paths=unmatched_paths)
 
 
 @router.get("/modules/{module_id}", response_model=ModuleDetail)

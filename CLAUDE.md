@@ -150,6 +150,7 @@ MVP = Phases 0–5. Each phase is done separately: first a plan for approval, th
 | 23 | Cross-module conflict detection, round 6: `widget.xml` facts and a duplicate-widget-id check (global namespace, no area) | A module with a clashing widget id shows a badge, folded into the "Cross-module conflicts" Stats tile |
 | 24 | Lightweight access gate (`WRITE_ACCESS_TOKEN`) on `POST /chat`, `PATCH /settings/llm`, `POST /scan[/stream]` — lets an operator safely enable a real LLM key on the public demo without open budget exposure; read-only browsing stays open | A write/chat/scan call without the configured token gets 401; the catalog stays fully browsable with no token |
 | 25 | Cross-module conflict detection, round 7: `menu.xml` admin-menu-item-id conflicts (kept `warning` severity for family consistency) and `cache.xml` type conflicts (only when `instance` disagrees) | A module with a clashing menu item id or disputed cache type shows a badge, folded into the "Cross-module conflicts" Stats tile |
+| 26 | PR gate: a standalone `pr_gate.py` CLI (stdlib + httpx only) plus a composite GitHub Action consumers add to their own Magento store's CI, backed by a new `GET /modules/findings-by-path` lookup. Reads the target repo's already-scanned state — does not scan the PR branch itself | A pull request touching a module with an existing blocking finding gets a sticky PR comment and a failed check; a clean PR gets a sticky comment and a passing check |
 
 Version 1.0 ships before Phases 7b–9: a finished project with six technologies beats an unfinished one with ten.
 

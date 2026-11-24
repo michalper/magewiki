@@ -1,0 +1,53 @@
+name: MageWiki PR gate
+description: >-
+  Fails the check (and posts a sticky PR comment) when this pull request touches a Magento
+  module that a MageWiki instance already knows has a blocking quality finding -- a hardcoded
+  secret, a CVE, or a Magento-upgrade blocker. Reads the target MageWiki instance's
+  already-scanned state; it does not scan this PR's branch itself. See CLAUDE.md's Phase 26
+  entry in the michalper/magewiki repo for the full design.
+inputs:
+  local-checkout:
+    description: Path to this PR's checkout (used only to compute `git diff`)
+    required: false
+    default: ${{ github.workspace }}
+  base-ref:
+    description: Ref to diff this PR's HEAD against, e.g. origin/main
+    required: true
+  api-url:
+    description: Base URL of a reachable MageWiki instance
+    required: true
+  repo-root:
+    description: The `repo_root` value stored in that MageWiki instance's DB for this store
+    required: true
+outputs:
+  report-path:
+    description: Path to the generated Markdown report
+    value: ${{ steps.gate.outputs.report-path }}
+runs:
+  using: composite
+  steps:
+    # pr_gate.py is dependency-light by design (stdlib + httpx only) so this
+    # composite action never needs Poetry or the rest of the backend -- see
+    # backend/app/ci/pr_gate.py's own module docstring.
+    - run: pip install httpx==0.28.1
+      shell: bash
+    - id: gate
+      shell: bash
+      run: |
+        set +e
+        report_path="${RUNNER_TEMP}/magewiki-pr-gate-report.md"
+        python3 "${{ github.action_path }}/../../../backend/app/ci/pr_gate.py" \
+          --local-checkout "${{ inputs.local-checkout }}" \
+          --base-ref "${{ inputs.base-ref }}" \
+          --api-url "${{ inputs.api-url }}" \
+          --magewiki-repo-root "${{ inputs.repo-root }}" \
+          --report "$report_path"
+        exit_code=$?
+        echo "report-path=$report_path" >> "$GITHUB_OUTPUT"
+        exit $exit_code
+    # Runs even when the gate step above fails -- the sticky comment is what
+    # explains *why* the check went red, not just a success-path nicety.
+    - if: always()
+      uses: marocchino/sticky-pull-request-comment@5770ad5eb8f42dd2c4f34da00c94c5381e49af88 # v3
+      with:
+        path: ${{ steps.gate.outputs.report-path }}
