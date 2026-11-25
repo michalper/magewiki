@@ -4696,3 +4696,28 @@ never needed it) purely so each store can be cited individually in chat — the 
 `_collect_sources()` branch of its own at all (only reachable via `recommend_module_cleanup`'s
 branch), which was *not* copied here since, unlike that case, each version-drift "store" really
 is one single citable `Module` row.
+
+**Core-hack detection, dropped for now (recorded 2026-11-25):** A third brainstormed idea —
+flag Magento core/vendor modules whose local files were locally patched vs. the canonical
+`magento/magento2` GitHub release — was investigated and parked before any code was written.
+The only reliable way to compare a module's full file set against upstream is one GitHub Git
+Trees API call per module, scoped to that module's own subpath with `?recursive=1` (confirmed
+live: a whole-repo recursive tree call truncates at ~56k entries — `"truncated": true` — so it
+can't be trusted for completeness, but `GET /repos/magento/magento2/git/trees/{tag}:{module-path}?recursive=1`
+scoped to one module, e.g. `app/code/Magento/Catalog`, returns its full ~3741-entry tree
+untruncated). The blocker is volume, not the API shape: a real store can have ~300 core Magento
+modules, and GitHub's unauthenticated rate limit is 60 requests/hour — a single fresh scan would
+need ~300 calls in quick succession, blowing the limit immediately; the 24h `packagist_cache` TTL
+only helps on *re*-scans of the same tag, not a store's first scan. The project has no GitHub
+token/BYOK-style auth config today (`magento_github.py`'s existing calls are unauthenticated and
+only ever need 1-2 calls per scan, so this never mattered before). Asked the user to choose
+between adding token support now, scoping the check down to an on-demand single-module lookup
+(sidesteps the limit entirely, mirrors Phase 27's upgrade-impact pattern), or dropping it — chose
+to drop it for now rather than build either workaround. Revisit if GitHub token support gets
+added for another reason first.
+
+**Phase 31, planned not built (recorded 2026-11-25):** a weekly fleet digest (Phase 18's
+alert-webhook mechanism on a schedule instead of a threshold crossing, computed from Phase 16's
+`module_history_snapshots`) was fully designed in plan mode but not implemented — the user asked
+to park it in `docs/roadmap.md` instead of building it immediately. See that file's Phase 31
+entry for the design summary if resuming this later.
