@@ -170,6 +170,7 @@ The author previously built a PHP tool for his employer Cognize — the predeces
 - Record settled, always-relevant rule changes in this file. Record incident write-ups, bug fixes, and narrower per-feature decision rationale in the `project-decision-log` skill, as they're made.
 - Repo language is English: README, docs, comments, commit messages, UI.
 - The repo is public from day one: no secrets, no client-confidential code, ever, in commit history.
+- When opening a PR for a phase, enable GitHub's native auto-merge right away (`gh pr merge --auto --squash --delete-branch`) instead of polling CI and merging by hand once it's green — same end result, no redundant manual merge step. `dependabot-auto-merge.yml` already does the equivalent for dependency-bump PRs; this just applies the same idea to every PR opened for a phase.
 
 ## License
 
