@@ -12,6 +12,7 @@ from app.agent.tools import (
     find_by_class,
     find_by_event,
     find_duplicate_module_pairs,
+    find_module_version_drift,
     find_similar_modules,
     get_dependencies,
     get_module,
@@ -597,6 +598,63 @@ async def test_recommend_module_cleanup_excludes_a_disabled_module_something_sti
         await db_session.commit()
 
     assert all(d["module_id"] != referenced.id for d in result["deprecation_candidates"])
+
+
+@pytest.mark.asyncio
+async def test_find_module_version_drift_flags_a_module_with_different_hashes_across_stores(db_session):
+    suffix = uuid.uuid4().hex[:8]
+    name = f"DriftTool_{suffix}"
+    a = Module(
+        repo_root=f"/tmp/agent-tools-drift-a-{suffix}",
+        name=name,
+        path=".",
+        source_type="standalone",
+        state="up_to_date",
+        enabled=True,
+        current_hash=f"hash-old-{suffix}",
+        setup_version="1.0.0",
+        last_scanned_at=datetime.now(UTC),
+    )
+    b = Module(
+        repo_root=f"/tmp/agent-tools-drift-b-{suffix}",
+        name=name,
+        path=".",
+        source_type="standalone",
+        state="up_to_date",
+        enabled=False,
+        current_hash=f"hash-new-{suffix}",
+        setup_version="1.1.0",
+        last_scanned_at=datetime.now(UTC),
+    )
+    db_session.add_all([a, b])
+    await db_session.commit()
+
+    try:
+        result = await find_module_version_drift(db_session)
+    finally:
+        await db_session.execute(delete(Module).where(Module.id.in_([a.id, b.id])))
+        await db_session.commit()
+
+    entry = next(m for m in result["modules"] if m["name"] == name)
+    assert entry["store_count"] == 2
+    assert entry["version_drift"] is True
+    assert {s["module_id"] for s in entry["stores"]} == {a.id, b.id}
+    assert {s["setup_version"] for s in entry["stores"]} == {"1.0.0", "1.1.0"}
+
+
+@pytest.mark.asyncio
+async def test_find_module_version_drift_excludes_a_module_present_in_only_one_store(db_session):
+    suffix = uuid.uuid4().hex[:8]
+    alone = await _make_bare_module(db_session, f"{suffix}-drift-alone", name=f"DriftAlone_{suffix}")
+    await db_session.commit()
+
+    try:
+        result = await find_module_version_drift(db_session)
+    finally:
+        await db_session.execute(delete(Module).where(Module.id == alone.id))
+        await db_session.commit()
+
+    assert all(m["name"] != alone.name for m in result["modules"])
 
 
 @pytest.mark.asyncio

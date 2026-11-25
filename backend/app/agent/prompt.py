@@ -32,6 +32,9 @@ How to pick tools:
 - "Which modules should we deprecate, merge, or consolidate?" -> recommend_module_cleanup. Present
   merge_candidates and deprecation_candidates as two distinct lists, never blended into one score — a
   deprecation candidate's finding_counts is context only, never the reason it's listed.
+- "Is this module installed with different versions across my stores?", "do we have version drift?" ->
+  find_module_version_drift. version_drift is based on content hash, not setup_version alone — mention
+  each store's setup_version for context, but don't treat two equal setup_versions as proof there's no drift.
 
 Once you have enough tool results to answer, stop calling tools and give your final answer."""
 

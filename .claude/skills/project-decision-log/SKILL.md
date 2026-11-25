@@ -4677,3 +4677,22 @@ its deprecation-candidate signal (only `enabled=False` + zero incoming `ModuleDe
 necessarily removing, and blending the two would have turned a deterministic, explainable
 recommendation into a fuzzy score the agent couldn't accurately cite. Findings are attached
 to each deprecation candidate as context only.
+
+**Phase 30: `find_module_version_drift` agent tool (recorded 2026-11-25):** A second
+brainstormed idea ("fleet-wide module version drift") turned out to already exist end-to-end
+— `GET /modules/overlap` and the Repos page's "Shared across stores" table already detected
+and displayed exactly this, keyed on `Module.current_hash` with `setup_version` shown per
+store for context. Same root cause as the Phase 26-29 license-compliance rediscovery: a
+brainstorm from plain-language ideas, not from a read of what already exists. The only real
+gap was that this data wasn't reachable from the chat agent, unlike every other fleet-wide
+signal — closed by extracting the route's inline query/grouping logic verbatim into
+`app/search/module_overlap.py` (mirroring `similar_modules.py`/`cleanup_candidates.py`'s own
+"real query layer under a thin tool wrapper" shape) and adding `find_module_version_drift`,
+registered the same way as `recommend_module_cleanup`. The extraction also added
+`Module.id` to the per-store query result (not previously selected, since the REST response
+never needed it) purely so each store can be cited individually in chat — the grouping key
+(`Module.name`) and the drift signal (`current_hash` inequality) were left untouched;
+`find_duplicate_module_pairs` has a comparable precedent worth knowing about: it has no
+`_collect_sources()` branch of its own at all (only reachable via `recommend_module_cleanup`'s
+branch), which was *not* copied here since, unlike that case, each version-drift "store" really
+is one single citable `Module` row.

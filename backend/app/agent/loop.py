@@ -126,6 +126,10 @@ def _collect_sources(
             _add(p.get("module_b_id"), p.get("module_b_name"))
         for r in result.get("deprecation_candidates", []):
             _add(r.get("module_id"), r.get("name"))
+    elif tool_name == "find_module_version_drift":
+        for m in result.get("modules", []):
+            for s in m.get("stores", []):
+                _add(s.get("module_id"), m.get("name"))
 
 
 _ENUMERATION_PHRASES = (
