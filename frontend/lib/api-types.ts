@@ -214,10 +214,8 @@ export interface paths {
          * List Module Overlap
          * @description Modules installed under more than one repo_root — e.g. a shared
          *     in-house module deployed to several stores, or the same third-party
-         *     module repeated across a fleet. Module.current_hash is computed purely
-         *     from path-relative-to-module-root + file bytes (repo_root never enters
-         *     the hash), so two installs of the literally same version naturally hash
-         *     identically — version_drift flags when they don't.
+         *     module repeated across a fleet. See app/search/module_overlap.py for the
+         *     query/grouping logic (also used by the find_module_version_drift agent tool).
          */
         get: operations["list_module_overlap_modules_overlap_get"];
         put?: never;

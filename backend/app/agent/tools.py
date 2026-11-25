@@ -23,6 +23,7 @@ from app.search.cleanup_candidates import (
     find_orphaned_disabled_modules as _find_orphaned_disabled_modules,
 )
 from app.search.hybrid import hybrid_search
+from app.search.module_overlap import find_module_overlap as _find_module_overlap
 from app.search.query_rewrite import rewrite_query
 from app.search.rerank import rerank_results
 from app.search.similar_modules import find_duplicate_module_pairs as _find_duplicate_module_pairs
@@ -270,6 +271,37 @@ async def recommend_module_cleanup(session: AsyncSession, min_similarity: float 
                 "finding_counts": o.finding_counts,
             }
             for o in orphaned
+        ],
+    }
+
+
+async def find_module_version_drift(session: AsyncSession) -> dict[str, Any]:
+    """Modules installed under more than one repo_root, with each store's
+    current content hash and setup_version -- version_drift is hash-based
+    (so it also catches real code changes a store never bumped
+    setup_version for), and enabled is per-store: the same module can be
+    enabled in one store and disabled in another.
+    """
+    overlaps = await _find_module_overlap(session)
+    return {
+        "modules": [
+            {
+                "name": o.name,
+                "composer_name": o.composer_name,
+                "store_count": o.store_count,
+                "version_drift": o.version_drift,
+                "stores": [
+                    {
+                        "module_id": s.module_id,
+                        "repo_root": s.repo_root,
+                        "current_hash": s.current_hash,
+                        "setup_version": s.setup_version,
+                        "enabled": s.enabled,
+                    }
+                    for s in o.stores
+                ],
+            }
+            for o in overlaps
         ],
     }
 
@@ -529,6 +561,7 @@ TOOL_FUNCTIONS: dict[str, Callable[..., Awaitable[dict[str, Any]]]] = {
     "get_module_dependency_graph": get_module_dependency_graph,
     "find_duplicate_module_pairs": find_duplicate_module_pairs,
     "recommend_module_cleanup": recommend_module_cleanup,
+    "find_module_version_drift": find_module_version_drift,
     "find_by_event": find_by_event,
     "find_by_class": find_by_class,
     "read_file": read_file,
@@ -705,6 +738,22 @@ TOOL_SCHEMAS = [
                 },
                 "required": [],
             },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "find_module_version_drift",
+            "description": (
+                "Fleet-wide: modules installed under more than one repo_root (store), e.g. a shared in-house "
+                "module deployed to several stores, or the same third-party module repeated across the fleet. "
+                "Use for 'is this module installed with different versions across my stores?' or 'do we have "
+                "version drift?'. version_drift is based on each store's content hash, not setup_version alone "
+                "-- it also catches real code changes a store never bumped setup_version for. enabled is "
+                "per-store: the same module can be enabled in one store and disabled in another. Takes no "
+                "parameters; always returns every module present in 2+ stores, possibly empty."
+            ),
+            "parameters": {"type": "object", "properties": {}, "required": []},
         },
     },
     {

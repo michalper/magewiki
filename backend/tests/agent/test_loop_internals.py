@@ -109,6 +109,23 @@ def test_collect_sources_recommend_module_cleanup_covers_both_lists():
     assert {k[0] for k in sources} == {1, 2, 3}
 
 
+def test_collect_sources_find_module_version_drift_covers_every_store():
+    sources: dict[tuple, Source] = {}
+    result = {
+        "modules": [
+            {
+                "name": "Vendor_Module",
+                "stores": [
+                    {"module_id": 1, "repo_root": "/a"},
+                    {"module_id": 2, "repo_root": "/b"},
+                ],
+            }
+        ],
+    }
+    _collect_sources("find_module_version_drift", {}, result, sources)
+    assert {k[0] for k in sources} == {1, 2}
+
+
 def test_collect_sources_unknown_tool_name_is_a_no_op():
     sources: dict[tuple, Source] = {}
     _collect_sources("some_future_tool", {}, {"anything": True}, sources)

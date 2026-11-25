@@ -45,6 +45,7 @@ from app.scanner.orchestrator import (
     scan_paths_events,
 )
 from app.search.fleet_trend import get_fleet_trend
+from app.search.module_overlap import find_module_overlap
 from app.search.similar_modules import find_duplicate_module_pairs, find_similar_modules
 
 router = APIRouter()
@@ -836,51 +837,28 @@ class ModuleOverlapEntry(BaseModel):
 async def list_module_overlap(session: AsyncSession = Depends(get_session)) -> list[ModuleOverlapEntry]:
     """Modules installed under more than one repo_root — e.g. a shared
     in-house module deployed to several stores, or the same third-party
-    module repeated across a fleet. Module.current_hash is computed purely
-    from path-relative-to-module-root + file bytes (repo_root never enters
-    the hash), so two installs of the literally same version naturally hash
-    identically — version_drift flags when they don't.
+    module repeated across a fleet. See app/search/module_overlap.py for the
+    query/grouping logic (also used by the find_module_version_drift agent tool).
     """
-    rows = (
-        await session.execute(
-            select(
-                Module.name,
-                Module.composer_name,
-                Module.repo_root,
-                Module.current_hash,
-                Module.setup_version,
-                Module.enabled,
-            )
+    overlaps = await find_module_overlap(session)
+    return [
+        ModuleOverlapEntry(
+            name=o.name,
+            composer_name=o.composer_name,
+            store_count=o.store_count,
+            version_drift=o.version_drift,
+            stores=[
+                OverlapStoreEntry(
+                    repo_root=s.repo_root,
+                    current_hash=s.current_hash,
+                    setup_version=s.setup_version,
+                    enabled=s.enabled,
+                )
+                for s in o.stores
+            ],
         )
-    ).all()
-
-    by_name: dict[str, list[Any]] = {}
-    for name, composer_name, repo_root, current_hash, setup_version, enabled in rows:
-        by_name.setdefault(name, []).append((composer_name, repo_root, current_hash, setup_version, enabled))
-
-    entries = []
-    for name, group in by_name.items():
-        if len({repo_root for _, repo_root, _, _, _ in group}) < 2:
-            continue
-        composer_name = next((c for c, _, _, _, _ in group if c), None)
-        hashes = {h for _, _, h, _, _ in group}
-        entries.append(
-            ModuleOverlapEntry(
-                name=name,
-                composer_name=composer_name,
-                store_count=len(group),
-                version_drift=len(hashes) > 1,
-                stores=[
-                    OverlapStoreEntry(
-                        repo_root=repo_root, current_hash=current_hash, setup_version=setup_version, enabled=enabled
-                    )
-                    for _, repo_root, current_hash, setup_version, enabled in sorted(group, key=lambda g: g[1])
-                ],
-            )
-        )
-
-    entries.sort(key=lambda e: (-e.store_count, e.name))
-    return entries
+        for o in overlaps
+    ]
 
 
 class DuplicateModulePairEntry(BaseModel):
