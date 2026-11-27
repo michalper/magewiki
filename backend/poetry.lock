@@ -2443,20 +2443,20 @@ dev = ["Sphinx (>=5.0.2)", "doc8 (>=0.11.2)", "pytest (>=7.0.1)", "pytest-xdist 
 
 [[package]]
 name = "litellm"
-version = "1.110.2"
+version = "1.110.3"
 description = "Library to easily interface with LLM API providers"
 optional = false
 python-versions = "<3.16,>=3.10"
 groups = ["main"]
 files = [
-    {file = "litellm-1.110.2-cp310-abi3-macosx_10_12_x86_64.whl", hash = "sha256:b219de9b88c483fe40ebe0ec580a1cd3ada8417e5b18118fb0af59f0fd4071b0"},
-    {file = "litellm-1.110.2-cp310-abi3-macosx_11_0_arm64.whl", hash = "sha256:a002de994ff50f9b72443e8a78b0731783f8bb14898dc6b473acba89128eb769"},
-    {file = "litellm-1.110.2-cp310-abi3-manylinux_2_28_aarch64.whl", hash = "sha256:4e877371f0bb90623f112731c55a2d71acc3fbccbc57bfc7ef9346bd1af0f214"},
-    {file = "litellm-1.110.2-cp310-abi3-manylinux_2_28_x86_64.whl", hash = "sha256:9d94d1c7d524b6fd10c14f9c8c6c4f0ac31705f9964ac59dcfd8337c046d8917"},
-    {file = "litellm-1.110.2-cp310-abi3-musllinux_1_2_aarch64.whl", hash = "sha256:4a60695eb840bcb040f09ff2c67581f7b4bd0386cf568c282b532924225719cf"},
-    {file = "litellm-1.110.2-cp310-abi3-musllinux_1_2_x86_64.whl", hash = "sha256:507fe440514f4234434b3e4cc60952b5253058c8f0c20afaa462f583260a9a24"},
-    {file = "litellm-1.110.2-cp310-abi3-win_amd64.whl", hash = "sha256:7db952ab951f6fd59d7b88706f0a5794d2d3b4fde7a47f0bdc7e1effd4d61502"},
-    {file = "litellm-1.110.2.tar.gz", hash = "sha256:a483c8d3078c1bd27a9fe9c831ac2ce09d41b728a7ea6e9a3ce48db276edeef5"},
+    {file = "litellm-1.110.3-cp310-abi3-macosx_10_12_x86_64.whl", hash = "sha256:4bc1a16da0e9cdacb844f8683ee8ac22dff3c85fffd2c42b16d0ba241dfaa702"},
+    {file = "litellm-1.110.3-cp310-abi3-macosx_11_0_arm64.whl", hash = "sha256:e809005b433fb19a452fcc4027f219fbf3eed5e3e9bd5723ecc11ad0f42528c5"},
+    {file = "litellm-1.110.3-cp310-abi3-manylinux_2_28_aarch64.whl", hash = "sha256:bd9193f2cb2e6e75ef43914dd92a3afee22cbf74a1858bb6f4821bee569a48fc"},
+    {file = "litellm-1.110.3-cp310-abi3-manylinux_2_28_x86_64.whl", hash = "sha256:90b27d5747369407e42248fe77a1e06c258954fada004cd6d2e2fb176026c5ff"},
+    {file = "litellm-1.110.3-cp310-abi3-musllinux_1_2_aarch64.whl", hash = "sha256:6f705dd40a204618eac61874f68cb3d4abe2ec3efd03c65450f954c6c157c483"},
+    {file = "litellm-1.110.3-cp310-abi3-musllinux_1_2_x86_64.whl", hash = "sha256:caee88a2c927b565c902ee5da22c2c20e3c95d51dd322ea3650e53b8121e5c15"},
+    {file = "litellm-1.110.3-cp310-abi3-win_amd64.whl", hash = "sha256:4f513589da99eaca5f3049bb39d930a087cef444fefd5baddcff3c9e11591df6"},
+    {file = "litellm-1.110.3.tar.gz", hash = "sha256:c56e20a3a7d015485e98171f0eb1ef92a50b37a5e5435c1f927858610edeee65"},
 ]
 
 [package.dependencies]
@@ -2496,7 +2496,7 @@ google = ["google-cloud-aiplatform (>=1.133.0,<2.0)"]
 grpc = ["grpcio (==1.84.1)"]
 mcp = ["httpx2 (>=2.10.0,<3)", "mcp (>=2.3.0,<3)", "pydantic (>=2.12.0,<3)"]
 mlflow = ["mlflow (>=3.17.2,<4.0)"]
-proxy = ["apscheduler (>=3.11.2,<4.0)", "azure-identity (>=1.25.2,<2.0)", "azure-storage-blob (>=12.28.0,<13.0)", "backoff (>=2.2.1,<3.0)", "backports-zstd (>=1.0.0,<2.0) ; python_full_version < \"3.14.0\"", "boto3 (>=1.43.117,<2.0)", "cryptography (>=49.0.0,<51.0)", "expression (>=5.6.0,<6.0)", "fastapi (>=0.136.3,<1.0)", "fastapi-sso (>=0.19.0,<1.0)", "granian (>=2.7.4,<3.0) ; python_full_version < \"3.15.0\"", "granian (>=2.8.0,<3.0) ; python_full_version >= \"3.15.0\"", "gunicorn (>=23.0.0,<24.0)", "hiredis (>=3.0.0,<4.0) ; python_full_version < \"3.15.0\"", "hiredis (>=3.5.0,<4.0) ; python_full_version >= \"3.15.0\"", "httpx2 (>=2.10.0,<3)", "inquirerpy (>=0.3.4,<1.0)", "litellm-enterprise (==0.1.83.post1)", "litellm-proxy (==1.110.2)", "litellm-proxy-extras (==0.4.114.post1)", "mcp (>=2.3.0,<3)", "orjson (>=3.11.6,<4.0) ; python_full_version < \"3.15.0\"", "orjson (>=3.12.0,<4.0) ; python_full_version >= \"3.15.0\"", "polars (>=1.38.1,<2.0)", "pydantic (>=2.12.0,<3)", "pyjwt (>=2.13.0,<3.0)", "pynacl (>=1.6.2,<2.0)", "pyroscope-io (>=0.8.16,<1.0) ; sys_platform != \"win32\"", "python-multipart (>=0.0.27,<1.0)", "pyyaml (>=6.0.3,<7.0)", "restrictedpython (>=8.5,<9.0)", "rich (>=13.9.4,<14.0)", "rq (>=2.7.0,<3.0)", "semver (>=3.0.4,<4)", "soundfile (>=0.12.1,<1.0)", "starlette (>=1.0.1,<2.0)", "tomlkit (>=0.13.3,<1.0)", "uvicorn (>=0.33.0,<1.0)", "uvloop (>=0.22.1,<1.0) ; sys_platform != \"win32\"", "websockets (>=15.0.1,<16.0)"]
+proxy = ["apscheduler (>=3.11.2,<4.0)", "azure-identity (>=1.25.2,<2.0)", "azure-storage-blob (>=12.28.0,<13.0)", "backoff (>=2.2.1,<3.0)", "backports-zstd (>=1.0.0,<2.0) ; python_full_version < \"3.14.0\"", "boto3 (>=1.43.117,<2.0)", "cryptography (>=49.0.0,<51.0)", "expression (>=5.6.0,<6.0)", "fastapi (>=0.136.3,<1.0)", "fastapi-sso (>=0.19.0,<1.0)", "granian (>=2.7.4,<3.0) ; python_full_version < \"3.15.0\"", "granian (>=2.8.0,<3.0) ; python_full_version >= \"3.15.0\"", "gunicorn (>=23.0.0,<24.0)", "hiredis (>=3.0.0,<4.0) ; python_full_version < \"3.15.0\"", "hiredis (>=3.5.0,<4.0) ; python_full_version >= \"3.15.0\"", "httpx2 (>=2.10.0,<3)", "inquirerpy (>=0.3.4,<1.0)", "litellm-enterprise (==0.1.83.post2)", "litellm-proxy (==1.110.3)", "litellm-proxy-extras (==0.4.114.post1)", "mcp (>=2.3.0,<3)", "orjson (>=3.11.6,<4.0) ; python_full_version < \"3.15.0\"", "orjson (>=3.12.0,<4.0) ; python_full_version >= \"3.15.0\"", "polars (>=1.38.1,<2.0)", "pydantic (>=2.12.0,<3)", "pyjwt (>=2.13.0,<3.0)", "pynacl (>=1.6.2,<2.0)", "pyroscope-io (>=0.8.16,<1.0) ; sys_platform != \"win32\"", "python-multipart (>=0.0.27,<1.0)", "pyyaml (>=6.0.3,<7.0)", "restrictedpython (>=8.5,<9.0)", "rich (>=13.9.4,<14.0)", "rq (>=2.7.0,<3.0)", "semver (>=3.0.4,<4)", "soundfile (>=0.12.1,<1.0)", "starlette (>=1.0.1,<2.0)", "tomlkit (>=0.13.3,<1.0)", "uvicorn (>=0.33.0,<1.0)", "uvloop (>=0.22.1,<1.0) ; sys_platform != \"win32\"", "websockets (>=15.0.1,<16.0)"]
 proxy-runtime = ["anthropic[vertex] (>=0.84.0,<1.0)", "azure-ai-contentsafety (>=1.0.0,<2.0)", "azure-storage-file-datalake (>=12.20.0,<13.0)", "ddtrace (>=4.8.2,<5.0)", "detect-secrets (>=1.5.0,<2.0)", "google-cloud-aiplatform (>=1.133.0,<2.0)", "google-cloud-speech (>=2.40.0,<3.0)", "google-genai (>=1.37.0,<2.0)", "grpcio (==1.84.1)", "langfuse (>=4.7,<5.0)", "llm-sandbox (>=0.3.39,<1.0)", "mangum (>=0.17.0,<1.0)", "opentelemetry-api (==1.45.2)", "opentelemetry-exporter-otlp (==1.45.2)", "opentelemetry-instrumentation-fastapi (==0.66b2)", "opentelemetry-sdk (==1.45.2)", "prometheus-client (>=0.20.0,<1.0)", "pypdf (>=6.21.2,<7.0)", "sentry-sdk (>=2.21.0,<3.0)"]
 saml = ["python3-saml (>=1.16.0,<2.0)"]
 semantic-router = ["aurelio-sdk (>=0.0.19,<1.0) ; python_full_version < \"3.14.0\"", "semantic-router (>=0.1.15,<1.0) ; python_full_version < \"3.14.0\""]
