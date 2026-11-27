@@ -5064,21 +5064,20 @@ tests = ["tree-sitter-html (==0.23.2)", "tree-sitter-javascript (==0.25.0)", "tr
 
 [[package]]
 name = "tree-sitter-php"
-version = "0.25.1"
+version = "0.25.2"
 description = "PHP grammar for tree-sitter"
 optional = false
 python-versions = ">=3.10"
 groups = ["main"]
 files = [
-    {file = "tree_sitter_php-0.25.1-cp310-abi3-macosx_10_9_x86_64.whl", hash = "sha256:bc2d4503814c55912e69713623610ddd9c6058f6c6c2f521847d86db0b179cb2"},
-    {file = "tree_sitter_php-0.25.1-cp310-abi3-macosx_11_0_arm64.whl", hash = "sha256:3ccacce66119b96e87443750eabcd38613b3fee770582c646e2c8bc29b7089a8"},
-    {file = "tree_sitter_php-0.25.1-cp310-abi3-manylinux2014_aarch64.manylinux_2_17_aarch64.manylinux_2_28_aarch64.whl", hash = "sha256:93d0088bed22facceda229850e2443932ce10206e46aa6296df8065ecea1d68e"},
-    {file = "tree_sitter_php-0.25.1-cp310-abi3-manylinux2014_x86_64.manylinux_2_17_x86_64.manylinux_2_28_x86_64.whl", hash = "sha256:3d59f27bc88351f744815e5ff69a40b04b720a94c984fcc804979c71a19afc3e"},
-    {file = "tree_sitter_php-0.25.1-cp310-abi3-musllinux_1_2_aarch64.whl", hash = "sha256:22c4ca10a7311ea7d09de902b3a73ba831f993f69a4abff4d2d0f4dd6fdac0ff"},
-    {file = "tree_sitter_php-0.25.1-cp310-abi3-musllinux_1_2_x86_64.whl", hash = "sha256:ee642411d457f8b0a96b7d5ba24fc1f28d05014b7db98dd9f71d00224858dec1"},
-    {file = "tree_sitter_php-0.25.1-cp310-abi3-win_amd64.whl", hash = "sha256:47e828483c19eb38ae6ba2b5b10dc0340111bcaf981575351e5a0f87cff84c40"},
-    {file = "tree_sitter_php-0.25.1-cp310-abi3-win_arm64.whl", hash = "sha256:831dc19ee19fec7d153d57e76cafe382ac5760d07194ee73b079ba0d0e600a55"},
-    {file = "tree_sitter_php-0.25.1.tar.gz", hash = "sha256:db2f82bc9a33664f150750a1b6d3cb0291760d9ab5727455d713141f7dc9e6a9"},
+    {file = "tree_sitter_php-0.25.2-cp310-abi3-macosx_10_9_x86_64.whl", hash = "sha256:915f7049c38eb4730452333876810b14182f50668d4d99b387e9364b8fc5057a"},
+    {file = "tree_sitter_php-0.25.2-cp310-abi3-macosx_11_0_arm64.whl", hash = "sha256:7286d54a54a955feb24cc24ba5c0cd64c3ddd6a64ec97ffcfcb8675520cc23c1"},
+    {file = "tree_sitter_php-0.25.2-cp310-abi3-manylinux2014_aarch64.manylinux_2_17_aarch64.manylinux_2_28_aarch64.whl", hash = "sha256:3510792de02afa2903573efbb96353cf9e66e164d5967a0721e392e7ceed591b"},
+    {file = "tree_sitter_php-0.25.2-cp310-abi3-manylinux2014_x86_64.manylinux_2_17_x86_64.manylinux_2_28_x86_64.whl", hash = "sha256:4ecc2f39988615922856de4313adc3eef6f9072c82f4f9098b90e645680c4128"},
+    {file = "tree_sitter_php-0.25.2-cp310-abi3-musllinux_1_2_aarch64.whl", hash = "sha256:024fc0cab9fd6fc189d738859de075cbb830103c1e9335703ba5b6d90d1f700f"},
+    {file = "tree_sitter_php-0.25.2-cp310-abi3-musllinux_1_2_x86_64.whl", hash = "sha256:e75b5f4044e74bb56798daf31d9c613ac1f5f59ae0eac53f73d009ed2d0387ab"},
+    {file = "tree_sitter_php-0.25.2-cp310-abi3-win_amd64.whl", hash = "sha256:f08f52fcc0660cdc417f5361fb74134f45eea3cdd7b1377f02aa2615329a5c06"},
+    {file = "tree_sitter_php-0.25.2-cp310-abi3-win_arm64.whl", hash = "sha256:f8e6904ecc51d62d5424fa6167356574d1faec6717ea4dbd9894873335b8a4d6"},
 ]
 
 [package.extras]
