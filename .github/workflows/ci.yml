@@ -166,11 +166,11 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
           fetch-depth: 0 # SonarCloud wants full history, not a shallow clone
-      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
           name: backend-coverage
           path: backend
-      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
           name: frontend-coverage
           path: frontend/coverage
@@ -293,7 +293,7 @@ jobs:
             dockerfile: php-analyzer/Dockerfile
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
-      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
           name: docker-image-${{ matrix.image }}
           path: /tmp
@@ -418,7 +418,7 @@ jobs:
       # docker-image-<image>) -- merge-multiple: true pulls all 3 straight
       # into one directory with no per-artifact subfolders, since each
       # artifact already holds one uniquely-named tar.
-      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
           pattern: docker-image-*
           path: /tmp
@@ -492,7 +492,7 @@ jobs:
       # job's own `needs:`) and tag them :dev to match what k8s/base's
       # manifests reference -- see
       # k8s/base/{api,worker,web,php-analyzer,migrate-job}.yaml.
-      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
           pattern: docker-image-*
           path: /tmp
