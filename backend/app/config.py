@@ -46,6 +46,15 @@ class Settings(BaseSettings):
     # same convention as webhook_hmac_secret above (today's open behavior unchanged for
     # local/self-hosted docker-compose use).
     write_access_token: str = ""
+    # Raises app/scanner/magento_github.py's calls from GitHub's unauthenticated
+    # 60 req/hour to 5000/hour -- a real ceiling for a store with ~300 core Magento
+    # modules checking upgrade compatibility on a cold cache. A plain operator
+    # setting, not BYOK-via-UI like the LLM key: unlike a public-demo visitor
+    # configuring their own model/key at runtime, this is a single self-hosted
+    # operator's one-time "raise my own rate limit" choice, same shape as
+    # webhook_hmac_secret/write_access_token above. Empty disables it (stays
+    # unauthenticated), same convention as those two.
+    github_token: str = ""
     ollama_base_url: str = ""
     php_analyzer_url: str = "http://php-analyzer:8080"
     # General-purpose scan roots (see CLAUDE.md "Scan, cron, and cost control" decision
@@ -98,7 +107,7 @@ class Settings(BaseSettings):
     # anything changed -- it's a heartbeat, not an alarm. Empty disables it.
     digest_webhook_url: str = ""
 
-    @field_validator("webhook_hmac_secret", "write_access_token")
+    @field_validator("webhook_hmac_secret", "write_access_token", "github_token")
     @classmethod
     def _secret_meets_minimum_length(cls, value: str, info: ValidationInfo) -> str:
         if value and len(value) < _MIN_SECRET_LENGTH:

@@ -14,11 +14,26 @@ from typing import Any
 import httpx
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.config import settings
 from app.scanner.packagist_cache import get_cached, set_cached
 
 _HEADERS = {"User-Agent": "magewiki-ai (https://github.com/michalper/magewiki)"}
 _RELEASES_LATEST_URL = "https://api.github.com/repos/magento/magento2/releases/latest"
 _RAW_FILE_URL_TEMPLATE = "https://raw.githubusercontent.com/magento/magento2/{tag}/{filename}"
+
+
+def _headers() -> dict[str, str]:
+    """Unauthenticated api.github.com calls are capped at 60 req/hour vs.
+    5000/hour authenticated -- a real ceiling for a store with ~300 core
+    Magento modules checking upgrade compatibility on a cold cache. Sent to
+    raw.githubusercontent.com too for simplicity (harmless there even though
+    that CDN isn't where the real rate-limit pressure is). Empty
+    settings.github_token (the default) means unauthenticated, same
+    "empty = feature off" convention as every other optional secret here.
+    """
+    if settings.github_token:
+        return {**_HEADERS, "Authorization": f"Bearer {settings.github_token}"}
+    return _HEADERS
 
 
 async def resolve_latest_release(session: AsyncSession) -> str | None:
@@ -29,7 +44,7 @@ async def resolve_latest_release(session: AsyncSession) -> str | None:
         return cached.get("tag_name")
 
     try:
-        async with httpx.AsyncClient(timeout=10.0, headers=_HEADERS) as client:
+        async with httpx.AsyncClient(timeout=10.0, headers=_headers()) as client:
             response = await client.get(_RELEASES_LATEST_URL)
             response.raise_for_status()
             data: dict[str, Any] = response.json()
@@ -51,7 +66,7 @@ async def _fetch_raw_json(session: AsyncSession, tag: str, filename: str) -> dic
         return cached
 
     try:
-        async with httpx.AsyncClient(timeout=30.0, headers=_HEADERS) as client:
+        async with httpx.AsyncClient(timeout=30.0, headers=_headers()) as client:
             response = await client.get(_RAW_FILE_URL_TEMPLATE.format(tag=tag, filename=filename))
             if response.status_code == 404:
                 return None
