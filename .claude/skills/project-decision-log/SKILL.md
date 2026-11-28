@@ -4839,3 +4839,31 @@ sensitive test-isolation gap, unrelated to this change (reproduced identically o
 via `git stash -u`). Not fixed here; flagged in case it resurfaces. The full suite (995 tests, the
 991 pre-existing plus 4 new) passes cleanly except the already-known, environment-specific
 `test_env_example.py` container-mount-path failures.
+
+**Fleet-wide finding trend by category, shipped (2026-11-28):** second item from the same
+feature-proposal pass (LLM spend dashboard was #1, above). Extended `app/search/fleet_trend.py`'s
+existing carry-forward loop (`get_fleet_trend`) to track each module's `finding_counts` *dict*
+instead of just its sum -- `FleetTrendPoint.total_findings` is now `sum(counts.values())`, derived
+rather than tracked in parallel, so the behavior for existing consumers is unchanged. Chose to fold
+raw `check_type` counts into `lib/kpi-tiles.ts`'s already-curated `KPI_TILES` categories on the
+*frontend* rather than duplicating that grouping on the backend -- the backend stays a generic
+"counts per check_type over time" fact, and the "which checks are interesting enough to group
+together" presentation choice stays where `KPI_TILES` already lives, auto-extending to new
+check_types through the same `FALLBACK_CHECK_TYPES`/"Other" mechanism the KPI tile grid already
+uses.
+
+Real test-isolation bug found and fixed while verifying this (not a bug in the production code):
+a new test asserted a check_type's key is *absent* from `counts` once its count reaches exactly
+0, using a real check_type (`hardcoded_secret`) for realism. Passed alone, failed only when run
+alongside the full suite -- a completely unrelated real fixture test (Phase 18's own real-secret-
+scan test) also contributes to that same global `hardcoded_secret` bucket with a real "now()"
+timestamp, so the fleet-wide total for that check_type never actually reaches 0 across the whole
+suite. The existing delta-based assertions in this same file (e.g.
+`test_fleet_trend_carries_each_modules_last_known_total_forward`) survive this because a delta
+between two of a test's own far-future-anchored points holds regardless of what else contributes
+to the same running total -- but an *absence* assertion has no such tolerance; it needs the bucket
+to be genuinely, globally empty. Fixed by using a synthetic, test-unique check_type key instead
+of a real one (`ModuleHistorySnapshot.finding_counts` is free-form JSONB with no CHECK constraint,
+unlike `ModuleQualityFinding.check_type`), so nothing else could ever contribute to it. General
+lesson for this fleet-wide-query test family: a *delta* assertion tolerates shared global state: an
+*absence/equality* assertion needs a key nothing else can touch.
