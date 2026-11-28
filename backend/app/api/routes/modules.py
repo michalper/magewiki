@@ -1430,14 +1430,19 @@ async def get_module_history(
 class FleetTrendPointEntry(BaseModel):
     """Phase 22b: one fleet-wide total-findings data point, oldest first --
     see app/search/fleet_trend.py for how it's reconstructed from Phase 16's
-    per-module snapshots.
+    per-module snapshots. `counts` is the same total broken down by
+    check_type, added later for a per-category trend breakdown on Stats.
     """
 
     scanned_at: datetime
     total_findings: int
+    counts: dict[str, int]
 
 
 @router.get("/modules/history/trend", response_model=list[FleetTrendPointEntry])
 async def get_fleet_trend_route(session: AsyncSession = Depends(get_session)) -> list[FleetTrendPointEntry]:
     points = await get_fleet_trend(session)
-    return [FleetTrendPointEntry(scanned_at=p.scanned_at, total_findings=p.total_findings) for p in points]
+    return [
+        FleetTrendPointEntry(scanned_at=p.scanned_at, total_findings=p.total_findings, counts=p.counts)
+        for p in points
+    ]

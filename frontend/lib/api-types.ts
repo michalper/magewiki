@@ -644,7 +644,8 @@ export interface components {
          * FleetTrendPointEntry
          * @description Phase 22b: one fleet-wide total-findings data point, oldest first --
          *     see app/search/fleet_trend.py for how it's reconstructed from Phase 16's
-         *     per-module snapshots.
+         *     per-module snapshots. `counts` is the same total broken down by
+         *     check_type, added later for a per-category trend breakdown on Stats.
          */
         FleetTrendPointEntry: {
             /**
@@ -654,6 +655,10 @@ export interface components {
             scanned_at: string;
             /** Total Findings */
             total_findings: number;
+            /** Counts */
+            counts: {
+                [key: string]: number;
+            };
         };
         /** GraphEdge */
         GraphEdge: {

@@ -51,6 +51,16 @@ test("the fleet-trend chart renders real history from the seeded scan, not its e
   await expect(
     page.getByText("No history yet — this fills in once a rescan changes something for at least one module."),
   ).not.toBeVisible();
+
+  // Same real snapshot, broken down by category instead of one running
+  // total -- reuses app/search/fleet_trend.py's own counts field, no
+  // separate fetch.
+  await expect(page.getByText("Findings trend by category")).toBeVisible();
+  await expect(
+    page.getByText(
+      "No category history yet — this fills in once a rescan changes something for at least one module.",
+    ),
+  ).not.toBeVisible();
 });
 
 test("the LLM spend section renders end to end against the real endpoint", async ({ page }) => {
