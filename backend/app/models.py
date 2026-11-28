@@ -146,6 +146,9 @@ class Module(Base):
     cache_types: Mapped[list["ModuleCacheType"]] = relationship(
         back_populates="module", cascade="all, delete-orphan"
     )
+    email_templates: Mapped[list["ModuleEmailTemplate"]] = relationship(
+        back_populates="module", cascade="all, delete-orphan"
+    )
     queue_bindings: Mapped[list["QueueBinding"]] = relationship(
         back_populates="module", cascade="all, delete-orphan"
     )
@@ -440,6 +443,20 @@ class ModuleCacheType(Base):
     module: Mapped[Module] = relationship(back_populates="cache_types")
 
 
+class ModuleEmailTemplate(Base):
+    __tablename__ = "module_email_templates"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    module_id: Mapped[int] = mapped_column(ForeignKey("modules.id", ondelete="CASCADE"))
+    template_id: Mapped[str] = mapped_column(Text, index=True)
+    label: Mapped[str | None] = mapped_column(Text)
+    file: Mapped[str | None] = mapped_column(Text)
+    type: Mapped[str | None] = mapped_column(Text)
+    area: Mapped[str | None] = mapped_column(Text)
+
+    module: Mapped[Module] = relationship(back_populates="email_templates")
+
+
 class DbColumn(Base):
     __tablename__ = "db_columns"
 
@@ -504,7 +521,8 @@ class ModuleQualityFinding(Base):
             "'license_risk','phpunit_failure','preference_conflict','cron_job_conflict',"
             "'graphql_field_conflict','acl_resource_conflict','missing_acl',"
             "'indexer_id_conflict','view_id_conflict','route_id_conflict','frontname_conflict',"
-            "'virtual_type_conflict','widget_id_conflict','menu_item_id_conflict','cache_type_conflict')",
+            "'virtual_type_conflict','widget_id_conflict','menu_item_id_conflict','cache_type_conflict',"
+            "'email_template_id_conflict')",
             name="ck_module_quality_findings_check_type",
         ),
         CheckConstraint(
