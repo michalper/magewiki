@@ -16,7 +16,7 @@ from app.scanner.orchestrator import scan_repository
 from tests.conftest import ORDO_FIXTURE_ENV, requires_ordo_fixture
 
 EXPECTED_PLUGINS = {
-    "Ordo\\Automation\\Plugin\\Quote\\BlockOverLimitCheckout": "beforePlaceOrder",
+    "Ordo\\Automation\\Plugin\\Quote\\BlockOverLimitCheckout": "aroundPlaceOrder",
     "Ordo\\Automation\\Plugin\\Email\\EmailMessageMessageIdPlugin": "afterCreate",
     "Ordo\\Automation\\Plugin\\SalesRule\\SimpleActionOptionsProviderPlugin": "afterToOptionArray",
 }
@@ -57,8 +57,14 @@ async def test_real_ordo_automation_module(db_session):
     assert module.license == ["OSL-3.0"]
     assert module.homepage == "https://ordo.marketing"
     assert module.enabled is None  # no app/etc/config.php at the standalone module's own root
-    assert module.composer_scripts == sorted(
-        ["cs-fix", "cs-check", "phpcs-check", "phpcs-marketplace-check", "rector-check"]
+    # Subset, not exact equality -- same reasoning as EXPECTED_PLUGINS/
+    # _OBSERVERS below: a real, actively-developed module's own composer
+    # scripts/dependencies grow over time (confirmed: fuzz-check and three
+    # more module.xml sequence entries were both added upstream since this
+    # test was last touched), so pinning the exact current set would make
+    # this fail on every unrelated upstream change.
+    assert {"cs-fix", "cs-check", "phpcs-check", "phpcs-marketplace-check", "rector-check"} <= set(
+        module.composer_scripts
     )
     assert module.composer_autoload_psr4 == {"Ordo\\Automation\\": ""}
     assert module.composer_allow_plugins == {
@@ -70,9 +76,10 @@ async def test_real_ordo_automation_module(db_session):
     deps = (await db_session.scalars(
         select(ModuleDependency).where(ModuleDependency.module_id == module.id)
     )).all()
-    assert {d.depends_on_name for d in deps} == {
+    # Subset, not exact equality -- same reasoning as composer_scripts above.
+    assert {
         "Magento_Sales", "Magento_Quote", "Magento_Customer", "Magento_Email", "Magento_SalesRule",
-    }
+    } <= {d.depends_on_name for d in deps}
 
     classes = (await db_session.scalars(select(PhpClass).where(PhpClass.module_id == module.id))).all()
     plugins = {c.fqcn: c for c in classes if c.is_plugin}
