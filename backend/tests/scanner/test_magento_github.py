@@ -2,6 +2,7 @@ import httpx
 import pytest
 from sqlalchemy import delete
 
+from app.config import settings
 from app.models import PackagistCache
 from app.scanner.magento_github import (
     fetch_release_component_versions,
@@ -27,6 +28,10 @@ class _FakeAsyncClient:
         # Maps a URL substring to either a JSON body (200) or an int status code.
         self._responses = responses
         self.calls: list[str] = []
+        # Captured so a test can assert on the real headers/timeout the
+        # production code actually constructed httpx.AsyncClient(...) with --
+        # every monkeypatch below must forward **k here, not discard it.
+        self.kwargs = kwargs
 
     async def __aenter__(self):
         return self
@@ -42,6 +47,22 @@ class _FakeAsyncClient:
                     return _FakeResponse({}, status_code=value)
                 return _FakeResponse(value)
         raise AssertionError(f"unexpected URL: {url}")
+
+
+def _capturing_client_factory(responses: dict[str, dict | int]) -> tuple[object, list[_FakeAsyncClient]]:
+    """A monkeypatch target for app.scanner.magento_github.httpx.AsyncClient
+    that forwards the real constructor kwargs (headers, timeout) into the
+    fake client instead of discarding them, and records every instance
+    created so a test can inspect the most recent real call's headers.
+    """
+    created: list[_FakeAsyncClient] = []
+
+    def factory(*args, **kwargs):
+        client = _FakeAsyncClient(responses, *args, **kwargs)
+        created.append(client)
+        return client
+
+    return factory, created
 
 
 async def _clear_cache(session, *cache_keys: str) -> None:
@@ -176,3 +197,51 @@ async def test_fetch_raw_json_returns_none_on_an_http_error(db_session, monkeypa
     monkeypatch.setattr("app.scanner.magento_github.httpx.AsyncClient", lambda *a, **k: _RaisingClient())
 
     assert await fetch_release_php_constraint(db_session, "2.4.8") is None
+
+
+@pytest.mark.asyncio
+async def test_resolve_latest_release_sends_no_authorization_header_by_default(db_session, monkeypatch):
+    await _clear_cache(db_session, "magento-github:latest-release")
+    monkeypatch.setattr(settings, "github_token", "")
+    factory, created = _capturing_client_factory({"releases/latest": {"tag_name": "2.4.8"}})
+    monkeypatch.setattr("app.scanner.magento_github.httpx.AsyncClient", factory)
+
+    await resolve_latest_release(db_session)
+
+    assert "Authorization" not in created[0].kwargs["headers"]
+
+
+@pytest.mark.asyncio
+async def test_resolve_latest_release_sends_a_bearer_token_when_configured(db_session, monkeypatch):
+    await _clear_cache(db_session, "magento-github:latest-release")
+    monkeypatch.setattr(settings, "github_token", "ghp_test_token_123")
+    factory, created = _capturing_client_factory({"releases/latest": {"tag_name": "2.4.8"}})
+    monkeypatch.setattr("app.scanner.magento_github.httpx.AsyncClient", factory)
+
+    await resolve_latest_release(db_session)
+
+    assert created[0].kwargs["headers"]["Authorization"] == "Bearer ghp_test_token_123"
+
+
+@pytest.mark.asyncio
+async def test_fetch_release_php_constraint_sends_a_bearer_token_when_configured(db_session, monkeypatch):
+    await _clear_cache(db_session, "magento-github:2.4.8:composer.json")
+    monkeypatch.setattr(settings, "github_token", "ghp_test_token_123")
+    factory, created = _capturing_client_factory({"composer.json": {"require": {"php": "~8.2.0"}}})
+    monkeypatch.setattr("app.scanner.magento_github.httpx.AsyncClient", factory)
+
+    await fetch_release_php_constraint(db_session, "2.4.8")
+
+    assert created[0].kwargs["headers"]["Authorization"] == "Bearer ghp_test_token_123"
+
+
+@pytest.mark.asyncio
+async def test_fetch_release_php_constraint_sends_no_authorization_header_by_default(db_session, monkeypatch):
+    await _clear_cache(db_session, "magento-github:2.4.8:composer.json")
+    monkeypatch.setattr(settings, "github_token", "")
+    factory, created = _capturing_client_factory({"composer.json": {"require": {"php": "~8.2.0"}}})
+    monkeypatch.setattr("app.scanner.magento_github.httpx.AsyncClient", factory)
+
+    await fetch_release_php_constraint(db_session, "2.4.8")
+
+    assert "Authorization" not in created[0].kwargs["headers"]

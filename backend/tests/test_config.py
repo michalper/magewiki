@@ -70,19 +70,19 @@ def test_license_risk_prefix_tuple_empty_when_unconfigured():
     assert s.license_risk_prefix_tuple == ()
 
 
-@pytest.mark.parametrize("field", ["webhook_hmac_secret", "write_access_token"])
+@pytest.mark.parametrize("field", ["webhook_hmac_secret", "write_access_token", "github_token"])
 def test_secret_fields_accept_empty_disabled_value(field):
     s = Settings(**{field: ""})
     assert getattr(s, field) == ""
 
 
-@pytest.mark.parametrize("field", ["webhook_hmac_secret", "write_access_token"])
+@pytest.mark.parametrize("field", ["webhook_hmac_secret", "write_access_token", "github_token"])
 def test_secret_fields_accept_a_16_character_secret(field):
     s = Settings(**{field: "a" * 16})
     assert getattr(s, field) == "a" * 16
 
 
-@pytest.mark.parametrize("field", ["webhook_hmac_secret", "write_access_token"])
+@pytest.mark.parametrize("field", ["webhook_hmac_secret", "write_access_token", "github_token"])
 def test_secret_fields_reject_a_too_short_secret(field):
     """OpenSSF Best Practices Badge's crypto_keylength criterion: a configured
     secret must meet a minimum length, not just "non-empty" -- empty (disabled)
