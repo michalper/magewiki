@@ -87,7 +87,7 @@ Agentic RAG over hybrid search in Postgres: an agent with tools (tool calling vi
 
 **Multi-level index**: module README (top level) → per-file summaries → code fragments (methods, XML blocks) for citation only. Chunking follows code structure, not character count. Source code for citations lives in the database; `read_file` reads from the database, not disk.
 
-**Agent tools**: `search_modules`, `get_module`, `get_dependencies`, `get_module_findings`, `find_similar_modules`, `get_module_history`, `get_module_dependency_graph`, `find_duplicate_module_pairs`, `recommend_module_cleanup`, `find_module_version_drift`, `find_by_event`, `find_by_class`, `read_file(path, lines)`, `list_modules`.
+**Agent tools**: `search_modules`, `get_module`, `get_dependencies`, `get_module_findings`, `find_similar_modules`, `get_module_history`, `get_module_dependency_graph`, `get_removal_impact`, `find_duplicate_module_pairs`, `recommend_module_cleanup`, `find_module_version_drift`, `find_by_event`, `find_by_class`, `read_file(path, lines)`, `list_modules`.
 
 **Question routing**:
 
@@ -100,6 +100,7 @@ Agentic RAG over hybrid search in Postgres: an agent with tools (tool calling vi
 | "What changed in this module recently?", "is this module getting better or worse?" | `get_module_history` (SQL over `module_history_snapshots`) |
 | "Why does this module have finding X?", "what quality issues does this module have?" | `get_module_findings` (SQL over `module_quality_findings`, with real file/line citations) |
 | "What does this module depend on, transitively?", "show the dependency graph" | `get_module_dependency_graph` (BFS over module.xml/di.xml relations) |
+| "What breaks if I remove/disable this module?", "what's the blast radius of removing X?" | `get_removal_impact` (reverse BFS over module.xml/di.xml relations, transitive; distinct from `get_dependencies`' direct-only `used_by` and from `recommend_module_cleanup`'s fleet-wide zero-incoming-edge scan) |
 | "Which modules across the fleet look like duplicates?" | `find_duplicate_module_pairs` (fleet-wide embedding cosine similarity, distinct from the per-module `find_similar_modules`) |
 | "Which modules should we deprecate, merge, or consolidate?" | `recommend_module_cleanup` (merge candidates from `find_duplicate_module_pairs`; deprecation candidates are disabled modules with zero incoming `module.xml` sequence/`di.xml` preference/plugin edges from anywhere else in the fleet — quality findings are attached as context only, never the reason a module is listed) |
 | "Is this module installed with different versions across my stores?", "do we have version drift?" | `find_module_version_drift` (modules present under 2+ `repo_root`s; drift is content-hash-based, `setup_version` shown per store for context only) |

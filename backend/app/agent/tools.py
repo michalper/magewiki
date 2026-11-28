@@ -25,6 +25,7 @@ from app.search.cleanup_candidates import (
 from app.search.hybrid import hybrid_search
 from app.search.module_overlap import find_module_overlap as _find_module_overlap
 from app.search.query_rewrite import rewrite_query
+from app.search.removal_impact import get_removal_impact as _get_removal_impact
 from app.search.rerank import rerank_results
 from app.search.similar_modules import find_duplicate_module_pairs as _find_duplicate_module_pairs
 from app.search.similar_modules import find_similar_modules as _find_similar_modules
@@ -219,6 +220,21 @@ async def get_module_dependency_graph(session: AsyncSession, module: Module, dep
         "nodes": [n.model_dump() for n in graph.nodes],
         "edges": [e.model_dump() for e in graph.edges],
         "truncated": graph.truncated,
+    }
+
+
+@_module_tool
+async def get_removal_impact(session: AsyncSession, module: Module, max_depth: int = 10) -> dict[str, Any]:
+    impact = await _get_removal_impact(session, module, max_depth=max_depth)
+    return {
+        "found": True,
+        "module_id": module.id,
+        "module_name": module.name,
+        "impacted_modules": [
+            {"module_id": e.module_id, "module_name": e.module_name, "hop": e.hop, "relation": e.relation}
+            for e in impact.entries
+        ],
+        "truncated": impact.truncated,
     }
 
 
@@ -559,6 +575,7 @@ TOOL_FUNCTIONS: dict[str, Callable[..., Awaitable[dict[str, Any]]]] = {
     "find_similar_modules": find_similar_modules,
     "get_module_history": get_module_history,
     "get_module_dependency_graph": get_module_dependency_graph,
+    "get_removal_impact": get_removal_impact,
     "find_duplicate_module_pairs": find_duplicate_module_pairs,
     "recommend_module_cleanup": recommend_module_cleanup,
     "find_module_version_drift": find_module_version_drift,
@@ -691,6 +708,32 @@ TOOL_SCHEMAS = [
                 "properties": {
                     "module_id": {"type": "integer"},
                     "depth": {"type": "integer", "description": "1-3 hops, default 1"},
+                },
+                "required": ["module_id"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "get_removal_impact",
+            "description": (
+                "For one named module: every other module that would break if it were disabled or removed -- "
+                "walks module.xml dependencies and di.xml preference/plugin relationships in REVERSE (who "
+                "points at this module), transitively up to `max_depth` hops. Use for 'what depends on X', "
+                "'what breaks if I remove/disable X', or 'what's the blast radius of removing X'. Distinct from "
+                "get_module_dependency_graph (that walks FORWARD: what this module itself depends on), from "
+                "get_dependencies (direct, one-hop only, module.xml only), and from "
+                "recommend_module_cleanup's deprecation_candidates (a fleet-wide scan for modules with ZERO "
+                "incoming edges, not one named module's full impact set). Every real dependent counts "
+                "regardless of its own enabled state. Returns found=false if the module doesn't exist; check "
+                "`truncated` -- if true, the impact set is incomplete."
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "module_id": {"type": "integer"},
+                    "max_depth": {"type": "integer", "description": "Max BFS hops, default 10"},
                 },
                 "required": ["module_id"],
             },

@@ -130,6 +130,10 @@ def _collect_sources(
         for m in result.get("modules", []):
             for s in m.get("stores", []):
                 _add(s.get("module_id"), m.get("name"))
+    elif tool_name == "get_removal_impact" and result.get("found"):
+        _add(result.get("module_id"), result.get("module_name"))
+        for r in result.get("impacted_modules", []):
+            _add(r.get("module_id"), r.get("module_name"))
 
 
 _ENUMERATION_PHRASES = (

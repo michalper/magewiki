@@ -4867,3 +4867,32 @@ of a real one (`ModuleHistorySnapshot.finding_counts` is free-form JSONB with no
 unlike `ModuleQualityFinding.check_type`), so nothing else could ever contribute to it. General
 lesson for this fleet-wide-query test family: a *delta* assertion tolerates shared global state: an
 *absence/equality* assertion needs a key nothing else can touch.
+
+**Agent tool: removal/disable impact, shipped (2026-11-28):** third item from the same
+feature-proposal pass (LLM spend dashboard #1, fleet-trend-by-category #2, both above). New
+`app/search/removal_impact.py::get_removal_impact` — a reverse-only BFS over the same three edge
+kinds `get_module_dependency_graph` (`app/api/routes/modules.py`) already walks forward. Chose a
+new, standalone function over refactoring that existing combined forward+reverse BFS into a
+shared direction-parameterized helper — that function already works, is tested, and backs a real
+route; duplicating its four "reverse_*" query blocks into a smaller function was the lower-risk
+call for a "small" feature, at the cost of the two functions' reverse-edge logic now living in two
+places (acceptable; flag if a third direction-walking consumer ever shows up, since three would be
+the point to actually extract a shared helper).
+
+Pre-existing routing ambiguity found and fixed while wiring this in: `app/agent/prompt.py` already
+had "What does X depend on / what depends on X?" routed to `get_dependencies` — but that tool only
+returns *direct*, one-hop, `module.xml`-only dependents (`used_by`), not the transitive, all-three-
+edge-kinds blast radius this new tool computes. Reworded that existing bullet to describe
+`get_dependencies` as the quick/shallow answer and added a new bullet explicitly routing "what
+breaks if I remove/disable X" / "blast radius" / "transitively depends on" questions to
+`get_removal_impact` instead — both the tool's own `TOOL_SCHEMAS` description and the `CLAUDE.md`
+routing table entry name `get_dependencies` by name as the thing *not* to reach for.
+
+One real `ruff` B023 (loop-variable-closure) finding surfaced and fixed during implementation,
+not suppressed: `observe()` was originally a nested closure defined inside the per-hop BFS loop,
+capturing that hop's own `discovered` dict by reference — correct by construction (always called
+before the next iteration redefines `discovered`), but still a real latent bug *pattern* ruff is
+right to flag on sight, since the exact same shape is a classic late-binding bug the moment a
+closure like this gets stored for use after the loop instead of being called immediately inside
+it. Fixed by moving `observe` outside the hop loop entirely and making it take `discovered` as an
+explicit parameter instead of a closure capture — same behavior, no closure left to misread later.
