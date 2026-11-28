@@ -4743,3 +4743,51 @@ committed by every other fleet-wide test in the same pytest session. The job-lev
 (`weekly_fleet_digest`'s own window is a fixed "now - 7 days", not injectable) can't use that
 trick, so it only asserts its own module is *present* in the captured digest, not that the digest
 equals exactly its own data.
+
+**Ordo fixture incident: empty local snapshot + stale `vendor/` + stale test pins (2026-11-28):**
+`backend/tests/test_real_ordo_fixture.py` had been failing locally — `MAGEWIKI_ORDO_FIXTURE_PATH`
+(`/Users/michalper/Projects/magento-ordo-test/vendor-src-sync`) turned out to be completely empty
+(no files at all), unrelated to Phase 31's own work. Root cause: nothing in either
+`magento-ordo-test` or the real `Ordo_Automation` repo (`/Users/michalper/Projects/ordo`, see that
+repo's own `.gitattributes` for the `composer` path-repo `export-ignore` rules this fixture is
+meant to mirror) automates refreshing this snapshot — it's a manual, point-in-time copy that
+simply hadn't been re-taken since the real module kept growing.
+
+Fixed in two parts, both outside this repo (the fixture directory and the real module's own
+`vendor/` aren't tracked by git here, per CLAUDE.md's "never copied into this repo" rule for this
+fixture):
+1. Re-populated the snapshot from the real repo's current `HEAD` via `git archive HEAD | tar -x`
+   (not a dirty working-tree snapshot via `git stash create` — tried that first, it picked up
+   mid-edit uncommitted changes and produced a different, less meaningful failure count).
+2. Separately `rsync`'d the real repo's own `vendor/` into the snapshot's `vendor/`, since
+   `.gitattributes` deliberately `export-ignore`s `/vendor/` for the composer-path-repo-into-a-
+   real-Magento-store use case (avoids duplicate dev-tooling class declarations there), but *this*
+   fixture's own real PHPUnit execution (CLAUDE.md's "Real PHPUnit execution" decision) needs that
+   same module's own standalone `vendor/bin/phpunit` — the two use cases want opposite things from
+   the same export-ignore rule.
+
+That surfaced a real, separate bug once PHPUnit could actually run again: the real repo's own
+`vendor/` was stale relative to its own `composer.json` (`vendor/` mtime Oct 17, `composer.json`
+mtime Nov 23 — confirmed via `git stash`/`git archive` isolation, reproducible 100% of the time,
+not flaky) — `magento/module-graph-ql` was required but never installed, so every
+`Test/Unit/Model/GraphQl/**` test failed on `UnknownTypeException: Class or interface
+"Magento\GraphQl\Model\Query\ContextInterface" does not exist` (75 failures, not the one
+documented DNS-lookup failure). Running a real `composer update` locally isn't possible without
+Magento Marketplace repo credentials this machine's Composer isn't configured with (confirmed:
+`repositories.magento` isn't declared in the module's own `composer.json`, and no global Composer
+repo config has it either — the real install path is normally `magento-ordo-test`'s own Magento
+project composer.json, which already has that repo configured, not the standalone module). Worked
+around it by copying the real Magento install's own `app/code/Magento/GraphQl` (same source, just
+checked out as `app/code/*` there instead of `vendor/magento/*`) into the module's own
+`vendor/magento/module-graph-ql/` and manually registering the `Magento\GraphQl\` PSR-4 prefix in
+the already-generated, *optimized* `vendor/composer/autoload_static.php` (confirmed this repo's
+`autoload_real.php` uses the static optimized loader, so editing `autoload_psr4.php` alone — which
+nothing reads at runtime when optimized — would have silently done nothing).
+
+Also fixed, once PHPUnit could run against the real current module: two more brittle exact-
+equality assertions in the same test file had drifted for the same "real, actively-developed
+module keeps growing" reason the file's own `EXPECTED_PLUGINS`/`EXPECTED_OBSERVERS` comment
+already named — `composer_scripts` gained `fuzz-check`, `module.xml`'s `<sequence>` gained three
+more entries, and the `BlockOverLimitCheckout` plugin's hooked method was renamed
+`beforePlaceOrder` → `aroundPlaceOrder`. Converted the first two to the same subset-check pattern
+(`<=`) already established for plugins/observers, and updated the plugin method name to match.
