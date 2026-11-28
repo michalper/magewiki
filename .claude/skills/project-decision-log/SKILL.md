@@ -4934,3 +4934,33 @@ deliberately never written to `ModuleQualityFinding` ("writes nothing to ModuleQ
 that phase's own done-criterion) — so the remediation route's real-row check would 404 every
 time. `FindingsPreviewList`'s new `moduleId` prop is optional specifically so that caller can
 keep omitting it rather than the button existing everywhere and silently failing on one page.
+
+**Cross-module conflict detection: email_templates.xml, shipped (2026-11-28):** sixth and last
+item from the same feature-proposal pass (spend dashboard #1, trend-by-category #2,
+removal-impact tool #3, remediation text #4, all above). Mirrors Phase 25's menu.xml/cache.xml
+round exactly: a new `module_email_templates` facts table, a parser, and
+`email_template_id_conflict` via the shared `detect_duplicate_id_conflict` helper (the
+`widget_id_conflict`/`menu_item_id_conflict` family — fires on ANY cross-module duplicate id),
+not the bespoke `cache_type_conflict` disagreement-only pattern — an email template's `id` is
+Magento's sole merge key, so a duplicate is always either a real conflict or a content-identical
+no-op, never a legitimate "same id, different cosmetic metadata" case the way `cache.xml`'s
+`instance` carve-out handles.
+
+One real gap in the initial plan, caught during implementation rather than before it: the plan's
+own research (an Explore agent surveying Phase 25 end to end) covered the migration/parser/
+orchestrator/conflict-check/KPI-tile/test layers but never checked whether Phase 25 had *also*
+wired `menu_items`/`cache_types` into `ModuleFacts`/`build_module_synthesis_prompt` for AI module
+synthesis — it had. Caught by directly grepping for `menu_items`/`cache_types` in
+`app/analyzer/facts.py`/`prompts.py` right after the core round was done and tested, before
+committing, rather than shipping an inconsistency where two of the three "declarative-XML facts"
+rounds feed the synthesis prompt and the newest one silently doesn't. General lesson for
+replicating an established multi-layer pattern from a single research pass: a research agent
+answers the exact questions it's asked, not "every layer this pattern might touch" — worth a
+final direct grep across the *prior* round's own full diff (or just its own file list) before
+calling a mirrored implementation complete, not just the layers the plan explicitly named.
+
+No new phase number / `docs/roadmap.md` entry / `CLAUDE.md` phase-table row for any of the six
+items in this feature-proposal pass (recorded in this decision log only) — a deliberate departure
+from the *prior* conflict-detection rounds (15/19/20/22/23/25), which did get numbered phase rows
+when they were part of the formal sequential phase plan. This pass was explicitly a "pick from a
+proposal list, implement one at a time" exercise, not phase planning, so it stays its own track.
