@@ -12,6 +12,10 @@ class FileSummary(BaseModel):
     notable_behavior: str | None = Field(None, max_length=500)
 
 
+class RemediationText(BaseModel):
+    remediation: str = Field(..., min_length=1, max_length=600)
+
+
 class Feature(BaseModel):
     name: str
     description: str

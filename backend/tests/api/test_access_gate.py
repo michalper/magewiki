@@ -143,6 +143,19 @@ async def test_scan_stream_rejects_missing_token(demo_store_path: Path):
 
 
 @pytest.mark.asyncio
+async def test_remediation_rejects_missing_token():
+    # The write-access dependency runs before the handler body, so this 401s
+    # before ever touching the DB -- no real module/finding needed.
+    transport = ASGITransport(app=app)
+    async with AsyncClient(transport=transport, base_url="http://test") as client:
+        response = await client.post(
+            "/modules/1/findings/remediation",
+            json={"check_type": "hardcoded_secret", "file_path": "x.php", "line": 1, "message": "msg"},
+        )
+    assert response.status_code == 401
+
+
+@pytest.mark.asyncio
 async def test_modules_list_stays_open_without_a_token():
     # Read-only browsing of the catalog must not require the gate -- the
     # whole point of the public demo is that visitors can browse freely.

@@ -569,7 +569,7 @@ class AnalysisCache(Base):
         # source), but had already drifted out of sync once (missing 'rerank')
         # before this comment was added.
         CheckConstraint(
-            "kind IN ('file_summary','module_synthesis','embedding','chat','rerank','query_rewrite')",
+            "kind IN ('file_summary','module_synthesis','embedding','chat','rerank','query_rewrite','remediation')",
             name="ck_analysis_cache_kind",
         ),
     )

@@ -7,6 +7,7 @@ EMBEDDING_PROMPT_VERSION = "embedding_v1"
 CHAT_PROMPT_VERSION = "chat_v1"
 RERANK_PROMPT_VERSION = "rerank_v1"
 QUERY_REWRITE_PROMPT_VERSION = "query_rewrite_v1"
+REMEDIATION_PROMPT_VERSION = "remediation_v1"
 
 MAX_FILE_CONTENT_CHARS = 50_000
 # Reranking sees many candidates at once (vs. one file per analyze_file call) --
@@ -61,6 +62,31 @@ def build_query_rewrite_prompt(query: str) -> str:
         "for. If the query is already clear and specific, return it unchanged.\n\n"
         f"Original query: {query}\n\n"
         "Return only the rewritten query."
+    )
+
+
+def build_remediation_prompt(
+    module_name: str, check_type: str, severity: str, file_path: str | None, line: int | None, message: str
+) -> str:
+    """Grounded in exactly one ModuleQualityFinding's own fields, nothing
+    else -- no other findings, no other modules, no broader codebase
+    context. Same "using ONLY the facts given, never invent" instruction
+    style as build_module_synthesis_prompt/build_query_rewrite_prompt above.
+    """
+    location = f"{file_path}:{line}" if file_path and line else (file_path or "unknown location")
+    return (
+        "You are explaining one automated code-quality finding from a Magento 2 module scanner "
+        "to a developer. Using ONLY the check_type, severity, file, and message given below -- "
+        "never invent additional facts about this finding, the file's actual contents, or the "
+        "module not stated here -- write one short paragraph (2-4 sentences): what this finding "
+        "means in plain language, and the concrete next step to fix it. If the message alone "
+        "isn't enough to give a specific fix, say what general category of fix this check_type "
+        "usually needs rather than guessing a specific one.\n\n"
+        f"Module: {module_name}\n"
+        f"check_type: {check_type}\n"
+        f"severity: {severity}\n"
+        f"Location: {location}\n"
+        f"Message: {message}"
     )
 
 

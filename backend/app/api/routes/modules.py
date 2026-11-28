@@ -15,6 +15,7 @@ from sqlalchemy.orm import selectinload
 
 from app.analyzer.facts import gather_module_facts
 from app.analyzer.readme import render_readme_markdown
+from app.analyzer.remediation import get_or_create_remediation
 from app.analyzer.schemas import ModuleDoc
 from app.api.auth import require_write_access
 from app.api.sse import format_sse
@@ -966,6 +967,62 @@ async def list_findings_by_path(
     modules.sort(key=lambda m: m.name)
 
     return FindingsByPathResponse(modules=modules, unmatched_paths=unmatched_paths)
+
+
+class RemediationRequest(BaseModel):
+    check_type: str
+    file_path: str | None = None
+    line: int | None = None
+    message: str
+
+
+class RemediationResponse(BaseModel):
+    remediation: str
+
+
+@router.post(
+    "/modules/{module_id}/findings/remediation",
+    response_model=RemediationResponse,
+    dependencies=[Depends(require_write_access)],
+)
+async def get_finding_remediation(
+    module_id: int,
+    body: RemediationRequest,
+    session: AsyncSession = Depends(get_session),
+) -> RemediationResponse:
+    """A short, cached, budget-gated AI explanation of one real finding --
+    write-gated like POST /chat and PATCH /settings/llm (Phase 24), since
+    this is a real, billable LLM call. `body`'s fields are matched against
+    an actual ModuleQualityFinding row for this module (404 if none match)
+    both to stop a caller fabricating a finding and to use that row's own
+    `severity` rather than trusting one from the request.
+    """
+    module = await session.get(Module, module_id)
+    if module is None:
+        raise HTTPException(status_code=404, detail="module not found")
+
+    finding = await session.scalar(
+        select(ModuleQualityFinding).where(
+            ModuleQualityFinding.module_id == module_id,
+            ModuleQualityFinding.check_type == body.check_type,
+            ModuleQualityFinding.file_path == body.file_path,
+            ModuleQualityFinding.line == body.line,
+            ModuleQualityFinding.message == body.message,
+        )
+    )
+    if finding is None:
+        raise HTTPException(status_code=404, detail="no matching finding for this module")
+
+    if not settings.remediation_enabled:
+        raise HTTPException(status_code=403, detail="remediation text is disabled")
+
+    remediation = await get_or_create_remediation(
+        session, module.name, finding.check_type, finding.severity, finding.file_path, finding.line, finding.message
+    )
+    if remediation is None:
+        raise HTTPException(status_code=503, detail="Monthly LLM budget exceeded — cannot generate remediation text right now.")
+
+    return RemediationResponse(remediation=remediation)
 
 
 @router.get("/modules/{module_id}", response_model=ModuleDetail)

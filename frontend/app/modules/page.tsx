@@ -332,6 +332,7 @@ function ModuleRow({
                   <FindingsPreviewList
                     findings={detailQuery.data.quality_findings}
                     limit={PREVIEW_FINDING_COUNT}
+                    moduleId={module.id}
                     footer={
                       <Link href={`/modules/${module.id}`} className="text-sm text-primary hover:underline">
                         View all {detailQuery.data.quality_findings.length} findings →
