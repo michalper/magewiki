@@ -8,7 +8,12 @@ def test_worker_settings_registers_every_job_function():
 
 def test_worker_settings_registers_every_cron_job():
     names = {cj.coroutine.__name__ for cj in WorkerSettings.cron_jobs}
-    assert names == {"nightly_scan_all", "refresh_magento_release_cache", "prune_module_history"}
+    assert names == {
+        "nightly_scan_all",
+        "refresh_magento_release_cache",
+        "prune_module_history",
+        "weekly_fleet_digest",
+    }
 
 
 def test_worker_settings_has_redis_settings_and_a_retry_limit():

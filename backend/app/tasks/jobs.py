@@ -32,6 +32,7 @@ from app.analyzer.prompts import (
 )
 from app.analyzer.schemas import ModuleDoc
 from app.analyzer.tags import derive_parser_tags, filter_tags, merge_tags
+from app.config import settings
 from app.db import async_session_factory
 from app.models import (
     AnalysisCache,
@@ -49,6 +50,7 @@ from app.runtime_config import (
     resolve_llm_config,
     resolve_synthesis_llm_config,
 )
+from app.scanner.digest import send_fleet_digest
 from app.scanner.discovery import is_safe_to_read
 from app.scanner.magento_github import (
     fetch_release_component_versions,
@@ -56,6 +58,7 @@ from app.scanner.magento_github import (
     resolve_latest_release,
 )
 from app.scanner.orchestrator import ScanAlreadyInProgressError, scan_repository
+from app.search.fleet_digest import get_fleet_digest
 from app.tasks.queue import get_arq_pool
 
 logger = logging.getLogger(__name__)
@@ -503,3 +506,15 @@ async def prune_module_history(ctx: dict[str, Any]) -> None:
             )
         )
         await session.commit()
+
+
+async def weekly_fleet_digest(ctx: dict[str, Any]) -> None:
+    """Weekly cron (Phase 31): a fleet-wide status POST over the last 7
+    days of module_history_snapshots, read-only (no commit) -- contrast with
+    app/scanner/alerts.py's send_quality_alert, which fires per-scan on a
+    threshold crossing. This fires every Monday regardless of whether
+    anything changed, since it's a heartbeat, not an alarm.
+    """
+    async with async_session_factory() as session:
+        digest = await get_fleet_digest(session, datetime.now(UTC) - timedelta(days=7))
+    await send_fleet_digest(settings.digest_webhook_url, digest)

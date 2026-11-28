@@ -4721,3 +4721,25 @@ alert-webhook mechanism on a schedule instead of a threshold crossing, computed 
 `module_history_snapshots`) was fully designed in plan mode but not implemented — the user asked
 to park it in `docs/roadmap.md` instead of building it immediately. See that file's Phase 31
 entry for the design summary if resuming this later.
+
+**Phase 31, shipped (2026-11-28):** picked back up and built as designed above. One deliberate
+behavioral choice made explicit during implementation: unlike Phase 18's `send_quality_alert`
+(which no-ops when there's nothing alert-worthy, to avoid spamming on every scan),
+`send_fleet_digest` always POSTs on its weekly schedule, including a "no changes this week"
+message — the point of a digest is a regular heartbeat, not a threshold alarm, so a quiet week is
+still worth confirming rather than going silent. A second subtlety found while writing
+`get_fleet_digest` (`app/search/fleet_digest.py`): a module whose very first-ever snapshot falls
+inside the digest window must be reported only in `new_modules`, not *also* in `changed_modules`
+as a 0→N "change" — caught by a failing test, since the two categories are meant to be disjoint
+(a test asserting a newly-scanned module excluded from `changed_modules` failed until the
+aggregation explicitly excluded `first_seen_in_window` module_ids from the changed-modules pass).
+Tests for the fleet-wide query (`tests/search/test_fleet_digest.py`) follow the same isolation
+discipline Phase 21/30's `tests/search/test_fleet_trend.py` already established: `db_session`
+never rolls back between tests in this suite, so a query with no `repo_root` filter needs each
+test to anchor its own window at a distinct, far-future, uuid-salted timestamp (no other test in
+the suite could ever plant a snapshot there) and to delete its own `Module` rows afterward — a
+fixed calendar date or a bare `now()`-relative window would otherwise pick up unrelated modules
+committed by every other fleet-wide test in the same pytest session. The job-level test
+(`weekly_fleet_digest`'s own window is a fixed "now - 7 days", not injectable) can't use that
+trick, so it only asserts its own module is *present* in the captured digest, not that the digest
+equals exactly its own data.
