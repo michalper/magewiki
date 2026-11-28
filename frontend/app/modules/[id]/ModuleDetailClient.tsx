@@ -675,6 +675,7 @@ export default function ModuleDetailClient({ id }: { id: string }) {
               <FindingsPreviewList
                 findings={moduleQuery.data.quality_findings}
                 limit={PREVIEW_FINDING_COUNT}
+                moduleId={id}
                 footer={
                   <p className="text-sm text-muted-foreground mt-2">
                     +{moduleQuery.data.quality_findings.length - PREVIEW_FINDING_COUNT} more — use &ldquo;Export

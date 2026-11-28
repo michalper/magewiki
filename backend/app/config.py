@@ -74,6 +74,13 @@ class Settings(BaseSettings):
     # riding on rerank_enabled. Same reasoning, same default: off until an
     # operator deliberately opts in.
     query_rewrite_enabled: bool = False
+    # A real per-finding LLM cost, same reasoning as rerank_enabled/
+    # query_rewrite_enabled above: off by default so an operator opts in
+    # deliberately against LLM_MONTHLY_BUDGET_USD, rather than every click
+    # of a module page's "Explain this" button silently costing money. Its
+    # own flag, not riding on either of the two above -- a third,
+    # independent per-click cost decision.
+    remediation_enabled: bool = False
     # Phase 18: a plain webhook POST (not a Slack SDK, not SMTP) fired once
     # per scan_repository run when an alert-worthy check_type's count goes
     # up for any module -- the operator points this at whatever they

@@ -4896,3 +4896,41 @@ right to flag on sight, since the exact same shape is a classic late-binding bug
 closure like this gets stored for use after the loop instead of being called immediately inside
 it. Fixed by moving `observe` outside the hop loop entirely and making it take `discovered` as an
 explicit parameter instead of a closure capture — same behavior, no closure left to misread later.
+
+**AI-grounded remediation text, shipped (2026-11-28):** fifth item from the same feature-proposal
+pass (spend dashboard #1, fleet-trend-by-category #2, removal-impact tool #3, all above). The
+design question this one turned on: `ModuleQualityFinding` has no stable identity across
+rescans — `app/scanner/orchestrator.py` deletes and reinserts every finding fresh each scan, and
+the row's `id` was never even exposed to the frontend (`QualityFindingResponse` has no `id`
+field) — so a remediation cache keys off a content hash of the finding's own
+`(check_type, file_path, line, message)` tuple, the real `lookup_cache`/`get_or_create_cache_entry`
+pattern (`app/analyzer/embeddings.py`'s `hash_text(query)`-keyed cache is the precedent), not
+rerank/query_rewrite's `AnalysisCache` rows (those write a brand-new row per call with a random
+`uuid.uuid4()` content_hash purely to log spend for the budget tracker — never looked up again,
+not a real cache despite living in the same table).
+
+That same missing-identity fact also decided *when* this runs: on-demand (one new
+write-gated `POST /modules/{id}/findings/remediation`, mirroring Phase 24's gate on `/chat`/
+`/scan`/`PATCH /settings/llm`), not computed in bulk during `scan_repository` — nothing in that
+scan loop calls an LLM today, and batch-precomputing a remediation for every finding on every
+scan would be real, uncapped-by-user-intent spend across a whole fleet's findings, not a budget
+decision an operator actually made per click. The route verifies the request body's
+`(check_type, file_path, line, message)` against a real row for that `module_id` first (404
+otherwise) — both an anti-fabrication check and the source of the row's own `severity`, never
+trusted from the request.
+
+Reused `app/analyzer/client.py`'s private `_call_llm`/retry-on-validation-failure machinery
+directly (an underscore-prefixed, same-package import, same as `tools.py` already does across
+package boundaries into `app/search/`) rather than duplicating the forced-tool-use-with-retry
+logic a third time. No Pydantic cross-reference validator was added for the output (unlike
+`ModuleDoc`'s "every feature's `source` must be a known file" check) — there's no structured fact
+list to validate free-text advice against, so grounding relies on the prompt's own "using ONLY
+the fields given, never invent" instruction, same reliance `build_query_rewrite_prompt` already
+has for its own "never add a constraint/fact" rule.
+
+On the frontend, the one place this *doesn't* show the new "Explain" button:
+`app/repos/upgrade-impact/UpgradeImpactClient.tsx`'s predicted findings (Phase 27) were
+deliberately never written to `ModuleQualityFinding` ("writes nothing to ModuleQualityFinding" is
+that phase's own done-criterion) — so the remediation route's real-row check would 404 every
+time. `FindingsPreviewList`'s new `moduleId` prop is optional specifically so that caller can
+keep omitting it rather than the button existing everywhere and silently failing on one page.

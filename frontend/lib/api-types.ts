@@ -271,6 +271,31 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/modules/{module_id}/findings/remediation": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Get Finding Remediation
+         * @description A short, cached, budget-gated AI explanation of one real finding --
+         *     write-gated like POST /chat and PATCH /settings/llm (Phase 24), since
+         *     this is a real, billable LLM call. `body`'s fields are matched against
+         *     an actual ModuleQualityFinding row for this module (404 if none match)
+         *     both to stop a caller fabricating a finding and to use that row's own
+         *     `severity` rather than trusting one from the request.
+         */
+        post: operations["get_finding_remediation_modules__module_id__findings_remediation_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/modules/{module_id}": {
         parameters: {
             query?: never;
@@ -1215,6 +1240,22 @@ export interface components {
             /** Handler Method */
             handler_method: string | null;
         };
+        /** RemediationRequest */
+        RemediationRequest: {
+            /** Check Type */
+            check_type: string;
+            /** File Path */
+            file_path?: string | null;
+            /** Line */
+            line?: number | null;
+            /** Message */
+            message: string;
+        };
+        /** RemediationResponse */
+        RemediationResponse: {
+            /** Remediation */
+            remediation: string;
+        };
         /**
          * RepoSummary
          * @description Phase 11: aggregate health across every repo MageWiki has scanned.
@@ -1695,6 +1736,41 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["FindingsByPathResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_finding_remediation_modules__module_id__findings_remediation_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                module_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["RemediationRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RemediationResponse"];
                 };
             };
             /** @description Validation Error */
