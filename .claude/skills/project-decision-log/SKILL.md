@@ -4964,3 +4964,42 @@ items in this feature-proposal pass (recorded in this decision log only) — a d
 from the *prior* conflict-detection rounds (15/19/20/22/23/25), which did get numbered phase rows
 when they were part of the formal sequential phase plan. This pass was explicitly a "pick from a
 proposal list, implement one at a time" exercise, not phase planning, so it stays its own track.
+
+**GitHub token support, shipped (2026-11-28):** sixth and last item from the same
+feature-proposal pass — all six now shipped (spend dashboard #1/PR #84, trend-by-category #2/
+PR #85, removal-impact tool #3/PR #86, remediation text #4/PR #87, email_templates.xml conflict
+#5/PR #88, this one #6/PR #90). The one real design decision: deliberately did **not** give this
+the same BYOK-via-UI treatment as the LLM key (`RuntimeLlmConfig`, `PATCH /settings/llm`) despite
+the proposal's own "BYOK-style" phrasing — that treatment exists for a specific multi-tenant need
+(a public-demo visitor configuring their own model/key at runtime without a redeploy) that a
+GitHub token simply doesn't have. A GitHub token is a single self-hosted operator's own one-time
+"raise my rate limit from 60 to 5000 req/hour" choice, so it's a plain `settings.github_token`
+field — same shape, same `_MIN_SECRET_LENGTH` validator, same "empty disables it" convention as
+`webhook_hmac_secret`/`write_access_token`. Building a new runtime-patchable table + PATCH route
++ Settings-page UI for one rate-limit knob would have been real scope creep against this item's
+own "medium" rating in the proposal.
+
+Because it's a plain module-level `Settings` singleton rather than a per-request DB-resolved
+config, no call site needed touching at all — `app/scanner/magento_github.py`'s own two httpx
+call sites read `settings.github_token` directly via a small `_headers()` helper, so
+`app/scanner/magento_upgrade.py`, `app/api/routes/modules.py` (Phase 27's upgrade-impact route),
+and `app/tasks/jobs.py` (the daily `refresh_magento_release_cache` cron) — every current caller —
+needed zero changes. Sent uniformly to both `api.github.com` (where the real 60/5000 rate-limit
+pressure is) and `raw.githubusercontent.com` (a CDN not really subject to the same limit) for
+simplicity rather than conditionally deciding per host — harmless either way.
+
+Testing gap found in the existing suite while adding "does this call send the right header" tests:
+`test_magento_github.py`'s hand-rolled `_FakeAsyncClient` had always silently discarded the real
+`httpx.AsyncClient(timeout=..., headers=...)` constructor kwargs (`__init__(self, responses, *args,
+**kwargs)` never stored them), and every existing monkeypatch wired it in via a `lambda *a, **k:
+_FakeAsyncClient({...})` that *also* dropped `**k` on the floor before the fake client even saw
+it — so no existing test could ever have asserted on headers even if one had tried. Fixed by
+capturing `kwargs` on the fake client and adding a small `_capturing_client_factory` helper that
+forwards the real kwargs through and records every instance created, reusable for both call
+sites' new header assertions.
+
+Explicitly out of scope here, confirmed deliberately: "core-hack detection" (checking a store's
+locally-patched core Magento modules against the real `magento/magento2` monorepo) stays parked
+exactly as Phase 31 left it — this phase only removes the GitHub-rate-limit blocker that note
+named, it doesn't build the feature itself. That remains a separate, not-yet-scoped idea for a
+future session.
