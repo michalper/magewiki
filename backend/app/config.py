@@ -85,6 +85,11 @@ class Settings(BaseSettings):
     # not routine PHPStan/PHPMD churn, which would make this noisy enough
     # to ignore. An operator can widen or narrow this list freely.
     alert_check_types: str = "hardcoded_secret,security_advisory"
+    # Phase 31: a weekly (not threshold-crossing) fleet-wide status POST,
+    # reusing the same plain-webhook convention as alert_webhook_url. Unlike
+    # the alert, this fires every week on schedule regardless of whether
+    # anything changed -- it's a heartbeat, not an alarm. Empty disables it.
+    digest_webhook_url: str = ""
 
     @field_validator("webhook_hmac_secret", "write_access_token")
     @classmethod

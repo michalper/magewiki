@@ -14,6 +14,7 @@ from app.tasks.jobs import (
     refresh_magento_release_cache,
     scan_repository_job,
     synthesize_module,
+    weekly_fleet_digest,
 )
 
 
@@ -26,6 +27,7 @@ class WorkerSettings:
         cron(nightly_scan_all, hour=3, minute=0),
         cron(refresh_magento_release_cache, hour=2, minute=30),
         cron(prune_module_history, hour=4, minute=0),
+        cron(weekly_fleet_digest, weekday="mon", hour=7, minute=0),
     ]
     redis_settings = RedisSettings.from_dsn(settings.redis_url)
     max_tries = 5
