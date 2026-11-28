@@ -15,13 +15,13 @@ class BudgetExceededError(RuntimeError):
     instead of raising)."""
 
 
-def _current_utc_month_start() -> datetime:
+def current_utc_month_start() -> datetime:
     now = datetime.now(UTC)
     return now.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
 
 
 async def get_monthly_spend_usd(session: AsyncSession) -> Decimal:
-    month_start = _current_utc_month_start()
+    month_start = current_utc_month_start()
     raw_spent = await session.scalar(
         select(func.coalesce(func.sum(AnalysisCache.cost_usd), 0)).where(
             AnalysisCache.created_at >= month_start

@@ -53,6 +53,22 @@ test("the fleet-trend chart renders real history from the seeded scan, not its e
   ).not.toBeVisible();
 });
 
+test("the LLM spend section renders end to end against the real endpoint", async ({ page }) => {
+  // Deliberately doesn't assert empty-vs-non-empty: global-setup.ts's scan
+  // is parser-only (no LLM key in e2e), so analysis_cache gets no rows from
+  // *this* scan -- but this month's total also reflects whatever other
+  // real LLM activity already happened against this deployment's DB this
+  // calendar month (unlike module_history_snapshots, analysis_cache isn't
+  // scoped to one fixture repo_root), so either real state is correct here.
+  // The vitest unit tests already cover both the empty and non-empty render
+  // paths deterministically; this just proves the section is wired to the
+  // real /settings/llm/spend-trend endpoint without erroring.
+  await page.goto("/stats");
+
+  await expect(page.getByText("LLM spend this month, by kind")).toBeVisible();
+  await expect(page.getByText("Failed to load LLM spend.")).not.toBeVisible();
+});
+
 test("a KPI tile's info tooltip reveals its real description on hover", async ({ page }) => {
   await page.goto("/stats");
 

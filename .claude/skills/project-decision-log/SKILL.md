@@ -4791,3 +4791,51 @@ already named — `composer_scripts` gained `fuzz-check`, `module.xml`'s `<seque
 more entries, and the `BlockOverLimitCheckout` plugin's hooked method was renamed
 `beforePlaceOrder` → `aroundPlaceOrder`. Converted the first two to the same subset-check pattern
 (`<=`) already established for plugins/observers, and updated the plugin method name to match.
+
+**LLM spend-over-time dashboard, shipped (2026-11-28):** not a numbered phase -- picked as the top
+pick from a feature-proposal pass run right after Phase 31 (the roadmap's last open item) shipped.
+New `GET /settings/llm/spend-trend` (in `app/api/routes/llm_settings.py`, not `metrics.py` --
+`metrics.py` is specifically the Prometheus text-exposition endpoint, and this file already owns
+the LLM-settings/budget surface) backed by `app/search/llm_spend_trend.py`, grouping
+`analysis_cache.cost_usd` by day + `kind` for the current UTC month. Renamed `budget.py`'s private
+`_current_utc_month_start` to a public `current_utc_month_start` rather than redefining the month
+boundary in the new module -- one definition of "this month" for both the budget check and the
+trend. Scoped to the current month only (not all-time): `analysis_cache` is never pruned, and this
+is explicitly framed as "this month's burn-down" against `LLM_MONTHLY_BUDGET_USD`, not a history
+view, so bounding the query also keeps it cheap as the ledger grows.
+
+Frontend: a new "LLM spend this month" section on the Stats page reusing existing visual language
+rather than inventing new chart styles -- the existing `ProgressRing` component as-is (same one
+used for README/tests/AI-doc coverage) for "% of budget used," colored by threshold
+(good/warning/critical), plus a new stacked-bar-by-kind chart structurally identical to the
+existing `FleetTrendChart`. Two Recharts formatter callbacks (`YAxis`'s `tickFormatter`, `Tooltip`'s
+`formatter`) were extracted into named, exported functions (`formatSpendAxisTick`/
+`formatSpendTooltip`) purely to reach 100% coverage -- same reason `formatMobileAxisTick` already
+exists as its own export: jsdom's `ResponsiveContainer` never gets real layout, so Recharts never
+actually invokes an inline callback in a test.
+
+Two test-isolation findings, both solved by following existing precedent rather than inventing new
+patterns: (1) `analysis_cache` is a real, unscoped, ever-growing ledger every other backend test
+also writes to in "this real month" -- mirrored `tests/analyzer/test_budget.py`'s own delta-based
+assertion style (a day+kind bucket's total *increased by* this test's own inserted amount) rather
+than asserting an absolute count. (2) The Playwright e2e test for this section can't assert
+empty-vs-non-empty state the way the fleet-trend-chart e2e test asserts "real, non-empty" history:
+unlike `module_history_snapshots` (scoped to one fixture `repo_root`), `analysis_cache` isn't
+scoped to a single scan at all, so "this month's total spend" on a shared dev/CI database reflects
+*all* LLM activity against that database this month, not just the e2e fixture's own (parser-only,
+LLM-free) scan. Confirmed directly: locally, against this author's long-lived dev database, the
+real total was non-zero, so an "assert the empty copy" e2e test failed -- not a bug, just a
+reflection of a non-fresh local DB (CI's Postgres service container starts fresh each run, so the
+original assertion would have passed there). Rewrote the e2e test to only assert the section
+renders against the real endpoint without erroring, leaving the actual empty-vs-non-empty render
+logic to the already-deterministic vitest unit tests.
+
+Also confirmed, while verifying this: a narrower `tests/search/ tests/analyzer/ tests/api/`
+selection reproduces 5 pre-existing failures in `tests/api/test_llm_settings_api.py`
+(`modules_queued_for_reembed` expects 1, gets 22 -- some earlier-collected test in that selection
+leaves extra `up_to_date` Module rows that query counts globally) that do **not** reproduce when
+running the full suite or `test_llm_settings_api.py` alone -- a pre-existing, collection-order-
+sensitive test-isolation gap, unrelated to this change (reproduced identically on a clean checkout
+via `git stash -u`). Not fixed here; flagged in case it resurfaces. The full suite (995 tests, the
+991 pre-existing plus 4 new) passes cleanly except the already-known, environment-specific
+`test_env_example.py` container-mount-path failures.
