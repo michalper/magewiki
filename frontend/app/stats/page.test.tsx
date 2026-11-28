@@ -6,6 +6,7 @@ import StatsPage, {
   formatMobileAxisTick,
   formatSpendAxisTick,
   formatSpendTooltip,
+  groupFleetTrendByCategory,
   pivotSpendByDay,
   truncateLabelTail,
 } from "./page";
@@ -60,6 +61,35 @@ describe("truncateLabelTail", () => {
 describe("formatMobileAxisTick", () => {
   it("delegates to truncateLabelTail with the mobile label budget", () => {
     expect(formatMobileAxisTick("Vendor_VeryLongModuleName")).toBe("…ModuleName");
+  });
+});
+
+describe("groupFleetTrendByCategory", () => {
+  it("folds check_types into their curated KPI_TILES category", () => {
+    const { rows, categories } = groupFleetTrendByCategory([
+      { scanned_at: "2026-01-01T00:00:00Z", total_findings: 5, counts: { hardcoded_secret: 3, phpstan_error: 2 } },
+    ]);
+
+    expect(categories).toEqual(expect.arrayContaining(["Hardcoded secrets", "PHP static-analysis findings"]));
+    expect(rows[0]["Hardcoded secrets"]).toBe(3);
+    expect(rows[0]["PHP static-analysis findings"]).toBe(2);
+  });
+
+  it("drops a category that is 0 across every point", () => {
+    const { categories } = groupFleetTrendByCategory([
+      { scanned_at: "2026-01-01T00:00:00Z", total_findings: 3, counts: { hardcoded_secret: 3 } },
+      { scanned_at: "2026-02-01T00:00:00Z", total_findings: 1, counts: { hardcoded_secret: 1 } },
+    ]);
+
+    expect(categories).not.toContain("Known vulnerabilities");
+  });
+
+  it("gives each row a human-readable date label", () => {
+    const { rows } = groupFleetTrendByCategory([
+      { scanned_at: "2026-01-01T00:00:00Z", total_findings: 1, counts: { hardcoded_secret: 1 } },
+    ]);
+
+    expect(rows[0].label).toBe(new Date("2026-01-01T00:00:00Z").toLocaleDateString());
   });
 });
 
@@ -293,8 +323,12 @@ describe("StatsPage", () => {
       if (path === "/modules") return { total: 1, modules: [mod()] };
       if (path === "/settings/llm/spend-trend") return EMPTY_LLM_SPEND;
       return [
-        { scanned_at: "2026-01-01T00:00:00Z", total_findings: 3 },
-        { scanned_at: "2026-02-01T00:00:00Z", total_findings: 5 },
+        { scanned_at: "2026-01-01T00:00:00Z", total_findings: 3, counts: { hardcoded_secret: 3 } },
+        {
+          scanned_at: "2026-02-01T00:00:00Z",
+          total_findings: 5,
+          counts: { hardcoded_secret: 3, phpstan_error: 2 },
+        },
       ];
     });
     renderWithQueryClient(<StatsPage />);
@@ -305,6 +339,46 @@ describe("StatsPage", () => {
     expect(
       screen.queryByText("No history yet — this fills in once a rescan changes something for at least one module."),
     ).not.toBeInTheDocument();
+  });
+
+  it("shows the category-trend chart's empty state when there is no history yet", async () => {
+    mockModules([mod()]);
+    renderWithQueryClient(<StatsPage />);
+
+    await waitFor(() => expect(screen.getByText("Findings trend by category")).toBeInTheDocument());
+    expect(
+      screen.getByText(
+        "No category history yet — this fills in once a rescan changes something for at least one module.",
+      ),
+    ).toBeInTheDocument();
+  });
+
+  it("renders the category-trend chart with real categories when history points exist", async () => {
+    fetchMock.mockImplementation(async (path: string) => {
+      if (path === "/modules") return { total: 1, modules: [mod()] };
+      if (path === "/settings/llm/spend-trend") return EMPTY_LLM_SPEND;
+      return [{ scanned_at: "2026-01-01T00:00:00Z", total_findings: 3, counts: { hardcoded_secret: 3 } }];
+    });
+    renderWithQueryClient(<StatsPage />);
+
+    await waitFor(() => expect(screen.getByText("Findings trend by category")).toBeInTheDocument());
+    expect(
+      screen.queryByText(
+        "No category history yet — this fills in once a rescan changes something for at least one module.",
+      ),
+    ).not.toBeInTheDocument();
+    expect(screen.queryByText("No findings in any category yet.")).not.toBeInTheDocument();
+  });
+
+  it("shows a distinct empty state when history exists but no category has any findings", async () => {
+    fetchMock.mockImplementation(async (path: string) => {
+      if (path === "/modules") return { total: 1, modules: [mod()] };
+      if (path === "/settings/llm/spend-trend") return EMPTY_LLM_SPEND;
+      return [{ scanned_at: "2026-01-01T00:00:00Z", total_findings: 0, counts: {} }];
+    });
+    renderWithQueryClient(<StatsPage />);
+
+    await waitFor(() => expect(screen.getByText("No findings in any category yet.")).toBeInTheDocument());
   });
 
   it("still renders the top-findings chart section on a narrow (mobile) viewport", async () => {

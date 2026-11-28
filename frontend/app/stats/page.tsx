@@ -5,6 +5,8 @@ import Link from "next/link";
 import { useQuery } from "@tanstack/react-query";
 import { Info } from "lucide-react";
 import {
+  Area,
+  AreaChart,
   Bar,
   BarChart,
   CartesianGrid,
@@ -320,6 +322,97 @@ function FleetTrendChart({ points }: { points: FleetTrendPoint[] }) {
   );
 }
 
+const OTHER_CATEGORY_LABEL = "Other";
+
+function categoryTotal(counts: Record<string, number>, checkTypes: string[]): number {
+  return checkTypes.reduce((sum, ct) => sum + (counts[ct] ?? 0), 0);
+}
+
+// Named/exported so it's directly unit-testable without going through
+// Recharts (same reasoning as pivotSpendByDay below). Folds each point's raw
+// per-check_type counts into lib/kpi-tiles.ts's already-curated KPI_TILES
+// categories (plus one "Other" bucket for anything FALLBACK_CHECK_TYPES
+// still doesn't have a tile for) instead of a raw, noisy per-check_type
+// series -- the same category language the KPI tile grid above already
+// uses. Categories that are 0 across the whole series are dropped, same
+// filtering spirit as TopFindingsBar's own `.filter(d => d.total > 0)`.
+export function groupFleetTrendByCategory(points: FleetTrendPoint[]): {
+  rows: Record<string, number | string>[];
+  categories: string[];
+} {
+  const categoryDefs = [
+    ...KPI_TILES.map((tile) => ({ label: tile.label, checkTypes: tile.checkTypes })),
+    { label: OTHER_CATEGORY_LABEL, checkTypes: FALLBACK_CHECK_TYPES },
+  ];
+
+  const rows = points.map((p) => {
+    const row: Record<string, number | string> = { label: new Date(p.scanned_at).toLocaleDateString() };
+    for (const def of categoryDefs) {
+      row[def.label] = categoryTotal(p.counts, def.checkTypes);
+    }
+    return row;
+  });
+
+  const categories = categoryDefs
+    .map((def) => def.label)
+    .filter((label) => rows.some((row) => Number(row[label]) > 0));
+
+  return { rows, categories };
+}
+
+function FleetTrendByCategoryChart({ points }: { points: FleetTrendPoint[] }) {
+  const palette = useChartPalette();
+
+  if (points.length === 0) {
+    return (
+      <div className="rounded-2xl bg-card p-5 shadow-sm">
+        <h3 className="text-sm font-medium mb-2 text-muted-foreground">Findings trend by category</h3>
+        <p className="text-sm text-muted-foreground">
+          No category history yet — this fills in once a rescan changes something for at least one module.
+        </p>
+      </div>
+    );
+  }
+
+  const { rows, categories } = groupFleetTrendByCategory(points);
+
+  if (categories.length === 0) {
+    return (
+      <div className="rounded-2xl bg-card p-5 shadow-sm">
+        <h3 className="text-sm font-medium mb-2 text-muted-foreground">Findings trend by category</h3>
+        <p className="text-sm text-muted-foreground">No findings in any category yet.</p>
+      </div>
+    );
+  }
+
+  return (
+    <div className="rounded-2xl bg-card p-5 shadow-sm">
+      <h3 className="text-sm font-medium mb-2 text-muted-foreground">Findings trend by category</h3>
+      <p className="text-xs text-muted-foreground mb-2">
+        Which category is driving the fleet-wide total up or down
+      </p>
+      <ResponsiveContainer width="100%" height={240}>
+        <AreaChart data={rows} margin={{ left: 0, right: 16, top: 8, bottom: 0 }}>
+          <CartesianGrid stroke={palette.ink.gridline} />
+          <XAxis dataKey="label" tick={{ fill: palette.ink.muted, fontSize: 12 }} />
+          <YAxis allowDecimals={false} tick={{ fill: palette.ink.muted, fontSize: 12 }} />
+          <Tooltip />
+          {categories.map((category, i) => (
+            <Area
+              key={category}
+              dataKey={category}
+              name={category}
+              stackId="trend"
+              stroke={palette.categorical[i % palette.categorical.length]}
+              fill={palette.categorical[i % palette.categorical.length]}
+            />
+          ))}
+        </AreaChart>
+      </ResponsiveContainer>
+    </div>
+  );
+}
+
 type LlmSpendPoint = LlmSpendTrend["points"][number];
 
 // Named/exported so it's directly unit-testable without going through
@@ -510,7 +603,10 @@ export default function StatsPage() {
           {fleetTrendQuery.isError ? (
             <p className="text-destructive">Failed to load the fleet history trend.</p>
           ) : (
-            <FleetTrendChart points={fleetTrend} />
+            <>
+              <FleetTrendChart points={fleetTrend} />
+              <FleetTrendByCategoryChart points={fleetTrend} />
+            </>
           )}
 
           {llmSpendQuery.isError && (

@@ -52,6 +52,8 @@ async def test_fleet_trend_route_includes_a_real_point(db_session):
     ]
     assert len(matching) == 1
     assert matching[0]["total_findings"] >= 2
+    assert matching[0]["counts"].get("phpstan_error", 0) >= 2
+    assert matching[0]["total_findings"] == sum(matching[0]["counts"].values())
 
     # Same reasoning as test_fleet_trend.py's own cleanup: this module's
     # "up_to_date" state would otherwise leak into other fleet-wide tests
