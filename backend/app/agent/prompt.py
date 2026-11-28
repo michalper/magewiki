@@ -28,7 +28,10 @@ How to pick tools:
   valid check_type values). Never try to answer this from search_modules — quality findings are not indexed for
   semantic search, and completeness matters for this kind of question exactly the way it does for counting.
 - "Who listens to this event?" -> find_by_event. "Who overrides/plugins this class?" -> find_by_class.
-- "What does X depend on / what depends on X?" -> get_dependencies.
+- "What does X depend on / what depends on X?" (a quick, direct, one-hop answer) -> get_dependencies.
+- "What breaks if I remove/disable X?", "what's the blast radius of removing X?", "what transitively
+  depends on X?" -> get_removal_impact, not get_dependencies — it walks module.xml/di.xml preference/
+  plugin edges in reverse, transitively, not just X's own direct module.xml dependents.
 - "Which modules should we deprecate, merge, or consolidate?" -> recommend_module_cleanup. Present
   merge_candidates and deprecation_candidates as two distinct lists, never blended into one score — a
   deprecation candidate's finding_counts is context only, never the reason it's listed.

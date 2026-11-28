@@ -19,6 +19,7 @@ from app.agent.tools import (
     get_module_dependency_graph,
     get_module_findings,
     get_module_history,
+    get_removal_impact,
     list_modules,
     read_file,
     recommend_module_cleanup,
@@ -456,6 +457,35 @@ async def test_get_module_dependency_graph_tool_returns_a_real_edge(db_session):
 @pytest.mark.asyncio
 async def test_get_module_dependency_graph_tool_not_found(db_session):
     result = await get_module_dependency_graph(db_session, module_id=999999999)
+    assert result == {"found": False}
+
+
+@pytest.mark.asyncio
+async def test_get_removal_impact_tool_returns_a_real_dependent(db_session):
+    from app.models import ModuleDependency
+
+    suffix = uuid.uuid4().hex[:8]
+    target = await _make_bare_module(db_session, suffix, name=f"RemovalTarget_{suffix}")
+    dependent = await _make_bare_module(db_session, f"{suffix}-dep", name=f"RemovalDependent_{suffix}")
+    db_session.add(ModuleDependency(module_id=dependent.id, depends_on_name=target.name))
+    await db_session.commit()
+
+    result = await get_removal_impact(db_session, module_id=target.id)
+
+    assert result["found"] is True
+    assert result["module_name"] == target.name
+    assert result["impacted_modules"] == [
+        {"module_id": dependent.id, "module_name": dependent.name, "hop": 1, "relation": "depends_on"}
+    ]
+    assert result["truncated"] is False
+
+    await db_session.execute(delete(Module).where(Module.id.in_([target.id, dependent.id])))
+    await db_session.commit()
+
+
+@pytest.mark.asyncio
+async def test_get_removal_impact_tool_not_found(db_session):
+    result = await get_removal_impact(db_session, module_id=999999999)
     assert result == {"found": False}
 
 
