@@ -35,6 +35,21 @@ import { useMediaQuery } from "@/lib/use-media-query";
 type ModuleSummary = components["schemas"]["ModuleSummary"];
 type FleetTrendPoint =
   paths["/modules/history/trend"]["get"]["responses"][200]["content"]["application/json"][number];
+type LlmSpendTrend =
+  paths["/settings/llm/spend-trend"]["get"]["responses"][200]["content"]["application/json"];
+
+// Fixed display order/labels for AnalysisCache.kind's 6 CHECK-constrained
+// values (app/models.py's ck_analysis_cache_kind) -- a plain lookup, not
+// prettifyCheckType, since this is a small, fixed enum rather than an
+// open-ended check_type vocabulary.
+const KIND_LABELS: Record<string, string> = {
+  file_summary: "File summaries",
+  module_synthesis: "Module synthesis",
+  embedding: "Embeddings",
+  chat: "Chat",
+  rerank: "Rerank",
+  query_rewrite: "Query rewrite",
+};
 
 function sumByCheckType(modules: ModuleSummary[], checkType: string): number {
   return modules.reduce((sum, m) => sum + (m.finding_counts[checkType] ?? 0), 0);
@@ -47,6 +62,10 @@ async function fetchModules(): Promise<ModuleSummary[]> {
 
 async function fetchFleetTrend(): Promise<FleetTrendPoint[]> {
   return apiFetch("/modules/history/trend");
+}
+
+async function fetchLlmSpendTrend(): Promise<LlmSpendTrend> {
+  return apiFetch("/settings/llm/spend-trend");
 }
 
 function StatTile({
@@ -301,13 +320,102 @@ function FleetTrendChart({ points }: { points: FleetTrendPoint[] }) {
   );
 }
 
+type LlmSpendPoint = LlmSpendTrend["points"][number];
+
+// Named/exported so it's directly unit-testable without going through
+// Recharts -- same reasoning as formatMobileAxisTick above (jsdom's
+// ResponsiveContainer never gives Recharts real layout, so a dataKey render
+// path never actually runs in these tests). Pivots day+kind rows into one
+// row per day with each present kind as its own numeric field, which is
+// what a stacked BarChart needs -- one <Bar dataKey={kind}> per series.
+export function pivotSpendByDay(points: LlmSpendPoint[]): { label: string; day: string; kinds: Record<string, number> }[] {
+  const byDay = new Map<string, { label: string; day: string; kinds: Record<string, number> }>();
+  for (const p of points) {
+    const row = byDay.get(p.day) ?? {
+      label: new Date(p.day).toLocaleDateString(),
+      day: p.day,
+      kinds: {},
+    };
+    row.kinds[p.kind] = (row.kinds[p.kind] ?? 0) + Number(p.cost_usd);
+    byDay.set(p.day, row);
+  }
+  return [...byDay.values()].sort((a, b) => a.day.localeCompare(b.day));
+}
+
+// Named/exported for the same reason as formatMobileAxisTick above -- a
+// Recharts tickFormatter/Tooltip formatter never actually runs in these
+// tests (jsdom's ResponsiveContainer never gets real layout).
+export function formatSpendAxisTick(value: number): string {
+  return `$${value}`;
+}
+
+export function formatSpendTooltip(value: unknown): string {
+  return `$${Number(value).toFixed(4)}`;
+}
+
+function LlmSpendByKindChart({ points }: { points: LlmSpendPoint[] }) {
+  const palette = useChartPalette();
+
+  if (points.length === 0) {
+    return (
+      <div className="rounded-2xl bg-card p-5 shadow-sm">
+        <h3 className="text-sm font-medium mb-2 text-muted-foreground">LLM spend this month, by kind</h3>
+        <p className="text-sm text-muted-foreground">
+          No LLM calls yet this month — this fills in once analysis, embedding, or chat calls happen.
+        </p>
+      </div>
+    );
+  }
+
+  const rows = pivotSpendByDay(points);
+  const kinds = [...new Set(points.map((p) => p.kind))];
+  const data = rows.map((row) => ({ label: row.label, ...row.kinds }));
+
+  return (
+    <div className="rounded-2xl bg-card p-5 shadow-sm">
+      <h3 className="text-sm font-medium mb-2 text-muted-foreground">LLM spend this month, by kind</h3>
+      <p className="text-xs text-muted-foreground mb-2">
+        Where this month&apos;s budget went — analysis, embedding, chat, rerank, and query-rewrite calls
+      </p>
+      <ResponsiveContainer width="100%" height={240}>
+        <BarChart data={data} margin={{ left: 0, right: 16, top: 8, bottom: 0 }}>
+          <CartesianGrid stroke={palette.ink.gridline} />
+          <XAxis dataKey="label" tick={{ fill: palette.ink.muted, fontSize: 12 }} />
+          <YAxis
+            allowDecimals
+            tickFormatter={formatSpendAxisTick}
+            tick={{ fill: palette.ink.muted, fontSize: 12 }}
+          />
+          <Tooltip formatter={formatSpendTooltip} />
+          {kinds.map((kind, i) => (
+            <Bar
+              key={kind}
+              dataKey={kind}
+              name={KIND_LABELS[kind] ?? kind}
+              stackId="spend"
+              fill={palette.categorical[i % palette.categorical.length]}
+            />
+          ))}
+        </BarChart>
+      </ResponsiveContainer>
+    </div>
+  );
+}
+
 export default function StatsPage() {
   useDocumentTitle("Stats");
   const modulesQuery = useQuery({ queryKey: ["modules"], queryFn: fetchModules });
   const fleetTrendQuery = useQuery({ queryKey: ["fleet-trend"], queryFn: fetchFleetTrend });
+  const llmSpendQuery = useQuery({ queryKey: ["llm-spend-trend"], queryFn: fetchLlmSpendTrend });
   const palette = useChartPalette();
   const modules = useMemo(() => modulesQuery.data ?? [], [modulesQuery.data]);
   const fleetTrend = useMemo(() => fleetTrendQuery.data ?? [], [fleetTrendQuery.data]);
+
+  const spentUsd = llmSpendQuery.data ? Number(llmSpendQuery.data.total_spent_usd) : 0;
+  const budgetUsd = llmSpendQuery.data?.monthly_budget_usd ?? 0;
+  const spendPct = budgetUsd > 0 ? Math.round((spentUsd / budgetUsd) * 100) : 0;
+  const spendRingColor =
+    spendPct >= 100 ? palette.status.critical : spendPct >= 75 ? palette.status.warning : palette.status.good;
 
   const totals = useMemo(
     () => ({
@@ -403,6 +511,26 @@ export default function StatsPage() {
             <p className="text-destructive">Failed to load the fleet history trend.</p>
           ) : (
             <FleetTrendChart points={fleetTrend} />
+          )}
+
+          {llmSpendQuery.isError && (
+            <p className="text-destructive">Failed to load LLM spend.</p>
+          )}
+          {llmSpendQuery.data && (
+            <>
+              <div className="flex flex-wrap items-center gap-4">
+                <ProgressRing
+                  label="Of this month's LLM budget"
+                  value={Math.min(spentUsd, budgetUsd)}
+                  total={budgetUsd}
+                  color={spendRingColor}
+                />
+                <p className="text-sm text-muted-foreground">
+                  ${spentUsd.toFixed(2)} of ${budgetUsd.toFixed(2)} spent this month ({spendPct}%)
+                </p>
+              </div>
+              <LlmSpendByKindChart points={llmSpendQuery.data.points} />
+            </>
           )}
         </>
       )}

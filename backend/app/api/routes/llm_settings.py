@@ -1,9 +1,12 @@
+from datetime import date
+from decimal import Decimal
+
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.analyzer.budget import is_budget_exceeded
+from app.analyzer.budget import current_utc_month_start, get_monthly_spend_usd, is_budget_exceeded
 from app.analyzer.cache import get_or_create_cache_entry, lookup_cache
 from app.analyzer.embeddings import embed_text, hash_text
 from app.analyzer.prompts import EMBEDDING_PROMPT_VERSION
@@ -12,6 +15,7 @@ from app.config import settings
 from app.db import async_session_factory, get_session
 from app.models import Module, RuntimeLlmConfig
 from app.runtime_config import resolve_embedding_config, resolve_llm_config
+from app.search.llm_spend_trend import get_llm_spend_trend
 from app.tasks.queue import get_arq_pool
 
 router = APIRouter()
@@ -253,3 +257,28 @@ async def update_llm_settings(
     response = await _effective_response(session, row)
     response.modules_queued_for_reembed = modules_queued
     return response
+
+
+class LlmSpendPointEntry(BaseModel):
+    day: date
+    kind: str
+    cost_usd: Decimal
+
+
+class LlmSpendTrendResponse(BaseModel):
+    month_start: date
+    monthly_budget_usd: float
+    total_spent_usd: Decimal
+    points: list[LlmSpendPointEntry]
+
+
+@router.get("/settings/llm/spend-trend", response_model=LlmSpendTrendResponse)
+async def get_llm_spend_trend_route(session: AsyncSession = Depends(get_session)) -> LlmSpendTrendResponse:
+    points = await get_llm_spend_trend(session)
+    total_spent_usd = await get_monthly_spend_usd(session)
+    return LlmSpendTrendResponse(
+        month_start=current_utc_month_start().date(),
+        monthly_budget_usd=settings.llm_monthly_budget_usd,
+        total_spent_usd=total_spent_usd,
+        points=[LlmSpendPointEntry(day=p.day, kind=p.kind, cost_usd=p.cost_usd) for p in points],
+    )

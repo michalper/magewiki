@@ -2,7 +2,13 @@ import { screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { renderWithQueryClient } from "../../test-utils";
-import StatsPage, { formatMobileAxisTick, truncateLabelTail } from "./page";
+import StatsPage, {
+  formatMobileAxisTick,
+  formatSpendAxisTick,
+  formatSpendTooltip,
+  pivotSpendByDay,
+  truncateLabelTail,
+} from "./page";
 
 vi.mock("@/lib/api", () => ({ apiFetch: vi.fn() }));
 
@@ -22,14 +28,19 @@ function mod(overrides: Partial<Record<string, unknown>> = {}) {
   };
 }
 
-// StatsPage fetches both /modules and /modules/history/trend -- branching by
-// path (same convention as repos/page.test.tsx) keeps the fleet-trend query
-// resolving to [] (its own real empty state) instead of silently receiving
-// this test file's /modules fixtures.
+// StatsPage fetches /modules, /modules/history/trend, and
+// /settings/llm/spend-trend -- branching by path (same convention as
+// repos/page.test.tsx) keeps the other two queries resolving to their own
+// real empty states instead of silently receiving this test file's
+// /modules fixtures (an array where an object is expected, or vice versa).
+const EMPTY_LLM_SPEND = { month_start: "2026-01-01", monthly_budget_usd: 20, total_spent_usd: "0", points: [] };
+
 function mockModules(modules: unknown[]) {
-  fetchMock.mockImplementation(async (path: string) =>
-    path === "/modules" ? { total: modules.length, modules } : [],
-  );
+  fetchMock.mockImplementation(async (path: string) => {
+    if (path === "/modules") return { total: modules.length, modules };
+    if (path === "/settings/llm/spend-trend") return EMPTY_LLM_SPEND;
+    return [];
+  });
 }
 
 describe("truncateLabelTail", () => {
@@ -49,6 +60,48 @@ describe("truncateLabelTail", () => {
 describe("formatMobileAxisTick", () => {
   it("delegates to truncateLabelTail with the mobile label budget", () => {
     expect(formatMobileAxisTick("Vendor_VeryLongModuleName")).toBe("…ModuleName");
+  });
+});
+
+describe("pivotSpendByDay", () => {
+  it("sums multiple rows for the same day and kind", () => {
+    const rows = pivotSpendByDay([
+      { day: "2026-11-01", kind: "chat", cost_usd: "1.00" },
+      { day: "2026-11-01", kind: "chat", cost_usd: "0.50" },
+    ]);
+    expect(rows).toEqual([{ label: expect.any(String), day: "2026-11-01", kinds: { chat: 1.5 } }]);
+  });
+
+  it("keeps different kinds on the same day as separate fields", () => {
+    const rows = pivotSpendByDay([
+      { day: "2026-11-01", kind: "chat", cost_usd: "1.00" },
+      { day: "2026-11-01", kind: "rerank", cost_usd: "2.00" },
+    ]);
+    expect(rows[0].kinds).toEqual({ chat: 1, rerank: 2 });
+  });
+
+  it("sorts days chronologically", () => {
+    const rows = pivotSpendByDay([
+      { day: "2026-11-05", kind: "chat", cost_usd: "1.00" },
+      { day: "2026-11-01", kind: "chat", cost_usd: "1.00" },
+    ]);
+    expect(rows.map((r) => r.day)).toEqual(["2026-11-01", "2026-11-05"]);
+  });
+});
+
+describe("formatSpendAxisTick", () => {
+  it("prefixes the value with a dollar sign", () => {
+    expect(formatSpendAxisTick(5)).toBe("$5");
+  });
+});
+
+describe("formatSpendTooltip", () => {
+  it("formats a cost to 4 decimal places with a dollar sign", () => {
+    expect(formatSpendTooltip(1.5)).toBe("$1.5000");
+  });
+
+  it("coerces a string value (as Recharts' Formatter type allows)", () => {
+    expect(formatSpendTooltip("0.004495")).toBe("$0.0045");
   });
 });
 
@@ -220,7 +273,11 @@ describe("StatsPage", () => {
   });
 
   it("shows the fleet-trend chart's empty state when there is no history yet", async () => {
-    fetchMock.mockImplementation(async (path: string) => (path === "/modules" ? { total: 1, modules: [mod()] } : []));
+    fetchMock.mockImplementation(async (path: string) => {
+      if (path === "/modules") return { total: 1, modules: [mod()] };
+      if (path === "/settings/llm/spend-trend") return EMPTY_LLM_SPEND;
+      return [];
+    });
     renderWithQueryClient(<StatsPage />);
 
     await waitFor(() =>
@@ -232,14 +289,14 @@ describe("StatsPage", () => {
   });
 
   it("renders the fleet-trend chart's line section when history points exist", async () => {
-    fetchMock.mockImplementation(async (path: string) =>
-      path === "/modules"
-        ? { total: 1, modules: [mod()] }
-        : [
-            { scanned_at: "2026-01-01T00:00:00Z", total_findings: 3 },
-            { scanned_at: "2026-02-01T00:00:00Z", total_findings: 5 },
-          ],
-    );
+    fetchMock.mockImplementation(async (path: string) => {
+      if (path === "/modules") return { total: 1, modules: [mod()] };
+      if (path === "/settings/llm/spend-trend") return EMPTY_LLM_SPEND;
+      return [
+        { scanned_at: "2026-01-01T00:00:00Z", total_findings: 3 },
+        { scanned_at: "2026-02-01T00:00:00Z", total_findings: 5 },
+      ];
+    });
     renderWithQueryClient(<StatsPage />);
 
     await waitFor(() =>
@@ -283,6 +340,81 @@ describe("StatsPage", () => {
     } finally {
       window.matchMedia = realMatchMedia;
     }
+  });
+
+  it("shows the LLM spend chart's empty state when there is no spend yet", async () => {
+    mockModules([mod()]);
+    renderWithQueryClient(<StatsPage />);
+
+    await waitFor(() => expect(screen.getByText("LLM spend this month, by kind")).toBeInTheDocument());
+    expect(
+      screen.getByText("No LLM calls yet this month — this fills in once analysis, embedding, or chat calls happen."),
+    ).toBeInTheDocument();
+  });
+
+  it("renders the LLM spend ring and chart when spend exists", async () => {
+    fetchMock.mockImplementation(async (path: string) => {
+      if (path === "/modules") return { total: 1, modules: [mod()] };
+      if (path === "/settings/llm/spend-trend") {
+        return {
+          month_start: "2026-11-01",
+          monthly_budget_usd: 20,
+          total_spent_usd: "5.00",
+          points: [
+            { day: "2026-11-01", kind: "chat", cost_usd: "3.00" },
+            { day: "2026-11-01", kind: "embedding", cost_usd: "2.00" },
+          ],
+        };
+      }
+      return [];
+    });
+    renderWithQueryClient(<StatsPage />);
+
+    await waitFor(() => expect(screen.getByText("LLM spend this month, by kind")).toBeInTheDocument());
+    expect(screen.getByText("$5.00 of $20.00 spent this month (25%)")).toBeInTheDocument();
+    expect(
+      screen.queryByText("No LLM calls yet this month — this fills in once analysis, embedding, or chat calls happen."),
+    ).not.toBeInTheDocument();
+  });
+
+  it("falls back to the raw kind string when it has no curated label", async () => {
+    fetchMock.mockImplementation(async (path: string) => {
+      if (path === "/modules") return { total: 1, modules: [mod()] };
+      if (path === "/settings/llm/spend-trend") {
+        return {
+          month_start: "2026-11-01",
+          monthly_budget_usd: 20,
+          total_spent_usd: "1.00",
+          points: [{ day: "2026-11-01", kind: "some_future_kind", cost_usd: "1.00" }],
+        };
+      }
+      return [];
+    });
+    renderWithQueryClient(<StatsPage />);
+
+    await waitFor(() => expect(screen.getByText("LLM spend this month, by kind")).toBeInTheDocument());
+  });
+
+  it.each([
+    [15, "good"],
+    [80, "warning"],
+    [100, "critical"],
+  ])("shows a %s-colored summary line at %i%% of budget", async (pct) => {
+    fetchMock.mockImplementation(async (path: string) => {
+      if (path === "/modules") return { total: 1, modules: [mod()] };
+      if (path === "/settings/llm/spend-trend") {
+        return {
+          month_start: "2026-11-01",
+          monthly_budget_usd: 20,
+          total_spent_usd: String((pct / 100) * 20),
+          points: [{ day: "2026-11-01", kind: "chat", cost_usd: "1.00" }],
+        };
+      }
+      return [];
+    });
+    renderWithQueryClient(<StatsPage />);
+
+    await waitFor(() => expect(screen.getByText(`$${((pct / 100) * 20).toFixed(2)} of $20.00 spent this month (${pct}%)`)).toBeInTheDocument());
   });
 
   describe("a check_type with no curated KPI tile", () => {
