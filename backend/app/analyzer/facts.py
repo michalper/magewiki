@@ -18,6 +18,7 @@ from app.models import (
     Module,
     ModuleCacheType,
     ModuleDependency,
+    ModuleEmailTemplate,
     ModuleIndexer,
     ModuleMenuItem,
     ModuleMview,
@@ -78,6 +79,7 @@ class ModuleFacts:
     widgets: list[tuple[str, str]] = field(default_factory=list)  # widget_id, class_name
     menu_items: list[tuple[str, str | None]] = field(default_factory=list)  # menu_item_id, title
     cache_types: list[tuple[str, str | None]] = field(default_factory=list)  # cache_type_id, instance
+    email_templates: list[tuple[str, str | None]] = field(default_factory=list)  # template_id, label
     file_analyses: list[FileAnalysisFact] = field(default_factory=list)
 
 
@@ -166,6 +168,9 @@ async def gather_module_facts(session: AsyncSession, module_id: int) -> ModuleFa
     cache_types = (
         await session.scalars(select(ModuleCacheType).where(ModuleCacheType.module_id == module_id))
     ).all()
+    email_templates = (
+        await session.scalars(select(ModuleEmailTemplate).where(ModuleEmailTemplate.module_id == module_id))
+    ).all()
 
     file_analyses = await gather_file_analyses(session, module_id)
 
@@ -203,6 +208,7 @@ async def gather_module_facts(session: AsyncSession, module_id: int) -> ModuleFa
         widgets=[(w.widget_id, w.class_name) for w in widgets],
         menu_items=[(mi.menu_item_id, mi.title) for mi in menu_items],
         cache_types=[(ct.cache_type_id, ct.instance) for ct in cache_types],
+        email_templates=[(et.template_id, et.label) for et in email_templates],
         file_analyses=file_analyses,
     )
 

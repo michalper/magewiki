@@ -231,6 +231,13 @@ def build_module_synthesis_prompt(facts: ModuleFacts) -> str:
             for cache_type_id, instance in facts.cache_types
         )
 
+    if facts.email_templates:
+        lines.append("\nEmail templates (from etc/email_templates.xml):")
+        lines.extend(
+            f"- {template_id}" + (f" ({label})" if label else "")
+            for template_id, label in facts.email_templates
+        )
+
     if facts.php_classes:
         lines.append("\nPHP classes discovered in this module:")
         for c in facts.php_classes:
@@ -251,7 +258,7 @@ def build_module_synthesis_prompt(facts: ModuleFacts) -> str:
 
     lines.append(
         "\nUsing ONLY the facts above (never invent events, plugins, dependencies, GraphQL fields, ACL resources, "
-        "indexers, mviews, routes, widgets, menu items, cache types, or classes not listed), "
+        "indexers, mviews, routes, widgets, menu items, cache types, email templates, or classes not listed), "
         "produce a structured module description:\n"
         "- summary: one or two sentences.\n"
         "- description: a fuller technical/business description.\n"

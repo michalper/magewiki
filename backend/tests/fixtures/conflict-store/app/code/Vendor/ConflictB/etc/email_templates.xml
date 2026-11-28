@@ -1,0 +1,4 @@
+<?xml version="1.0"?>
+<config xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:noNamespaceSchemaLocation="urn:magento:module:Magento_Email:etc/email_templates.xsd">
+    <template id="conflict_shared_template" label="Conflict B Template" file="conflict_b.html" type="html" module="Vendor_ConflictB" area="frontend"/>
+</config>

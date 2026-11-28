@@ -91,6 +91,10 @@ def test_build_module_synthesis_prompt_includes_every_fact_category_when_populat
             ("vendor_module_cache", "Vendor\\Module\\Model\\Cache\\Type"),
             ("vendor_module_bare_cache", None),
         ],
+        email_templates=[
+            ("vendor_module_welcome", "Welcome Email"),
+            ("vendor_module_bare_template", None),
+        ],
         php_classes=[
             PhpClassFact(
                 fqcn="Vendor\\Module\\Plugin\\SamplePlugin", class_name="SamplePlugin", kind="class",
@@ -140,6 +144,8 @@ def test_build_module_synthesis_prompt_includes_every_fact_category_when_populat
     assert "- vendor_module_bare_menu" in prompt and "- vendor_module_bare_menu (" not in prompt
     assert "- vendor_module_cache -> Vendor\\Module\\Model\\Cache\\Type" in prompt
     assert "- vendor_module_bare_cache" in prompt and "- vendor_module_bare_cache ->" not in prompt
+    assert "- vendor_module_welcome (Welcome Email)" in prompt
+    assert "- vendor_module_bare_template" in prompt and "- vendor_module_bare_template (" not in prompt
     assert "- Vendor\\Module\\Plugin\\SamplePlugin (class) [plugin] — Plugin/SamplePlugin.php" in prompt
     assert "- Vendor\\Module\\Model\\Plain (class) — Model/Plain.php" in prompt
     assert "- Plugin/SamplePlugin.php: Blocks checkout." in prompt

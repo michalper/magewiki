@@ -29,6 +29,7 @@ from app.models import (
     Module,
     ModuleCacheType,
     ModuleDependency,
+    ModuleEmailTemplate,
     ModuleIndexer,
     ModuleMenuItem,
     ModuleMview,
@@ -68,6 +69,7 @@ from app.scanner.dto import (
     DbTableEntry,
     DiscoveredModule,
     DiXmlResult,
+    EmailTemplateEntry,
     EventObserverEntry,
     GraphQlFieldEntry,
     IndexerEntry,
@@ -82,6 +84,11 @@ from app.scanner.dto import (
     WebapiRouteEntry,
     WidgetEntry,
 )
+from app.scanner.email_template_conflicts import (
+    EmailTemplateRow,
+    detect_email_template_id_conflicts,
+)
+from app.scanner.email_templates_xml import parse_email_templates_xml
 from app.scanner.events_xml import parse_events_xml
 from app.scanner.graphql_conflicts import GraphQlFieldRow, detect_graphql_field_conflicts
 from app.scanner.graphql_schema import parse_graphql_schema
@@ -213,6 +220,7 @@ class _ParsedModule:
     widgets: list[WidgetEntry]
     menu_items: list[MenuItemEntry]
     cache_types: list[CacheTypeEntry]
+    email_templates: list[EmailTemplateEntry]
 
 
 def _parse_module(d: DiscoveredModule) -> _ParsedModule:
@@ -250,6 +258,7 @@ def _parse_module(d: DiscoveredModule) -> _ParsedModule:
     ]
     menu_items = parse_menu_xml(d.root / "etc" / "adminhtml" / "menu.xml")
     cache_types = parse_cache_xml(d.root / "etc" / "cache.xml")
+    email_templates = parse_email_templates_xml(d.root / "etc" / "email_templates.xml")
     return _ParsedModule(
         discovered=d,
         module_xml=module_xml,
@@ -270,6 +279,7 @@ def _parse_module(d: DiscoveredModule) -> _ParsedModule:
         widgets=widgets,
         menu_items=menu_items,
         cache_types=cache_types,
+        email_templates=email_templates,
     )
 
 
@@ -634,6 +644,9 @@ async def _run_scan(root: Path, session: AsyncSession) -> AsyncIterator[dict[str
     # Same reasoning again: needs every scanned module's cache_types already
     # committed, recomputes across the whole repo_root.
     await _detect_and_persist_cache_type_conflicts(session, root)
+    # Same reasoning again: needs every scanned module's email_templates
+    # already committed, recomputes across the whole repo_root.
+    await _detect_and_persist_email_template_id_conflicts(session, root)
 
     # Phase 16: module history. Runs last, after every conflict check above,
     # since a module's finding_counts aren't complete until cross-module
@@ -920,6 +933,20 @@ async def _detect_and_persist_cache_type_conflicts(session: AsyncSession, root: 
     await _persist_conflict_findings(session, root, "cache_type_conflict", findings)
 
 
+async def _detect_and_persist_email_template_id_conflicts(session: AsyncSession, root: Path) -> None:
+    email_template_rows = (
+        await session.execute(
+            select(ModuleEmailTemplate.module_id, Module.name, ModuleEmailTemplate.template_id)
+            .join(Module, Module.id == ModuleEmailTemplate.module_id)
+            .where(Module.repo_root == str(root))
+        )
+    ).all()
+    email_templates = [EmailTemplateRow(*row) for row in email_template_rows]
+
+    findings = detect_email_template_id_conflicts(email_templates)
+    await _persist_conflict_findings(session, root, "email_template_id_conflict", findings)
+
+
 async def _detect_and_persist_cron_job_conflicts(session: AsyncSession, root: Path) -> None:
     job_rows = (
         await session.execute(
@@ -974,6 +1001,7 @@ _ModuleChildModel = (
     | type[ModuleWidget]
     | type[ModuleMenuItem]
     | type[ModuleCacheType]
+    | type[ModuleEmailTemplate]
 )
 
 
@@ -1185,6 +1213,7 @@ async def _persist_module(
     await _sync_module_children(session, module.id, ModuleWidget, pm.widgets)
     await _sync_module_children(session, module.id, ModuleMenuItem, pm.menu_items)
     await _sync_module_children(session, module.id, ModuleCacheType, pm.cache_types)
+    await _sync_module_children(session, module.id, ModuleEmailTemplate, pm.email_templates)
 
     # Reusing php_sources/new_hashes from above: a file whose content_hash
     # already has a cached tree-sitter parse (php_parse_cache, keyed by

@@ -170,6 +170,15 @@ class CacheTypeEntry:
 
 
 @dataclass
+class EmailTemplateEntry:
+    template_id: str
+    label: str | None
+    file: str | None
+    type: str | None
+    area: str | None
+
+
+@dataclass
 class ConfigFieldEntry:
     section_id: str
     group_id: str
